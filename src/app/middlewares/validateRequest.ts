@@ -10,15 +10,15 @@ export const validateRequest = (schema: ZodObject<any, any>) => {
       const parsedData = await schema.parseAsync({
         body: req.body,
         cookies: req.cookies,
-        // query: req.query,
-        // params: req.params,
+        query: req.query,
+        params: req.params,
       });
 
       // Overwrite validated values
       req.body = parsedData.body || req.body;
       req.cookies = parsedData.cookies || req.cookies;
-      // req.query = (parsedData.query as any) || req.query;
-      // req.params = (parsedData.params as any) || req.params;
+      req.query = (parsedData.query as any) || req.query;
+      req.params = (parsedData.params as any) || req.params;
 
       next();
     }
@@ -33,15 +33,15 @@ export const validateRequestFromFormData = (schema: ZodObject<any, any>) => {
         const parsedData = await schema.parseAsync({
           body: JSON.parse(req?.body?.data),
           cookies: req?.cookies,
-          // query: req?.query,
-          // params: req?.params,
+          query: req?.query,
+          params: req?.params,
         });
 
         // Overwrite validated values
         req.body = parsedData?.body || req?.body;
         req.cookies = parsedData?.cookies || req?.cookies;
-        // req.query = (parsedData?.query as any) || req?.query;
-        // req.params = (parsedData?.params as any) || req?.params;
+        req.query = (parsedData?.query as any) || req?.query;
+        req.params = (parsedData?.params as any) || req?.params;
 
         next();
       }

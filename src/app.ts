@@ -6,8 +6,10 @@ import morgan from 'morgan';
 import routes from './app/routes';
 import { globalErrorHandler, notFoundHandler } from './app/utils';
 
+// app
 const app: Application = express();
 
+// cors
 app.use(
   cors({
     // credentials: true,
@@ -23,10 +25,16 @@ app.use(
 
 //parser
 app.use(cookieParser());
+
+//logger
 app.use(morgan('dev'));
 // static files
 app.use('/public', express.static('public'));
+
+//body parser
 app.use(express.json());
+
+//url encoded parser
 app.use(express.urlencoded({ extended: true }));
 
 // All main routes

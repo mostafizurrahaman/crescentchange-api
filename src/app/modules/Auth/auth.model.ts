@@ -23,6 +23,11 @@ const authSchema = new Schema<IAuth, IAuthModel>(
       type: Date,
     },
 
+    isProfile: {
+      type: Boolean,
+      default: false,
+    },
+
     otp: {
       type: String,
       required: true,

@@ -46,7 +46,7 @@ const organizationSchema = new Schema<IORGANIZATION>(
       type: String,
     },
 
-    fullNameInCard: {
+    nameInCard: {
       type: String,
     },
     cardNumber: {
