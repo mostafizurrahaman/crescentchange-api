@@ -5,9 +5,9 @@ import { AuthRoutes } from '../modules/Auth/auth.route';
 // import { OrganizationRoutes } from '../modules/Organization/organization.routes';
 // import { BusinessRoutes } from '../modules/Business/business.routes';
 // import { notificationRoutes } from '../modules/Notification/notification.routes';
-import { contentRoutes } from '../modules/Page/page.route';
-import { DonationReceiptRoutes } from '../modules/DonationReceipt/donationReceipt.route';
-import { RoundUpRoutes } from '../modules/RoundUp/roundUp.route';
+
+import { DonationRoutes } from '../modules/Donation/donation.route';
+import { CauseRoutes } from '../modules/Causes/causes.route';
 
 const router = Router();
 
@@ -37,17 +37,14 @@ const moduleRoutes = [
   //   path: '/notification',
   //   route: notificationRoutes,
   // },
+
   {
-    path: '/content',
-    route: contentRoutes,
+    path: '/donation',
+    route: DonationRoutes,
   },
   {
-    path: '/donation-receipts',
-    route: DonationReceiptRoutes,
-  },
-  {
-    path: '/round-up',
-    route: RoundUpRoutes,
+    path: '/cause',
+    route: CauseRoutes,
   },
 ];
 

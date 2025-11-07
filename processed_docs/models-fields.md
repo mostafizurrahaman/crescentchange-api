@@ -116,6 +116,19 @@ This document provides detailed field specifications for all models in the Cresc
 
 ## 2. New Models - Detailed Field Specifications
 
+### 2.0 Cause Model
+
+```typescript
+{
+  _id: ObjectId(auto - generated);
+  name: String(required, unique); (it will be an enum)
+  description: String(optional);
+  organizationId: Object(required , ref: "Organization")
+  createdAt: Date(auto - generated);
+  updatedAt: Date(auto - generated);
+}
+```
+
 ### 2.1 Badge Model
 
 ```typescript
@@ -191,12 +204,12 @@ This document provides detailed field specifications for all models in the Cresc
   organization: ObjectId (required, ref: 'Organization')
   donationType: String (enum: ['one-time', 'recurring', 'round-up'], required)
   amount: Number (required, min: 0.01)
-  currency: String (default: 'AUD')
+  currency: String (default: 'USD')
   stripePaymentIntentId: String (optional, unique)
   stripeChargeId: String (optional)
   status: String (enum: ['pending', 'completed', 'failed', 'refunded'], default: 'pending')
   donationDate: Date (default: Date.now)
-  causeCategory: String (optional) // Education, Health, Emergency Relief, etc.
+  cause: ObjectId (optional, ref: 'Cause') // Selected cause at time of donation
   specialMessage: String (optional) // Message from donor to organization
   scheduledDonationId: ObjectId (optional, ref: 'ScheduledDonation') // If from recurring
   roundUpId: ObjectId (optional, ref: 'RoundUp') // If from round-up
@@ -242,7 +255,7 @@ This document provides detailed field specifications for all models in the Cresc
   _id: ObjectId (auto-generated)
   roundUp: ObjectId (required, ref: 'RoundUp')
   user: ObjectId (required, ref: 'Client')
-  basiqTransactionId: String (required, unique) // From Basiq API
+  plaidTransactionId: String (required, unique) // From Plaid API
   originalAmount: Number (required) // Original transaction amount
   roundUpValue: Number (required, min: 0.01, max: 0.99)
   transactionDate: Date (required)
@@ -359,7 +372,7 @@ This document provides detailed field specifications for all models in the Cresc
   user: ObjectId (required, ref: 'Client')
   organization: ObjectId (required, ref: 'Organization')
   amount: Number (required, min: 0.01)
-  currency: String (default: 'AUD')
+  currency: String (default: 'USD')
   frequency: String (enum: ['daily', 'weekly', 'monthly', 'yearly'], required)
   startDate: Date (required)
   nextDonationDate: Date (required)
@@ -380,13 +393,13 @@ This document provides detailed field specifications for all models in the Cresc
 {
   _id: ObjectId (auto-generated)
   user: ObjectId (required, ref: 'Client')
-  basiqConsentId: String (required, unique) // From Basiq API
-  bankName: String (required)
-  accountId: String (required) // From Basiq
-  accountType: String (optional) // 'savings', 'checking', etc.
-  accountNumber: String (optional, masked) // Last 4 digits only
-  consentStatus: String (enum: ['active', 'expired', 'revoked'], default: 'active')
-  consentExpiryDate: Date (required)
+  plaidItemId: String (required, unique) // Plaid Item ID
+  plaidAccessToken: String (required) // Securely stored (encrypted/secret storage)
+  institutionName: String (required)
+  accountId: String (required) // Plaid Account ID
+  accountType: String (optional) // 'depository', 'credit', 'loan', etc.
+  accountMask: String (optional) // Last 2-4 digits for display
+  itemStatus: String (enum: ['active', 'login_required', 'disconnected'], default: 'active')
   connectedDate: Date (default: Date.now)
   lastSyncedDate: Date (optional)
   isActive: Boolean (default: true)
@@ -460,7 +473,7 @@ This document provides detailed field specifications for all models in the Cresc
 { organization: 1 }
 
 // RoundUpTransaction
-{ basiqTransactionId: 1 } // Unique index
+{ plaidTransactionId: 1 } // Unique index
 { roundUp: 1, processed: 1 }
 { user: 1, transactionDate: -1 }
 
@@ -498,7 +511,7 @@ This document provides detailed field specifications for all models in the Cresc
 ### Amount Fields
 
 - All monetary amounts: `Number`, `min: 0.01`, precision: 2 decimal places
-- Currency: Default 'AUD', stored as String
+- Currency: Default 'USD', stored as String
 
 ### Date Fields
 
@@ -522,7 +535,7 @@ This document provides detailed field specifications for all models in the Cresc
 
 - Email addresses
 - Stripe payment intent IDs
-- Basiq transaction IDs
+- Plaid transaction IDs
 - Receipt numbers
 - Reward redemption codes
 

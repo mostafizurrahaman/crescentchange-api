@@ -1,0 +1,671 @@
+# causes-api-postman-collection.yml
+openapi: 3.0.0
+info:
+  title: Crescent Change - Causes API
+  version: 1.0.0
+  description: API endpoints for managing causes in the Crescent Change platform
+servers:
+  - url: '{{baseUrl}}'
+    description: Development server
+    variables:
+      baseUrl:
+        default: http://localhost:5000/api/v1
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Cause:
+      type: object
+      properties:
+        _id:
+          type: string
+          example: '6547d3a2f1234567890abcde'
+        name:
+          type: string
+          enum:
+            - backpacks_and_books
+            - digital_dreams
+            - empowerment
+            - family_care
+            - health_and_wellness
+            - homelessness
+            - innovation
+            - learning
+            - mental_health
+            - money_management
+            - nutrition
+            - other
+            - recovery
+            - safety
+            - social_care
+          example: 'health_and_wellness'
+        notes:
+          type: string
+          example: 'Supporting health and wellness initiatives in the community'
+        organization:
+          type: object
+          properties:
+            _id:
+              type: string
+              example: '6547d3a2f1234567890abcdf'
+            name:
+              type: string
+              example: 'Health Foundation'
+            serviceType:
+              type: string
+              example: 'Healthcare'
+            coverImage:
+              type: string
+              example: 'https://example.com/image.jpg'
+        createdAt:
+          type: string
+          format: date-time
+          example: '2024-01-15T10:30:00.000Z'
+        updatedAt:
+          type: string
+          format: date-time
+          example: '2024-01-15T10:30:00.000Z'
+
+    CauseName:
+      type: object
+      properties:
+        label:
+          type: string
+          example: 'Health And Wellness'
+        value:
+          type: string
+          example: 'health_and_wellness'
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+          example: 'Error message'
+        errorMessages:
+          type: array
+          items:
+            type: object
+            properties:
+              path:
+                type: string
+              message:
+                type: string
+        stack:
+          type: string
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        statusCode:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: 'Operation successful'
+        data:
+          type: object
+        meta:
+          type: object
+          properties:
+            page:
+              type: integer
+              example: 1
+            limit:
+              type: integer
+              example: 10
+            total:
+              type: integer
+              example: 100
+            totalPage:
+              type: integer
+              example: 10
+
+paths:
+  /causes/names:
+    get:
+      tags:
+        - Causes
+      summary: Get all available cause names
+      description: Returns a list of all available cause names for dropdown/selection purposes (Public endpoint)
+      operationId: getCauseNames
+      responses:
+        '200':
+          description: Cause names retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+              example:
+                success: true
+                statusCode: 200
+                message: 'Cause names retrieved successfully!'
+                data:
+                  - label: 'Backpacks And Books'
+                    value: 'backpacks_and_books'
+                  - label: 'Digital Dreams'
+                    value: 'digital_dreams'
+                  - label: 'Empowerment'
+                    value: 'empowerment'
+                  - label: 'Family Care'
+                    value: 'family_care'
+                  - label: 'Health And Wellness'
+                    value: 'health_and_wellness'
+                  - label: 'Homelessness'
+                    value: 'homelessness'
+                  - label: 'Innovation'
+                    value: 'innovation'
+                  - label: 'Learning'
+                    value: 'learning'
+                  - label: 'Mental Health'
+                    value: 'mental_health'
+                  - label: 'Money Management'
+                    value: 'money_management'
+                  - label: 'Nutrition'
+                    value: 'nutrition'
+                  - label: 'Other'
+                    value: 'other'
+                  - label: 'Recovery'
+                    value: 'recovery'
+                  - label: 'Safety'
+                    value: 'safety'
+                  - label: 'Social Care'
+                    value: 'social_care'
+
+  /causes:
+    post:
+      tags:
+        - Causes
+      summary: Create a new cause
+      description: Create a new cause for an organization (Organization/Admin only)
+      operationId: createCause
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  enum:
+                    [
+                      backpacks_and_books,
+                      digital_dreams,
+                      empowerment,
+                      family_care,
+                      health_and_wellness,
+                      homelessness,
+                      innovation,
+                      learning,
+                      mental_health,
+                      money_management,
+                      nutrition,
+                      other,
+                      recovery,
+                      safety,
+                      social_care,
+                    ]
+                notes:
+                  type: string
+                  maxLength: 500
+                organization:
+                  type: string
+                  description: Optional for organization users (uses their own ID)
+            examples:
+              example1:
+                summary: Create health cause
+                value:
+                  name: 'health_and_wellness'
+                  notes: 'Focus on community health and wellness programs'
+                  organization: '6547d3a2f1234567890abcdf'
+              example2:
+                summary: Create education cause
+                value:
+                  name: 'learning'
+                  notes: 'Supporting educational initiatives'
+      responses:
+        '201':
+          description: Cause created successfully
+          content:
+            application/json:
+              example:
+                success: true
+                statusCode: 201
+                message: 'Cause created successfully!'
+                data:
+                  _id: '6547d3a2f1234567890abcde'
+                  name: 'health_and_wellness'
+                  notes: 'Focus on community health and wellness programs'
+                  organization:
+                    _id: '6547d3a2f1234567890abcdf'
+                    name: 'Health Foundation'
+                    serviceType: 'Healthcare'
+                    coverImage: 'https://example.com/image.jpg'
+                  createdAt: '2024-01-15T10:30:00.000Z'
+                  updatedAt: '2024-01-15T10:30:00.000Z'
+        '401':
+          description: Unauthorized
+        '409':
+          description: Cause already exists for this organization
+
+    get:
+      tags:
+        - Causes
+      summary: Get all causes
+      description: Get all causes with optional filters and pagination (Public endpoint)
+      operationId: getCauses
+      parameters:
+        - name: name
+          in: query
+          description: Filter by cause name
+          schema:
+            type: string
+            enum:
+              [
+                backpacks_and_books,
+                digital_dreams,
+                empowerment,
+                family_care,
+                health_and_wellness,
+                homelessness,
+                innovation,
+                learning,
+                mental_health,
+                money_management,
+                nutrition,
+                other,
+                recovery,
+                safety,
+                social_care,
+              ]
+          example: 'health_and_wellness'
+        - name: organization
+          in: query
+          description: Filter by organization ID
+          schema:
+            type: string
+          example: '6547d3a2f1234567890abcdf'
+        - name: page
+          in: query
+          description: Page number
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          example: 1
+        - name: limit
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+          example: 10
+        - name: sortBy
+          in: query
+          description: Field to sort by
+          schema:
+            type: string
+            default: createdAt
+          example: 'createdAt'
+        - name: sortOrder
+          in: query
+          description: Sort order
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+          example: 'desc'
+      responses:
+        '200':
+          description: Causes retrieved successfully
+          content:
+            application/json:
+              example:
+                success: true
+                statusCode: 200
+                message: 'Causes retrieved successfully!'
+                data:
+                  - _id: '6547d3a2f1234567890abcde'
+                    name: 'health_and_wellness'
+                    notes: 'Focus on community health and wellness programs'
+                    organization:
+                      _id: '6547d3a2f1234567890abcdf'
+                      name: 'Health Foundation'
+                      serviceType: 'Healthcare'
+                      coverImage: 'https://example.com/image.jpg'
+                    createdAt: '2024-01-15T10:30:00.000Z'
+                    updatedAt: '2024-01-15T10:30:00.000Z'
+                  - _id: '6547d3a2f1234567890abcdd'
+                    name: 'learning'
+                    notes: 'Educational support programs'
+                    organization:
+                      _id: '6547d3a2f1234567890abcde'
+                      name: 'Education Trust'
+                      serviceType: 'Education'
+                      coverImage: 'https://example.com/image2.jpg'
+                    createdAt: '2024-01-14T10:30:00.000Z'
+                    updatedAt: '2024-01-14T10:30:00.000Z'
+                meta:
+                  page: 1
+                  limit: 10
+                  total: 2
+                  totalPage: 1
+
+  /causes/organization/{organizationId}:
+    get:
+      tags:
+        - Causes
+      summary: Get causes by organization
+      description: Get all causes for a specific organization (Public endpoint)
+      operationId: getCausesByOrganization
+      parameters:
+        - name: organizationId
+          in: path
+          required: true
+          description: Organization ID
+          schema:
+            type: string
+          example: '6547d3a2f1234567890abcdf'
+      responses:
+        '200':
+          description: Organization causes retrieved successfully
+          content:
+            application/json:
+              example:
+                success: true
+                statusCode: 200
+                message: 'Organization causes retrieved successfully!'
+                data:
+                  - _id: '6547d3a2f1234567890abcde'
+                    name: 'health_and_wellness'
+                    notes: 'Focus on community health and wellness programs'
+                    organization:
+                      _id: '6547d3a2f1234567890abcdf'
+                      name: 'Health Foundation'
+                      serviceType: 'Healthcare'
+                      coverImage: 'https://example.com/image.jpg'
+                    createdAt: '2024-01-15T10:30:00.000Z'
+                    updatedAt: '2024-01-15T10:30:00.000Z'
+                  - _id: '6547d3a2f1234567890abcdd'
+                    name: 'mental_health'
+                    notes: 'Mental health support services'
+                    organization:
+                      _id: '6547d3a2f1234567890abcdf'
+                      name: 'Health Foundation'
+                      serviceType: 'Healthcare'
+                      coverImage: 'https://example.com/image.jpg'
+                    createdAt: '2024-01-14T10:30:00.000Z'
+                    updatedAt: '2024-01-14T10:30:00.000Z'
+
+  /causes/organization/{organizationId}/bulk:
+    post:
+      tags:
+        - Causes
+      summary: Bulk assign causes to organization
+      description: Replace all causes for an organization with new set (Organization/Admin only)
+      operationId: bulkAssignCauses
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organizationId
+          in: path
+          required: true
+          description: Organization ID
+          schema:
+            type: string
+          example: '6547d3a2f1234567890abcdf'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - causeNames
+              properties:
+                causeNames:
+                  type: array
+                  minItems: 1
+                  maxItems: 20
+                  items:
+                    type: string
+                    enum:
+                      [
+                        backpacks_and_books,
+                        digital_dreams,
+                        empowerment,
+                        family_care,
+                        health_and_wellness,
+                        homelessness,
+                        innovation,
+                        learning,
+                        mental_health,
+                        money_management,
+                        nutrition,
+                        other,
+                        recovery,
+                        safety,
+                        social_care,
+                      ]
+            example:
+              causeNames:
+                - 'health_and_wellness'
+                - 'mental_health'
+                - 'nutrition'
+                - 'recovery'
+      responses:
+        '200':
+          description: Causes assigned successfully
+          content:
+            application/json:
+              example:
+                success: true
+                statusCode: 200
+                message: 'Causes assigned successfully!'
+                data:
+                  - _id: '6547d3a2f1234567890abcde'
+                    name: 'health_and_wellness'
+                    organization:
+                      _id: '6547d3a2f1234567890abcdf'
+                      name: 'Health Foundation'
+                      serviceType: 'Healthcare'
+                      coverImage: 'https://example.com/image.jpg'
+                    createdAt: '2024-01-15T10:30:00.000Z'
+                    updatedAt: '2024-01-15T10:30:00.000Z'
+                  - _id: '6547d3a2f1234567890abcdd'
+                    name: 'mental_health'
+                    organization:
+                      _id: '6547d3a2f1234567890abcdf'
+                      name: 'Health Foundation'
+                      serviceType: 'Healthcare'
+                      coverImage: 'https://example.com/image.jpg'
+                    createdAt: '2024-01-15T10:30:00.000Z'
+                    updatedAt: '2024-01-15T10:30:00.000Z'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Not authorized to assign causes to this organization
+
+  /causes/{id}:
+    get:
+      tags:
+        - Causes
+      summary: Get cause by ID
+      description: Get a specific cause by its ID (Public endpoint)
+      operationId: getCauseById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Cause ID
+          schema:
+            type: string
+          example: '6547d3a2f1234567890abcde'
+      responses:
+        '200':
+          description: Cause retrieved successfully
+          content:
+            application/json:
+              example:
+                success: true
+                statusCode: 200
+                message: 'Cause retrieved successfully!'
+                data:
+                  _id: '6547d3a2f1234567890abcde'
+                  name: 'health_and_wellness'
+                  notes: 'Focus on community health and wellness programs'
+                  organization:
+                    _id: '6547d3a2f1234567890abcdf'
+                    name: 'Health Foundation'
+                    serviceType: 'Healthcare'
+                    coverImage: 'https://example.com/image.jpg'
+                  createdAt: '2024-01-15T10:30:00.000Z'
+                  updatedAt: '2024-01-15T10:30:00.000Z'
+        '404':
+          description: Cause not found
+
+    patch:
+      tags:
+        - Causes
+      summary: Update cause
+      description: Update a cause's details (Organization/Admin only)
+      operationId: updateCause
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Cause ID
+          schema:
+            type: string
+          example: '6547d3a2f1234567890abcde'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  enum:
+                    [
+                      backpacks_and_books,
+                      digital_dreams,
+                      empowerment,
+                      family_care,
+                      health_and_wellness,
+                      homelessness,
+                      innovation,
+                      learning,
+                      mental_health,
+                      money_management,
+                      nutrition,
+                      other,
+                      recovery,
+                      safety,
+                      social_care,
+                    ]
+                notes:
+                  type: string
+                  maxLength: 500
+            examples:
+              updateName:
+                summary: Update cause name
+                value:
+                  name: 'mental_health'
+              updateNotes:
+                summary: Update cause notes
+                value:
+                  notes: 'Updated focus on mental health and counseling services'
+              updateBoth:
+                summary: Update both fields
+                value:
+                  name: 'mental_health'
+                  notes: 'Comprehensive mental health support programs'
+      responses:
+        '200':
+          description: Cause updated successfully
+          content:
+            application/json:
+              example:
+                success: true
+                statusCode: 200
+                message: 'Cause updated successfully!'
+                data:
+                  _id: '6547d3a2f1234567890abcde'
+                  name: 'mental_health'
+                  notes: 'Comprehensive mental health support programs'
+                  organization:
+                    _id: '6547d3a2f1234567890abcdf'
+                    name: 'Health Foundation'
+                    serviceType: 'Healthcare'
+                    coverImage: 'https://example.com/image.jpg'
+                  createdAt: '2024-01-15T10:30:00.000Z'
+                  updatedAt: '2024-01-15T11:30:00.000Z'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Not authorized to update this cause
+        '404':
+          description: Cause not found
+        '409':
+          description: Cause with this name already exists for this organization
+
+    delete:
+      tags:
+        - Causes
+      summary: Delete cause
+      description: Delete a cause (Organization/Admin only)
+      operationId: deleteCause
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Cause ID
+          schema:
+            type: string
+          example: '6547d3a2f1234567890abcde'
+      responses:
+        '200':
+          description: Cause deleted successfully
+          content:
+            application/json:
+              example:
+                success: true
+                statusCode: 200
+                message: 'Cause deleted successfully!'
+                data:
+                  message: 'Cause deleted successfully!'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Not authorized to delete this cause
+        '404':
+          description: Cause not found
+
+tags:
+  - name: Causes
+    description: Cause management endpoints

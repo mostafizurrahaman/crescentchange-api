@@ -38,17 +38,18 @@ This document provides a comprehensive view of all relationships between models 
 ### 2.1 Donation Flow
 
 ```
-┌─────────────┐
-│   Client    │
-│  (Donor)    │
-└──────┬──────┘
-       │
-       │ 1:N (one donor, many donations)
-       │
-┌──────▼──────────────┐
-│      Donation       │
-│  (one-time/recurring│
-│   /round-up)        │
+┌─────────────┐          ┌──────────────┐
+│   Client    │          │    Cause     │
+│  (Donor)    │          │ (Catalog)    │
+└──────┬──────┘          └──────┬───────┘
+       │                        │
+       │ 1:N (one donor, many   │ N:M (org assigns
+       │     donations)         │     supported causes)
+       │                        │
+┌──────▼──────────────┐         │
+│      Donation       │◀────────┘
+│  (one-time/recurring│  (donation references
+│   /round-up)        │   the selected cause)
 └──────┬──────────────┘
        │
        │ N:1 (many donations, one organization)
@@ -66,12 +67,12 @@ This document provides a comprehensive view of all relationships between models 
 │   Client    │────────▶│  Donation    │
 └─────────────┘         └──────┬───────┘
                                │
-                               ├──────────────┐
-                               │              │
-                    ┌──────────▼──────┐  ┌───▼──────────────┐
-                    │ PointsTransaction│  │ DonationReceipt  │
-                    │   (earned)      │  │                  │
-                    └─────────────────┘  └───────────────────┘
+                               ├──────────────┬──────────────┐
+                               │              │              │
+                    ┌──────────▼──────┐  ┌───▼──────────────┐  ┌──────────────┐
+                    │ PointsTransaction│  │ DonationReceipt  │  │    Cause     │
+                    │   (earned)      │  │                  │  │  (Selected)  │
+                    └─────────────────┘  └───────────────────┘  └──────────────┘
 ```
 
 **Key Relationships:**
@@ -80,6 +81,8 @@ This document provides a comprehensive view of all relationships between models 
 - `Organization` → `Donation`: One-to-Many
 - `Donation` → `PointsTransaction`: One-to-One (triggers point earning)
 - `Donation` → `DonationReceipt`: One-to-One (optional)
+- `Donation` → `Cause`: Many-to-One (selected cause at time of donation)
+- `Organization` → `Cause`: Many-to-Many (assign supported causes)
 
 ---
 
@@ -96,7 +99,7 @@ This document provides a comprehensive view of all relationships between models 
        │
 ┌──────▼──────────────┐
 │    BankConnection   │
-│   (Basiq Consent)  │
+│   (Plaid Item)      │
 └──────┬──────────────┘
        │
        │ 1:N (one bank connection, multiple round-up configs)
@@ -124,7 +127,7 @@ This document provides a comprehensive view of all relationships between models 
 **Complete Round-Up Relationship Chain:**
 
 ```
-Client → BankConnection → RoundUp → RoundUpTransaction → Donation → Organization
+Client → BankConnection (Plaid) → RoundUp → RoundUpTransaction → Donation → Organization
   │           │             │              │                │
   │           │             │              │                │
   └──────────┴─────────────┴──┴──────────────┴────────────────┘
@@ -367,6 +370,9 @@ Client → BankConnection → RoundUp → RoundUpTransaction → Donation → Or
    │  └─────────┘  └──────────┘  └──────────────┘  │
    └───────────────────────────────────────────────┘
         │                  │                  │
+   ┌────▼────┐
+   │  Cause  │ (Catalog; orgs assign; donations reference)
+   └─────────┘
    ┌────▼──────────────────▼──────────────────▼────┐
    │            Rewards & Points System             │
    │  ┌──────────┐  ┌──────────┐  ┌──────────────┐ │
@@ -412,6 +418,8 @@ Client → BankConnection → RoundUp → RoundUpTransaction → Donation → Or
 | Client             | UserBadge            | One-to-Many       | 1:N         | User progress             |
 | Donation           | UserBadge            | Many-to-One       | N:1         | Triggers progress         |
 | Donation           | DonationReceipt      | One-to-One        | 1:1         | Receipt generation        |
+| Donation           | Cause                | Many-to-One       | N:1         | Selected cause            |
+| Organization       | Cause                | Many-to-Many      | N:M         | Supported causes          |
 | Client             | BankConnection       | One-to-Many       | 1:N         | Multiple bank accounts    |
 | Client             | BusinessFollower     | One-to-Many       | 1:N         | Following businesses      |
 | Business           | BusinessFollower     | One-to-Many       | 1:N         | Followers                 |
@@ -447,7 +455,7 @@ Only safe to hard delete:
 
 ### 12.1 Referential Integrity
 
-1. **Donation** must have valid `donor` (Client) and `organization`
+1. **Donation** must have valid `donor` (Client), `organization`, and (if required by organization) `cause`
 2. **RoundUp** must have valid `user`, `organization`, and `bankConnection`
 3. **RewardRedemption** must have valid `user`, `reward`, and `business`
 4. **UserBadge** must have valid `user` and `badge`
@@ -539,13 +547,13 @@ All foreign key fields should be indexed for join performance:
         │            │            │
     ┌───┴────────────┴────────────┴───┐
     │                                  │
- DONATION ────────────────────────────┘
+ DONATION ──► CAUSE ───────────────────┘
     │
     ├───► POINTS TRANSACTION
     ├───► DONATION RECEIPT
     └───► USER BADGE (progress)
 
-CLIENT ──► ROUND UP ──► ROUND UP TRANSACTION ──► DONATION
+CLIENT ──► ROUND UP (PLAID) ──► ROUND UP TRANSACTION ──► DONATION
     │
     ├───► SCHEDULED DONATION ──► DONATION
     ├───► REWARD REDEMPTION ──► POINTS TRANSACTION
