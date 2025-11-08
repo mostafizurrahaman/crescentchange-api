@@ -65,4 +65,13 @@ export default {
     authToken: process.env.TWILIO_AUTH_TOKEN,
     phoneNumber: process.env.TWILIO_PHONE_NUMBER,
   },
+
+  plaid: {
+    client_id: process.env.PLAID_CLIENT_ID,
+    secret: process.env.PLAID_SECRET,
+    environment: process.env.PLAID_ENV || 'sandbox',
+    webhook_url: process.env.PLAID_WEBHOOK_URL,
+    // Plaid SDK environment mappings
+    env: process.env.PLAID_ENV || 'sandbox', // 'sandbox', 'development', 'production'
+  },
 };
