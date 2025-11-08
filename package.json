@@ -31,7 +31,7 @@
   "version": "1.0.0",
   "scripts": {
     "start": "node dist/server.js",
-    "dev": "ts-node-dev --respawn --transpile-only --poll src/server.ts",
+    "dev": "ts-node-dev --respawn --transpile-only --poll --clear --exit-child src/server.ts",
     "build": "tsc",
     "generate": "node generate",
     "create-module": "npx ts-node src/scripts/createModule.ts",
@@ -64,7 +64,6 @@
     "@types/multer": "^2.0.0",
     "@types/nodemailer": "^7.0.3",
     "@types/otp-generator": "^4.0.2",
-    "@types/plaid": "^1.0.0",
     "eslint": "^9.38.0",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^16.4.0",

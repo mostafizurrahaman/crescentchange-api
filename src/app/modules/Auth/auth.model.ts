@@ -92,12 +92,12 @@ authSchema.post('save', function (doc, next) {
   next();
 });
 
-authSchema.post('find', function (doc, next) {
-  if (doc) {
-    doc.password = '';
-  }
-  next();
-});
+// authSchema.post('find', function (doc, next) {
+//   if (doc) {
+//     doc.password = '';
+//   }
+//   next();
+// });
 
 authSchema.post('findOne', function (doc, next) {
   if (doc) {

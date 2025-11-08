@@ -1,4 +1,4 @@
-import { PlaidApi, PlaidClient, PlaidEnvironments } from 'plaid';
+import { PlaidApi, PlaidEnvironments, Configuration } from 'plaid';
 import configuration from './index';
 import crypto from 'crypto';
 
@@ -22,11 +22,17 @@ const getPlaidEnvironment = () => {
 };
 
 // Initialize Plaid client
-export const plaidClient = new PlaidClient({
-  clientID: PLAID_CLIENT_ID!,
-  secret: PLAID_SECRET!,
-  env: getPlaidEnvironment(),
+const plaidConfig = new Configuration({
+  basePath: getPlaidEnvironment(),
+  baseOptions: {
+    headers: {
+      'PLAID-CLIENT-ID': PLAID_CLIENT_ID!,
+      'PLAID-SECRET': PLAID_SECRET!,
+    },
+  },
 });
+
+export const plaidClient = new PlaidApi(plaidConfig);
 
 // Helper functions for encryption
 export const encryptData = (text: string): string => {

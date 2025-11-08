@@ -1,15 +1,15 @@
 import { Schema, model, Document } from 'mongoose';
-import { IBankConnection, TAccountType, TBankConnectionStatus } from './bankConnection.interface';
+import {
+  IBankConnection,
+  TAccountType,
+  TBankConnectionStatus,
+} from './bankConnection.interface';
 
 type BankConnectionDocument = Document & IBankConnection;
 
 const bankConnectionSchema = new Schema<BankConnectionDocument>(
   {
-    user: {
-      type: Schema.Types.ObjectId,
-      ref: 'Client',
-      required: true,
-    },
+    user: { type: Schema.Types.ObjectId, ref: 'Client', required: true },
     plaidItemId: {
       type: String,
       required: true,
@@ -103,7 +103,9 @@ bankConnectionSchema.statics.findByUser = function (userId: string) {
   return this.find({ user: userId, isActive: true });
 };
 
-bankConnectionSchema.statics.findByPlaidItemId = function (plaidItemId: string) {
+bankConnectionSchema.statics.findByPlaidItemId = function (
+  plaidItemId: string
+) {
   return this.findOne({ plaidItemId: plaidItemId });
 };
 
@@ -112,7 +114,11 @@ bankConnectionSchema.statics.findActiveConnections = function () {
 };
 
 // Instance methods
-bankConnectionSchema.methods.updateStatus = function (status: TBankConnectionStatus, errorCode?: string, errorMessage?: string) {
+bankConnectionSchema.methods.updateStatus = function (
+  status: TBankConnectionStatus,
+  errorCode?: string,
+  errorMessage?: string
+) {
   this.consentStatus = status;
   if (errorCode) this.errorCode = errorCode;
   if (errorMessage) this.errorMessage = errorMessage;
@@ -123,15 +129,32 @@ bankConnectionSchema.methods.updateStatus = function (status: TBankConnectionSta
 // Pre-save validation
 bankConnectionSchema.pre('save', function (next) {
   // Validate account type is a valid Plaid type
-  const validAccountTypes: TAccountType[] = ['depository', 'credit', 'loan', 'investment', 'other'];
-  if (this.accountType && !validAccountTypes.includes(this.accountType as TAccountType)) {
+  const validAccountTypes: TAccountType[] = [
+    'depository',
+    'credit',
+    'loan',
+    'investment',
+    'other',
+  ];
+  if (
+    this.accountType &&
+    !validAccountTypes.includes(this.accountType as TAccountType)
+  ) {
     next(new Error('Invalid account type'));
     return;
   }
 
   // Validate consent status
-  const validStatuses: TBankConnectionStatus[] = ['active', 'expired', 'revoked', 'error'];
-  if (this.consentStatus && !validStatuses.includes(this.consentStatus as TBankConnectionStatus)) {
+  const validStatuses: TBankConnectionStatus[] = [
+    'active',
+    'expired',
+    'revoked',
+    'error',
+  ];
+  if (
+    this.consentStatus &&
+    !validStatuses.includes(this.consentStatus as TBankConnectionStatus)
+  ) {
     next(new Error('Invalid consent status'));
     return;
   }
@@ -144,6 +167,9 @@ bankConnectionSchema.methods.getSensitiveData = function () {
   return this.select('+plaidAccessToken');
 };
 
-const BankConnection = model<BankConnectionDocument>('BankConnection', bankConnectionSchema);
+const BankConnection = model<BankConnectionDocument>(
+  'BankConnection',
+  bankConnectionSchema
+);
 
 export default BankConnection;

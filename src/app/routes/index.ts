@@ -8,8 +8,8 @@ import { AuthRoutes } from '../modules/Auth/auth.route';
 
 import { DonationRoutes } from '../modules/Donation/donation.route';
 import { CauseRoutes } from '../modules/Causes/causes.route';
-import { BankConnectionRoutes } from '../modules/BankConnection/bankConnection.route';
-import { RoundUpTransactionRoutes } from '../modules/RoundUpTransaction/roundUpTransaction.route';
+// import { BankConnectionRoutes } from '../modules/BankConnection/bankConnection.route';
+// import { RoundUpTransactionRoutes } from '../modules/RoundUpTransaction/roundUpTransaction.route';
 
 const router = Router();
 
@@ -48,14 +48,14 @@ const moduleRoutes = [
     path: '/cause',
     route: CauseRoutes,
   },
-  {
-    path: '/bank-connection',
-    route: BankConnectionRoutes,
-  },
-  {
-    path: '/roundup-transaction',
-    route: RoundUpTransactionRoutes,
-  },
+  // {
+  //   path: '/bank-connection',
+  //   route: BankConnectionRoutes,
+  // },
+  // {
+  //   path: '/roundup-transaction',
+  //   route: RoundUpTransactionRoutes,
+  // },
 ];
 
 moduleRoutes.forEach((route) => router.use(route.path, route.route));

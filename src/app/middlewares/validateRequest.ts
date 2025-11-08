@@ -14,10 +14,11 @@ export const validateRequest = (schema: ZodObject<any, any>) => {
         params: req.params,
       });
 
-      // Overwrite validated values
+      // Overwrite validated values (excluding read-only query)
       req.body = parsedData.body || req.body;
       req.cookies = parsedData.cookies || req.cookies;
-      req.query = (parsedData.query as any) || req.query;
+      // req.query is read-only, so we store the validated query in a custom property
+      (req as any).validatedQuery = parsedData.query || req.query;
       req.params = (parsedData.params as any) || req.params;
 
       next();
@@ -37,10 +38,11 @@ export const validateRequestFromFormData = (schema: ZodObject<any, any>) => {
           params: req?.params,
         });
 
-        // Overwrite validated values
+        // Overwrite validated values (excluding read-only query)
         req.body = parsedData?.body || req?.body;
         req.cookies = parsedData?.cookies || req?.cookies;
-        req.query = (parsedData?.query as any) || req?.query;
+        // req.query is read-only, so we store the validated query in a custom property
+        (req as any).validatedQuery = parsedData?.query || req?.query;
         req.params = (parsedData?.params as any) || req?.params;
 
         next();
