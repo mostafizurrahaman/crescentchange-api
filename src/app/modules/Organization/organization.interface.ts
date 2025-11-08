@@ -26,4 +26,5 @@ export interface IORGANIZATION extends Document {
 
   tfnOrAbnNumber: string;
   zakatLicenseHolderNumber: string | null;
+  stripeConnectAccountId?: string;
 }

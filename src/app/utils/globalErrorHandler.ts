@@ -13,13 +13,15 @@ import { IErrorSource } from '../types';
 import AppError from './AppError';
 
 const globalErrorHandler = (
-  err: any,
+  err: unknown,
   _req: Request,
   res: Response,
   _next: NextFunction
 ) => {
   let statusCode = 500;
-  let message = err.message || 'Something went wrong!';
+  let message = typeof err === 'object' && err !== null && 'message' in err 
+    ? String(err.message) 
+    : 'Something went wrong!';
   let errors: IErrorSource[] = [
     {
       path: '',

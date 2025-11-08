@@ -47,6 +47,12 @@ const organizationSchema = new Schema<IORGANIZATION>(
       default: null,
     },
 
+    // Stripe Connect account for receiving donations
+    stripeConnectAccountId: {
+      type: String,
+      required: false,
+    },
+
     // Board Memeber Fields :
     boardMemberName: {
       type: String,

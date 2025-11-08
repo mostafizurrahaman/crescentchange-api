@@ -1,6 +1,6 @@
-import { FilterQuery, Query } from 'mongoose';
+import { FilterQuery, Query, Document } from 'mongoose';
 
-class QueryBuilder<T> {
+class QueryBuilder<T extends Document> {
   public modelQuery: Query<T[], T>;
   public query: Record<string, unknown>;
 

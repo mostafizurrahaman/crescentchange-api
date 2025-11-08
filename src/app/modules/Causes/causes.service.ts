@@ -2,6 +2,7 @@
 import httpStatus from 'http-status';
 import { FilterQuery, startSession } from 'mongoose';
 import { AppError } from '../../utils';
+import QueryBuilder from '../../builders/QueryBuilder';
 import Cause from './causes.model';
 import { ICause, CauseNameType } from './causes.interface';
 import Organization from '../Organization/organization.model';
@@ -82,61 +83,29 @@ const getCauseByIdFromDB = async (causeId: string) => {
   return cause;
 };
 
+// Define searchable fields
+const causeSearchFields = ['name', 'notes'];
+
 // Get all causes with filters
-const getCausesFromDB = async (filters: {
-  name?: CauseNameType;
-  organization?: string;
-  page?: number;
-  limit?: number;
-  sortBy?: string;
-  sortOrder?: 'asc' | 'desc';
-}) => {
-  const {
-    name,
-    organization,
-    page = 1,
-    limit = 10,
-    sortBy = 'createdAt',
-    sortOrder = 'desc',
-  } = filters;
+const getCausesFromDB = async (query: Record<string, unknown>) => {
+  // Apply additional filters for specific IDs
+  const filters = { ...query };
 
-  // Build query
-  const query: FilterQuery<ICause> = {};
+  // Create base query with population
+  const baseQuery = Cause.find(filters)
+    .populate('organization', 'name serviceType coverImage');
 
-  if (name) {
-    query.name = name;
-  }
+  const causeQuery = new QueryBuilder<ICause>(baseQuery, query)
+    .search(causeSearchFields)
+    .filter()
+    .sort()
+    .paginate()
+    .fields();
 
-  if (organization) {
-    query.organization = organization;
-  }
+  const result = await causeQuery.modelQuery;
+  const meta = await causeQuery.countTotal();
 
-  // Calculate pagination
-  const skip = (page - 1) * limit;
-
-  // Build sort object
-  const sort: Record<string, 1 | -1> = {};
-  sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
-
-  // Execute query
-  const causes = await Cause.find(query)
-    .populate('organization', 'name serviceType coverImage')
-    .sort(sort)
-    .skip(skip)
-    .limit(limit);
-
-  // Get total count
-  const total = await Cause.countDocuments(query);
-
-  return {
-    causes,
-    meta: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
-    },
-  };
+  return { causes: result, meta };
 };
 
 // Get causes by organization

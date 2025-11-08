@@ -1,60 +1,75 @@
 import { Router } from 'express';
-import { auth, validateRequest } from '../../middlewares';
-import { DonationValidation } from './donation.validation';
 import { DonationController } from './donation.controller';
+import { DonationValidation } from './donation.validation';
+import { auth, validateRequest } from '../../middlewares';
 import { ROLE } from '../Auth/auth.constant';
 
 const router = Router();
 
-// Create donation (CLIENT only)
-router
-  .route('/')
-  .post(
-    auth(ROLE.CLIENT),
-    validateRequest(DonationValidation.createDonationSchema),
-    DonationController.createDonation
-  )
-  .get(
-    auth(ROLE.CLIENT, ROLE.ORGANIZATION, ROLE.ADMIN),
-    validateRequest(DonationValidation.getDonationsQuerySchema),
-    DonationController.getDonations
-  );
+// Public webhook endpoint (no authentication required)
+router.post('/webhook', DonationController.handleStripeWebhook);
 
-// Get donation statistics
-router
-  .route('/statistics')
-  .get(
-    auth(ROLE.CLIENT, ROLE.ORGANIZATION, ROLE.ADMIN),
-    validateRequest(DonationValidation.getDonationsQuerySchema),
-    DonationController.getDonationStatistics
-  );
+// All other routes require authentication
+router.use(auth());
+
+// Create donation (client only)
+router.post(
+  '/',
+  auth(ROLE.CLIENT),
+  validateRequest(DonationValidation.createDonationSchema),
+  DonationController.createDonation
+);
+
+// Create payment intent directly (alternative endpoint)
+router.post(
+  '/payment-intent',
+  auth(ROLE.CLIENT),
+  DonationController.createPaymentIntent
+);
+
+// Get all donations with filtering
+router.get(
+  '/',
+  validateRequest(DonationValidation.getDonationsQuerySchema),
+  DonationController.getDonations
+);
 
 // Get donation by ID
-router
-  .route('/:id')
-  .get(
-    auth(ROLE.CLIENT, ROLE.ORGANIZATION, ROLE.ADMIN),
-    validateRequest(DonationValidation.getDonationByIdSchema),
-    DonationController.getDonationById
-  )
-  .patch(
-    auth(ROLE.ADMIN, ROLE.ORGANIZATION),
-    validateRequest(DonationValidation.updateDonationSchema),
-    DonationController.updateDonation
-  )
-  .delete(
-    auth(ROLE.ADMIN),
-    validateRequest(DonationValidation.getDonationByIdSchema),
-    DonationController.deleteDonation
-  );
+router.get(
+  '/:id',
+  validateRequest(DonationValidation.getDonationByIdSchema),
+  DonationController.getDonationById
+);
 
-// Update donation status
-router
-  .route('/:id/status')
-  .patch(
-    auth(ROLE.ADMIN, ROLE.ORGANIZATION),
-    validateRequest(DonationValidation.updateDonationStatusSchema),
-    DonationController.updateDonationStatus
-  );
+// Get user donations (admin or the user themselves)
+router.get(
+  '/user/:userId',
+  auth(ROLE.ADMIN, ROLE.CLIENT),
+  validateRequest(DonationValidation.getUserDonationsSchema),
+  DonationController.getUserDonations
+);
+
+// Get organization donations (admin or the organization themselves)
+router.get(
+  '/organization/:organizationId',
+  auth(ROLE.ADMIN, ROLE.ORGANIZATION),
+  validateRequest(DonationValidation.getOrganizationDonationsSchema),
+  DonationController.getOrganizationDonations
+);
+
+// Process refund (organization only)
+router.post(
+  '/:id/refund',
+  auth(ROLE.ORGANIZATION, ROLE.ADMIN),
+  validateRequest(DonationValidation.processRefundSchema),
+  DonationController.processRefund
+);
+
+// Get donation statistics
+router.get(
+  '/stats/:entity/:id',
+  validateRequest(DonationValidation.getDonationStatsSchema),
+  DonationController.getDonationStats
+);
 
 export const DonationRoutes = router;

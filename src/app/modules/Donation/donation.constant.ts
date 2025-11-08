@@ -1,19 +1,7 @@
 export const DONATION_TYPE = {
-  BACKPACKS_AND_BOOKS: 'backpacks_and_books',
-  DITIAL_DREAMS: 'digital_dreams',
-  EMPOWERMENT: 'empowerment',
-  FAMILY_CARE: 'family_care',
-  HEALTH_AND_WELLNESS: 'health_and_wellness',
-  HOMELESSNESS: 'homelessness',
-  INNOVATION: 'innovation',
-  LEARNING: 'learning',
-  MENTAL_HEALTH: 'mental_health',
-  MONEY_MANAGEMENT: 'money_management',
-  NUTRITION: 'nutrition',
-  OTHER: 'other',
-  RECOVERY: 'recovery',
-  SAFETY: 'safety',
-  SOCIAL_CARE: 'social_care',
+  ONE_TIME: 'one-time',
+  RECURRING: 'recurring',
+  ROUND_UP: 'round-up',
 } as const;
 
 export const DONATION_STATUS = {
@@ -25,3 +13,15 @@ export const DONATION_STATUS = {
 
 export const donationTypeValues = Object.values(DONATION_TYPE);
 export const donationStatusValues = Object.values(DONATION_STATUS);
+
+// Points calculation: $1 USD = 100 points
+export const POINTS_PER_DOLLAR = 100;
+
+// Stripe webhook events
+export const STRIPE_WEBHOOK_EVENTS = {
+  PAYMENT_INTENT_SUCCEEDED: 'payment_intent.succeeded',
+  PAYMENT_INTENT_PAYMENT_FAILED: 'payment_intent.payment_failed',
+  PAYMENT_INTENT_CANCELED: 'payment_intent.canceled',
+  CHARGE_DISPUTE_CREATED: 'charge.dispute.created',
+  CHARGE_DISPUTE_LOST: 'charge.dispute.lost',
+} as const;

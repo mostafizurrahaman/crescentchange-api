@@ -14,7 +14,7 @@ export type TProfileFileFields = {
   clientImage?: Express.Multer.File[];
   businessImage?: Express.Multer.File[];
   organizationImage?: Express.Multer.File[];
-  drivingLincenseURL?: Express.Multer.File[];
+  drivingLicenseFile?: Express.Multer.File[];
 };
 
 export type TDeactiveAccountPayload = {
@@ -22,3 +22,11 @@ export type TDeactiveAccountPayload = {
   password: string;
   deactivationReason: string;
 };
+
+// Extended Request type with user
+import type { Request } from 'express';
+import type { IAuth } from '../modules/Auth/auth.interface';
+
+export interface ExtendedRequest extends Request {
+  user: IAuth;
+}

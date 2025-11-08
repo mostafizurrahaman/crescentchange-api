@@ -6,8 +6,8 @@ const handleCastError = (err: Error.CastError) => {
     message: 'Invalid mongodb object id',
     errors: [
       {
-        path: err?.path,
-        message: err?.message,
+        path: String(err?.path || ''),
+        message: err?.message || 'Invalid ID format',
       },
     ],
   };
