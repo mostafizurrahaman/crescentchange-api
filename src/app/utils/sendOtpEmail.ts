@@ -11,6 +11,9 @@ const generateEmailHTML = (
   logoCid: string,
   customMessage: string = ''
 ) => {
+  console.log({
+    siteName: config.preffered_website_name,
+  });
   return `
 <!DOCTYPE html>
 <html lang="en">

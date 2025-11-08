@@ -287,6 +287,7 @@ const createProfileIntoDB = async (
     businessPhoneNumber,
     businessEmail,
     businessWebsite,
+
     locations,
 
     // ORGANIZATION fields
@@ -306,6 +307,13 @@ const createProfileIntoDB = async (
     files?.businessImage?.[0]?.path.replace(/\\/g, '/') || null;
   const organizationImage =
     files?.organizationImage?.[0]?.path.replace(/\\/g, '/') || null;
+
+  const drivingLicenseURL =
+    files?.drivingLincenseURL?.[0]?.path.replace(/\\/g, '/') || null;
+
+  console.log({
+    drivingLicenseURL,
+  });
 
   // Start a MongoDB session for transaction
   const session = await startSession();
@@ -471,6 +479,7 @@ const createProfileIntoDB = async (
         boardMemberName,
         boardMemberEmail,
         boardMemberPhoneNumber,
+        drivingLicenseURL,
 
         nameInCard,
         cardNumber,

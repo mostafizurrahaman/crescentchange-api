@@ -10,6 +10,7 @@ const organizationSchema = new Schema<IORGANIZATION>(
       unique: true,
     },
 
+    // orgnaization details:
     name: {
       type: String,
     },
@@ -32,10 +33,21 @@ const organizationSchema = new Schema<IORGANIZATION>(
     phoneNumber: {
       type: String,
     },
+
     coverImage: {
       type: String,
     },
 
+    // Verify Your registration
+    tfnOrAbnNumber: {
+      type: String,
+    },
+    zakatLicenseHolderNumber: {
+      type: String,
+      default: null,
+    },
+
+    // Board Memeber Fields :
     boardMemberName: {
       type: String,
     },
@@ -45,7 +57,11 @@ const organizationSchema = new Schema<IORGANIZATION>(
     boardMemberPhoneNumber: {
       type: String,
     },
+    drivingLicenseURL: {
+      type: String,
+    },
 
+    //  Payment method information :
     nameInCard: {
       type: String,
     },
@@ -57,14 +73,6 @@ const organizationSchema = new Schema<IORGANIZATION>(
     },
     cardCVC: {
       type: String,
-    },
-
-    tfnOrAbnNumber: {
-      type: String,
-    },
-    zakatLicenseHolderNumber: {
-      type: String,
-      default: null,
     },
   },
   { timestamps: true, versionKey: false }

@@ -43,19 +43,24 @@ router.route('/create-Profile').post(
     { name: 'clientImage', maxCount: 1 },
     { name: 'businessImage', maxCount: 1 },
     { name: 'organizationImage', maxCount: 1 },
+    { name: 'drivingLincenseURL', maxCount: 1 },
   ]),
   validateRequestFromFormData(AuthValidation.createProfileSchema),
   AuthController.createProfile
 );
 
 // 6. updatePhoto
-router
-  .route('/update-photo')
-  .put(
-    auth(ROLE.CLIENT, ROLE.BUSINESS, ROLE.ORGANIZATION, ROLE.ADMIN),
-    upload.single('file'),
-    AuthController.updatePhoto
-  );
+router.route('/update-photo').put(
+  auth(ROLE.CLIENT, ROLE.BUSINESS, ROLE.ORGANIZATION, ROLE.ADMIN),
+  upload.fields([
+    { name: 'file', maxCount: 1 },
+    { name: 'image', maxCount: 1 },
+    { name: 'photo', maxCount: 1 },
+    { name: 'profileImage', maxCount: 1 },
+    { name: 'avatar', maxCount: 1 },
+  ]),
+  AuthController.updatePhoto
+);
 
 // 7. changePassword
 router

@@ -14,6 +14,7 @@ export type TProfileFileFields = {
   clientImage?: Express.Multer.File[];
   businessImage?: Express.Multer.File[];
   organizationImage?: Express.Multer.File[];
+  drivingLincenseURL?: Express.Multer.File[];
 };
 
 export type TDeactiveAccountPayload = {

@@ -95,12 +95,16 @@ const updateCause = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const user = req.user as IAuth;
 
+  console.log({
+    id,
+    user,
+  });
   // Check if user is authorized to update
   if (user.role === ROLE.ORGANIZATION) {
     const cause = await CauseService.getCauseByIdFromDB(id);
     const organization = await Organization.findOne({ auth: user._id });
 
-    if (cause.organization.toString() !== organization?._id.toString()) {
+    if (cause.organization?._id.toString() !== organization?._id.toString()) {
       throw new AppError(
         httpStatus.FORBIDDEN,
         'You are not authorized to update this cause!'
@@ -127,7 +131,7 @@ const deleteCause = asyncHandler(async (req, res) => {
     const cause = await CauseService.getCauseByIdFromDB(id);
     const organization = await Organization.findOne({ auth: user._id });
 
-    if (cause.organization.toString() !== organization?._id.toString()) {
+    if (cause.organization?._id.toString() !== organization?._id.toString()) {
       throw new AppError(
         httpStatus.FORBIDDEN,
         'You are not authorized to delete this cause!'

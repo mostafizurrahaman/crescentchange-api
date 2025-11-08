@@ -13,11 +13,19 @@ const storage = multer.diskStorage({
       folderPath = './public/images';
     } else if (file.mimetype.startsWith('video')) {
       folderPath = './public/videos';
+    } else if (file.mimetype === 'application/pdf') {
+      folderPath = './public/documents';
+    } else if (
+      file.mimetype ===
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      file.mimetype === 'application/vnd.ms-excel'
+    ) {
+      folderPath = './public/spreadsheets';
     } else {
       callback(
         new AppError(
           httpStatus.BAD_REQUEST,
-          'Only images and videos are allowed'
+          'Only images, videos, PDFs, and Excel files are allowed'
         ),
         './public'
       );
@@ -45,6 +53,56 @@ const storage = multer.diskStorage({
   },
 });
 
-const upload = multer({ storage });
+// File filter to validate file types
+const fileFilter = (
+  req: Express.Request,
+  file: Express.Multer.File,
+  callback: multer.FileFilterCallback
+) => {
+  const allowedImageTypes = [
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+  ];
+  const allowedVideoTypes = [
+    'video/mp4',
+    'video/avi',
+    'video/mov',
+    'video/wmv',
+  ];
+  const allowedDocTypes = ['application/pdf'];
+  const allowedExcelTypes = [
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+    'application/vnd.ms-excel', // .xls
+  ];
+
+  const allAllowedTypes = [
+    ...allowedImageTypes,
+    ...allowedVideoTypes,
+    ...allowedDocTypes,
+    ...allowedExcelTypes,
+  ];
+
+  if (allAllowedTypes.includes(file.mimetype)) {
+    callback(null, true);
+  } else {
+    callback(
+      new AppError(
+        httpStatus.BAD_REQUEST,
+        'Only images, videos, PDFs, and Excel files are allowed'
+      )
+    );
+  }
+};
+
+const upload = multer({
+  storage,
+  fileFilter,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB file size limit
+    files: 5, // Maximum 5 files per request
+  },
+});
 
 export default upload;

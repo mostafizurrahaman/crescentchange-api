@@ -139,7 +139,6 @@ const createProfileSchema = z.object({
       tfnOrAbnNumber: z.string().optional(),
       zakatLicenseHolderNumber: z.string().nullable().optional(),
     })
-    .strict()
     .superRefine((data, ctx) => {
       if (data.role === ROLE.CLIENT) {
         if (!data.name) {

@@ -17,6 +17,7 @@ export interface IORGANIZATION extends Document {
   boardMemberName: string;
   boardMemberEmail: string;
   boardMemberPhoneNumber: string;
+  drivingLicenseURL: string;
 
   nameInCard: string;
   cardNumber: string;

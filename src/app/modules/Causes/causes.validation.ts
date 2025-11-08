@@ -21,7 +21,11 @@ const createCauseSchema = z.object({
 const updateCauseSchema = z.object({
   body: z
     .object({
-      name: z.enum(causeNameTypeValues as [string, ...string[]]).optional(),
+      name: z
+        .enum(causeNameTypeValues as [string, ...string[]], {
+          error: 'Invalid cause name!',
+        })
+        .optional(),
       notes: z.string().max(500).optional(),
     })
     .strict(),
@@ -53,7 +57,11 @@ const getCausesByOrganizationSchema = z.object({
 // Get causes query schema
 const getCausesQuerySchema = z.object({
   query: z.object({
-    name: z.enum(causeNameTypeValues as [string, ...string[]]).optional(),
+    name: z
+      .enum(causeNameTypeValues as [string, ...string[]], {
+        error: 'Invalid cause name!',
+      })
+      .optional(),
     organization: z.string().optional(),
     page: z.coerce.number().int().positive().default(1).optional(),
     limit: z.coerce.number().int().positive().max(100).default(10).optional(),
@@ -66,7 +74,9 @@ const getCausesQuerySchema = z.object({
 const bulkAssignCausesSchema = z.object({
   body: z.object({
     causeNames: z
-      .array(z.enum(causeNameTypeValues as [string, ...string[]]))
+      .array(z.enum(causeNameTypeValues as [string, ...string[]]), {
+        error: 'Invalid caues name!',
+      })
       .min(1, 'At least one cause must be selected!')
       .max(20, 'Maximum 20 causes can be assigned!'),
   }),
