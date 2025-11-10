@@ -9,7 +9,6 @@ import { AuthRoutes } from '../modules/Auth/auth.route';
 import DonationRoutes from '../modules/donation/donation.route';
 import { CauseRoutes } from '../modules/Causes/causes.route';
 import StripeRoutes from '../modules/Stripe/stripe.route';
-import webhookRoutes from './webhook.route';
 // import { BankConnectionRoutes } from '../modules/BankConnection/bankConnection.route';
 // import { RoundUpTransactionRoutes } from '../modules/RoundUpTransaction/roundUpTransaction.route';
 
@@ -50,13 +49,10 @@ const moduleRoutes = [
     path: '/cause',
     route: CauseRoutes,
   },
+
   {
     path: '/stripe',
     route: StripeRoutes,
-  },
-  {
-    path: '/webhook',
-    route: webhookRoutes,
   },
   // {
   //   path: '/bank-connection',

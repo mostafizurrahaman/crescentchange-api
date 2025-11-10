@@ -4,10 +4,9 @@ import { Response } from 'express';
 import { asyncHandler, sendResponse, AppError } from '../../utils';
 import { ExtendedRequest } from '../../types';
 import { DonationService } from './donation.service';
-import { 
-  TGetUserDonationsQuery, 
+import {
+  TGetUserDonationsQuery,
   TGetOrganizationDonationsQuery,
-  TCreateDonationRecordPayload,
   TProcessPaymentForDonationParams,
   TProcessPaymentForDonationBody,
   TRetryFailedPaymentParams,
@@ -44,66 +43,73 @@ const createOneTimeDonation = asyncHandler(
 );
 
 // 2. Get user donations with pagination and filters
-const getUserDonations = asyncHandler(async (req: ExtendedRequest, res: Response) => {
-  // Get user from request
-  const userId = req.user?._id.toString();
-  if (!userId) {
-    throw new AppError(httpStatus.UNAUTHORIZED, 'User not authenticated');
+const getUserDonations = asyncHandler(
+  async (req: ExtendedRequest, res: Response) => {
+    // Get user from request
+    const userId = req.user?._id.toString();
+    if (!userId) {
+      throw new AppError(httpStatus.UNAUTHORIZED, 'User not authenticated');
+    }
+
+    // Get validated query (validation handled by middleware)
+    const validatedQuery = (
+      req as unknown as { validatedQuery?: TGetUserDonationsQuery }
+    ).validatedQuery;
+    const query: TGetUserDonationsQuery =
+      validatedQuery || (req.query as unknown as TGetUserDonationsQuery);
+
+    // Prepare filters
+    const filters = {
+      donor: userId,
+      ...(query.status !== 'all' && { status: query.status }),
+      ...(query.donationType !== 'all' && { donationType: query.donationType }),
+    };
+
+    // Call service layer
+    const result = await DonationService.getDonationsByUser(
+      userId,
+      query.page,
+      query.limit,
+      filters
+    );
+
+    // Send standardized response
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      message: 'Donations retrieved successfully',
+      data: result,
+    });
   }
-
-  // Get validated query (validation handled by middleware)
-  const validatedQuery = (req as unknown as { validatedQuery?: TGetUserDonationsQuery }).validatedQuery;
-  const query: TGetUserDonationsQuery = validatedQuery || req.query as unknown as TGetUserDonationsQuery;
-
-  // Prepare filters
-  const filters = {
-    donor: userId,
-    ...(query.status !== 'all' && { status: query.status }),
-    ...(query.donationType !== 'all' && { donationType: query.donationType }),
-  };
-
-  // Call service layer
-  const result = await DonationService.getDonationsByUser(
-    userId,
-    query.page,
-    query.limit,
-    filters
-  );
-
-  // Send standardized response
-  sendResponse(res, {
-    statusCode: httpStatus.OK,
-    message: 'Donations retrieved successfully',
-    data: result,
-  });
-});
+);
 
 // 3. Get specific donation by ID (user must own it)
-const getDonationById = asyncHandler(async (req: ExtendedRequest, res: Response) => {
-  // Get user from request
-  const userId = req.user?._id.toString();
-  if (!userId) {
-    throw new AppError(httpStatus.UNAUTHORIZED, 'User not authenticated');
+const getDonationById = asyncHandler(
+  async (req: ExtendedRequest, res: Response) => {
+    // Get user from request
+    const userId = req.user?._id.toString();
+    if (!userId) {
+      throw new AppError(httpStatus.UNAUTHORIZED, 'User not authenticated');
+    }
+
+    // Get validated params (validation handled by middleware)
+    const { id } = req.params;
+
+    // Call service layer
+    const donation = await DonationService.getDonationById(id);
+
+    // Check if user owns this donation
+    if (donation.donor._id.toString() !== userId) {
+      throw new AppError(httpStatus.FORBIDDEN, 'Access denied');
+    }
+
+    // Send standardized response
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      message: 'Donation retrieved successfully',
+      data: donation,
+    });
   }
-
-  // Get validated params (validation handled by middleware)
-  const { id } = req.params;
-
-  // Call service layer
-  const donation = await DonationService.getDonationById(id);
-
-  // Check if user owns this donation
-  if (donation.donor._id.toString() !== userId) {
-    throw new AppError(httpStatus.FORBIDDEN, 'Access denied');
-  }
-
-  // Send standardized response
-  sendResponse(res, {
-    statusCode: httpStatus.OK,
-    message: 'Donation retrieved successfully',
-    data: donation,
-  });
-});
+);
 
 // 4. Get donations by organization ID (for organization admin)
 const getOrganizationDonations = asyncHandler(
@@ -118,8 +124,12 @@ const getOrganizationDonations = asyncHandler(
 
     // Get validated params and query (validation handled by middleware)
     const { organizationId } = req.params;
-    const validatedQuery = (req as unknown as { validatedQuery?: TGetOrganizationDonationsQuery }).validatedQuery;
-    const query: TGetOrganizationDonationsQuery = validatedQuery || req.query as unknown as TGetOrganizationDonationsQuery;
+    const validatedQuery = (
+      req as unknown as { validatedQuery?: TGetOrganizationDonationsQuery }
+    ).validatedQuery;
+    const query: TGetOrganizationDonationsQuery =
+      validatedQuery ||
+      (req.query as unknown as TGetOrganizationDonationsQuery);
 
     // TODO: Add authorization check to ensure user can access organization's donations
     // For now, we'll allow organization admins to view their donations
@@ -151,39 +161,6 @@ const getOrganizationDonations = asyncHandler(
   }
 );
 
-// 5. Create donation record (separate from payment)
-const createDonationRecord = asyncHandler(
-  async (req: ExtendedRequest, res: Response) => {
-    // Get user from request
-    const userId = req.user?._id.toString();
-    if (!userId) {
-      throw new AppError(httpStatus.UNAUTHORIZED, 'User not authenticated');
-    }
-
-    // Get validated body
-    const body = req.body as TCreateDonationRecordPayload;
-
-    // Call service layer with explicit idempotency key
-    const result = await DonationService.createDonationRecord({
-      ...body,
-      userId,
-      donationId: req.headers['idempotency-key'] as string || body.donationId,
-    });
-
-    // Send standardized response
-    sendResponse(res, {
-      statusCode: httpStatus.CREATED,
-      message: result.isIdempotent 
-        ? 'Donation record already exists (idempotent request)' 
-        : 'Donation record created successfully',
-      data: {
-        donation: result.donation,
-        isIdempotent: result.isIdempotent,
-      },
-    });
-  }
-);
-
 // 6. Process payment for existing donation
 const processPaymentForDonation = asyncHandler(
   async (req: ExtendedRequest, res: Response) => {
@@ -198,7 +175,10 @@ const processPaymentForDonation = asyncHandler(
     const body = req.body as TProcessPaymentForDonationBody;
 
     // Call service layer
-    const result = await DonationService.processPaymentForDonation(donationId, body);
+    const result = await DonationService.processPaymentForDonation(
+      donationId,
+      body
+    );
 
     // Send standardized response
     sendResponse(res, {
@@ -263,15 +243,12 @@ const retryFailedPayment = asyncHandler(
 );
 
 export const DonationController = {
-  // Legacy endpoint (creates donation and processes payment)
   createOneTimeDonation,
-  
-  // New separated endpoints
-  createDonationRecord,
+
   processPaymentForDonation,
   getDonationFullStatus,
   retryFailedPayment,
-  
+
   // Existing endpoints
   getUserDonations,
   getDonationById,

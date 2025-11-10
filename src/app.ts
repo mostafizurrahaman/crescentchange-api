@@ -4,6 +4,7 @@ import cors from 'cors';
 import express, { Application, NextFunction, Request, Response } from 'express';
 import morgan from 'morgan';
 import routes from './app/routes';
+import webhookRoutes from './app/routes/webhook.routes';
 import { globalErrorHandler, notFoundHandler } from './app/utils';
 
 // app
@@ -30,6 +31,35 @@ app.use(cookieParser());
 app.use(morgan('dev'));
 // static files
 app.use('/public', express.static('public'));
+
+
+
+// Apply raw body middleware BEFORE body parsing for webhooks
+app.use('/api/v1/webhook/donation', (req, res, next) => {
+  let rawBody = '';
+  
+  req.on('data', (chunk) => {
+    rawBody += chunk;
+  });
+  
+  req.on('end', () => {
+    req.rawBody = rawBody;
+    // Parse JSON for processing but keep raw for signature verification
+    try {
+      req.body = JSON.parse(rawBody);
+    } catch (e) {
+      req.body = {};
+    }
+    next();
+  });
+  
+  req.on('error', (err) => {
+    next(err);
+  });
+});
+
+// Add webhook routes after the raw body middleware
+app.use('/api/v1/webhook', webhookRoutes);
 
 //body parser
 app.use(express.json());

@@ -6,22 +6,12 @@ import { DonationValidation } from './donation.validation';
 
 const router = Router();
 
-// Legacy: Create one-time donation (creates donation and processes payment in one step)
+// NEW: Create one-time donation with PaymentIntent
 router.post(
-  '/one-time',
+  '/one-time/create',
   auth(),
   validateRequest(DonationValidation.createOneTimeDonationSchema),
   DonationController.createOneTimeDonation
-);
-
-// NEW API DESIGN - Separated donation creation and payment processing
-
-// 1. Create donation record (separate from payment processing)
-router.post(
-  '/one-time/without-payment',
-  auth(),
-  validateRequest(DonationValidation.createDonationRecordSchema),
-  DonationController.createDonationRecord
 );
 
 // 2. Process payment for existing donation

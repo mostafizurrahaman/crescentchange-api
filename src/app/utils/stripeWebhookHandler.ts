@@ -2,7 +2,13 @@ import { Request, Response } from 'express';
 import { stripe, STRIPE_EVENTS } from '../lib/stripeHelper';
 import { DonationService } from '../modules/donation/donation.service';
 import config from '../config';
-import logger from './logger';
+
+// Simple logger replacement
+const logger = {
+  error: (message: string) => console.error(message),
+  info: (message: string) => console.log(message),
+  log: (message: string) => console.log(message),
+};
 
 export const handleStripeWebhook = async (req: Request, res: Response) => {
   const sig = req.headers['stripe-signature'] as string;
@@ -12,7 +18,7 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
     return res.status(400).send('Webhook signature missing');
   }
 
-  let event: Stripe.Event;
+  let event: any; // Stripe.Event
 
   try {
     event = stripe.webhooks.constructEvent(req.body, sig, config.stripe.webhookSecret);
@@ -26,19 +32,25 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
   try {
     switch (event.type) {
       case STRIPE_EVENTS.CHECKOUT_SESSION_COMPLETED: {
-        const session = event.data.object as Stripe.Checkout.Session;
+        const session = event.data.object; // as Stripe.Checkout.Session
         await handleCheckoutSessionCompleted(session);
         break;
       }
 
+      case STRIPE_EVENTS.PAYMENT_INTENT_SUCCEEDED: {
+        const paymentIntent = event.data.object; // as Stripe.PaymentIntent
+        await handlePaymentIntentSucceeded(paymentIntent);
+        break;
+      }
+
       case STRIPE_EVENTS.PAYMENT_INTENT_FAILED: {
-        const paymentIntent = event.data.object as Stripe.PaymentIntent;
+        const paymentIntent = event.data.object; // as Stripe.PaymentIntent
         await handlePaymentIntentFailed(paymentIntent);
         break;
       }
 
       case STRIPE_EVENTS.PAYMENT_INTENT_CANCELED: {
-        const paymentIntent = event.data.object as Stripe.PaymentIntent;
+        const paymentIntent = event.data.object; // as Stripe.PaymentIntent
         await handlePaymentIntentCanceled(paymentIntent);
         break;
       }
@@ -55,7 +67,7 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
   }
 };
 
-async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) {
+async function handleCheckoutSessionCompleted(session: any) { // Stripe.Checkout.Session
   const donationId = session.metadata?.donationId;
   
   if (!donationId) {
@@ -88,7 +100,48 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) 
   }
 }
 
-async function handlePaymentIntentFailed(paymentIntent: Stripe.PaymentIntent) {
+async function handlePaymentIntentSucceeded(paymentIntent: any) { // Stripe.PaymentIntent
+  const { metadata } = paymentIntent;
+  
+  if (!metadata?.donorId || !metadata?.organizationId) {
+    logger.error('Missing required metadata in payment_intent.succeeded');
+    return;
+  }
+
+  try {
+    // Find donation by payment intent ID
+    const donation = await DonationService.findDonationByPaymentIntentId(paymentIntent.id);
+    
+    if (!donation) {
+      logger.error(`No donation found for payment intent ${paymentIntent.id}`);
+      return;
+    }
+
+    // Update donation status using the service method
+    const updatedDonation = await DonationService.updateDonationStatus(
+      (donation as any)._id?.toString() || (donation as any).id?.toString(),
+      'completed',
+      paymentIntent.id,
+      undefined // customer ID
+    );
+
+    if (!updatedDonation) {
+      logger.error(`Failed to update donation for payment intent ${paymentIntent.id}`);
+      return;
+    }
+
+    logger.info(`Payment intent ${paymentIntent.id} marked as completed`);
+
+    // TODO: Send donation receipt email
+    // TODO: Update user points
+    // TODO: Send notifications if needed
+  } catch (error: any) {
+    logger.error(`Error handling payment intent success: ${error.message}`);
+    throw error;
+  }
+}
+
+async function handlePaymentIntentFailed(paymentIntent: any) { // Stripe.PaymentIntent
   const paymentIntentId = paymentIntent.id;
   
   try {
@@ -108,7 +161,7 @@ async function handlePaymentIntentFailed(paymentIntent: Stripe.PaymentIntent) {
   }
 }
 
-async function handlePaymentIntentCanceled(paymentIntent: Stripe.PaymentIntent) {
+async function handlePaymentIntentCanceled(paymentIntent: any) { // Stripe.PaymentIntent
   const paymentIntentId = paymentIntent.id;
   
   try {

@@ -3,7 +3,7 @@ import { Document, Types } from 'mongoose';
 export interface IDonation {
   donor: Types.ObjectId;
   organization: Types.ObjectId;
-  cause?: Types.ObjectId;
+  cause: Types.ObjectId;
   donationType: 'one-time' | 'recurring' | 'round-up';
   amount: number;
   currency: string;

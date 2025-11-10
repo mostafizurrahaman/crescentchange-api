@@ -8,14 +8,22 @@ import httpStatus from 'http-status';
 import { StripeService } from '../Stripe/stripe.service';
 import { ICheckoutSessionResponse } from '../Stripe/stripe.interface';
 import { IDonationWithTracking } from './donation.interface';
+import Organization from '../Organization/organization.model';
 
-// 1. Create donation record (separate from payment processing)
-const createDonationRecord = async (
-  payload: TCreateOneTimeDonationPayload & { 
+// Helper function to generate unique idempotency key
+const generateIdempotencyKey = (): string => {
+  return `don-${new Types.ObjectId().toString()}-${Date.now()}`;
+};
+
+// 1. Create donation record with transaction support (single consolidated function)
+const createOneTimeDonation = async (
+  payload: TCreateOneTimeDonationPayload & {
     userId: string;
-    donationId?: string; // For idempotency
   }
-) => {
+): Promise<{
+  donation: IDonation;
+  isIdempotent: boolean;
+}> => {
   const {
     amount,
     causeId,
@@ -23,67 +31,89 @@ const createDonationRecord = async (
     userId,
     connectedAccountId,
     specialMessage,
-    donationId: idempotencyKey,
   } = payload;
 
-  // Check for existing donation (idempotency)
-  if (idempotencyKey) {
-    const existingDonation = await Donation.findOne({ 
+  // Generate idempotency key on backend
+  const idempotencyKey = generateIdempotencyKey();
+
+  // Start mongoose session for transaction
+  const session = await mongoose.startSession();
+
+  try {
+    await session.startTransaction();
+
+    // Check for existing donation with this idempotency key (within transaction)
+    const existingDonation = await Donation.findOne({
       idempotencyKey,
-      donor: new Types.ObjectId(userId)
-    });
+    }).session(session);
+
     if (existingDonation) {
+      await session.commitTransaction();
       return {
         donation: existingDonation,
         isIdempotent: true,
       };
     }
-  }
 
-  // Validate organization exists
-  // TODO: Add organization existence check
-  // const organization = await Organization.findById(organizationId);
-  // if (!organization) {
-  //   throw new AppError(httpStatus.NOT_FOUND, 'Organization not found!');
-  // }
+    // Validate organization exists
+    const organization = await Organization.findById(organizationId).session(
+      session
+    );
+    if (!organization) {
+      throw new AppError(httpStatus.NOT_FOUND, 'Organization not found!');
+    }
 
-  // Generate unique ID for the donation
-  const donationUniqueId = new Types.ObjectId();
+    // Validate causeId is provided
+    if (!causeId || causeId.trim() === '') {
+      throw new AppError(httpStatus.BAD_REQUEST, 'Cause ID is required!');
+    }
 
-  // Create donation record with pending status
-  const donation = new Donation({
-    _id: donationUniqueId,
-    donor: new Types.ObjectId(userId),
-    organization: new Types.ObjectId(organizationId),
-    cause: causeId ? new Types.ObjectId(causeId) : undefined,
-    donationType: 'one-time',
-    amount,
-    currency: 'USD',
-    status: 'pending',
-    specialMessage,
-    pointsEarned: Math.floor(amount * 100), // 100 points per dollar
-    connectedAccountId,
-    idempotencyKey,
-    createdAt: new Date(),
-  });
+    // Generate unique ID for the donation
+    const donationUniqueId = new Types.ObjectId();
 
-  try {
-    const savedDonation = await donation.save();
-    
+    // Create donation record with pending status
+    const donation = new Donation({
+      _id: donationUniqueId,
+      donor: new Types.ObjectId(userId),
+      organization: new Types.ObjectId(organizationId),
+      cause: new Types.ObjectId(causeId), // Required field
+      donationType: 'one-time',
+      amount,
+      currency: 'USD',
+      status: 'pending',
+      specialMessage,
+      pointsEarned: Math.floor(amount * 100), // 100 points per dollar
+      connectedAccountId,
+      idempotencyKey,
+      createdAt: new Date(),
+    });
+
+    // Save donation within transaction
+    const savedDonation = await donation.save({ session });
+
+    // Commit transaction
+    await session.commitTransaction();
+
     return {
       donation: savedDonation,
       isIdempotent: false,
     };
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    // Rollback on any error
+    await session.abortTransaction();
+
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error occurred';
     throw new AppError(
       httpStatus.INTERNAL_SERVER_ERROR,
       `Failed to create donation record: ${errorMessage}`
     );
+  } finally {
+    await session.endSession();
   }
 };
 
-// 1a. Process payment for existing donation (separate endpoint)
+// 1a. Process payment for existing donation (separate endpoint) - for CheckoutSession flow
 const processPaymentForDonation = async (
   donationId: string,
   paymentData?: {
@@ -130,8 +160,9 @@ const processPaymentForDonation = async (
     );
 
     // Update donation with session information
+    // Note: payment_intent_id will be set when the webhook is triggered
     donation.stripeSessionId = session.sessionId;
-    donation.status = 'processing'; // Update status to indicate payment is in progress
+    donation.status = 'pending'; // Keep as pending until payment is completed
     await donation.save();
 
     return {
@@ -139,27 +170,13 @@ const processPaymentForDonation = async (
       session,
     };
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error occurred';
     throw new AppError(
       httpStatus.INTERNAL_SERVER_ERROR,
       `Failed to create payment session: ${errorMessage}`
     );
   }
-};
-
-// 1b. Legacy method - creates donation and processes payment in one step
-const createOneTimeDonation = async (
-  payload: TCreateOneTimeDonationPayload & { userId: string }
-) => {
-  const { donation } = await createDonationRecord(payload);
-  const { session } = await processPaymentForDonation(
-    donation._id.toString()
-  );
-  
-  return {
-    donation,
-    session,
-  };
 };
 
 // 2. Get donation by ID
@@ -416,7 +433,7 @@ const updateDonationPaymentStatus = async (
   }
 ): Promise<IDonation | null> => {
   const donation = await findDonationByPaymentIntentId(paymentIntentId);
-  
+
   if (!donation) {
     return null;
   }
@@ -425,7 +442,7 @@ const updateDonationPaymentStatus = async (
   const donationWithTracking = donation as IDonationWithTracking;
 
   // Update status and attempt tracking
-  const updateData: Record<string, unknown> = { 
+  const updateData: Record<string, unknown> = {
     status: status === 'completed' ? 'completed' : 'failed',
     paymentAttempts: (donationWithTracking.paymentAttempts || 0) + 1,
     lastPaymentAttempt: new Date(),
@@ -434,23 +451,26 @@ const updateDonationPaymentStatus = async (
   if (paymentData?.chargeId) {
     updateData.stripeChargeId = paymentData.chargeId;
   }
-  
+
   if (paymentData?.customerId) {
     updateData.stripeCustomerId = paymentData.customerId;
   }
 
   if (status === 'failed' && paymentData?.failureReason) {
     // Store failure reason in special message or custom error field
-    updateData.specialMessage = `${donation.specialMessage || ''}\n[Payment Failed: ${paymentData.failureReason}]`;
+    updateData.specialMessage = `${
+      donation.specialMessage || ''
+    }\n[Payment Failed: ${paymentData.failureReason}]`;
   }
 
-  return await Donation.findByIdAndUpdate(
+  return (await Donation.findByIdAndUpdate(
     donationWithTracking._id,
     { $set: updateData },
     { new: true }
-  ).populate('donor', 'name email')
+  )
+    .populate('donor', 'name email')
     .populate('organization', 'name')
-    .populate('cause', 'name description') as unknown as IDonation;
+    .populate('cause', 'name description')) as unknown as IDonation;
 };
 
 // 10. Retry failed payment
@@ -458,13 +478,16 @@ const retryFailedPayment = async (
   donationId: string
 ): Promise<{ donation: IDonation; session: ICheckoutSessionResponse }> => {
   const donation = await Donation.findById(donationId);
-  
+
   if (!donation) {
     throw new AppError(httpStatus.NOT_FOUND, 'Donation not found!');
   }
 
   if (donation.status !== 'failed') {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Can only retry failed donations!');
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Can only retry failed donations!'
+    );
   }
 
   // Type donation with tracking fields
@@ -473,7 +496,10 @@ const retryFailedPayment = async (
   // Check if there have been too many attempts
   const maxRetries = 3;
   if (donationWithTracking.paymentAttempts >= maxRetries) {
-    throw new AppError(httpStatus.TOO_MANY_REQUESTS, 'Maximum payment retries reached!');
+    throw new AppError(
+      httpStatus.TOO_MANY_REQUESTS,
+      'Maximum payment retries reached!'
+    );
   }
 
   // Clear previous session info and retry
@@ -501,15 +527,17 @@ const getDonationFullStatus = async (
   };
 }> => {
   const donation = await getDonationById(donationId);
-  
+
   // Type donation with tracking fields
   const donationWithTracking = donation as IDonationWithTracking;
-  
+
   const paymentStatus = {
     status: donation.status,
     lastPaymentAttempt: donationWithTracking.lastPaymentAttempt,
     paymentAttempts: donationWithTracking.paymentAttempts || 0,
-    canRetry: donation.status === 'failed' && (donationWithTracking.paymentAttempts || 0) < 3,
+    canRetry:
+      donation.status === 'failed' &&
+      (donationWithTracking.paymentAttempts || 0) < 3,
     sessionId: donation.stripeSessionId,
     paymentIntentId: donation.stripePaymentIntentId,
   };
@@ -520,54 +548,20 @@ const getDonationFullStatus = async (
   };
 };
 
-// 12. Create donation with transaction (for data integrity)
-const createDonationWithTransaction = async (
-  payload: TCreateOneTimeDonationPayload & { 
-    userId: string;
-    donationId?: string;
-  }
-) => {
-  const session = await mongoose.startSession();
-  
-  try {
-    await session.startTransaction();
-    
-    // Create donation record within transaction
-    const result = await createDonationRecord(payload);
-    
-    // If successful, commit transaction
-    await session.commitTransaction();
-    
-    return result;
-  } catch (error: unknown) {
-    // Rollback on any error
-    await session.abortTransaction();
-    
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    throw new AppError(
-      httpStatus.INTERNAL_SERVER_ERROR,
-      `Failed to create donation with transaction: ${errorMessage}`
-    );
-  } finally {
-    await session.endSession();
-  }
-};
-
 export const DonationService = {
   // Core donation functions
-  createDonationRecord,
-  createOneTimeDonation,
-  createDonationWithTransaction,
+  createOneTimeDonation, // Single consolidated function
+
   getDonationById,
   getDonationFullStatus,
-  
+
   // Payment processing
   processPaymentForDonation,
   retryFailedPayment,
   updateDonationStatus,
   updateDonationPaymentStatus,
   updateDonationStatusByPaymentIntent,
-  
+
   // Query functions
   findDonationByPaymentIntentId,
   getDonationsByUser,
