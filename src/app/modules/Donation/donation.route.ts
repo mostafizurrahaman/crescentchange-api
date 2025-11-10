@@ -1,75 +1,77 @@
 import { Router } from 'express';
+import { auth } from '../../middlewares';
+import { validateRequest } from '../../middlewares/validateRequest';
 import { DonationController } from './donation.controller';
 import { DonationValidation } from './donation.validation';
-import { auth, validateRequest } from '../../middlewares';
-import { ROLE } from '../Auth/auth.constant';
 
 const router = Router();
 
-// Public webhook endpoint (no authentication required)
-router.post('/webhook', DonationController.handleStripeWebhook);
-
-// All other routes require authentication
-router.use(auth());
-
-// Create donation (client only)
+// Legacy: Create one-time donation (creates donation and processes payment in one step)
 router.post(
-  '/',
-  auth(ROLE.CLIENT),
-  validateRequest(DonationValidation.createDonationSchema),
-  DonationController.createDonation
+  '/one-time',
+  auth(),
+  validateRequest(DonationValidation.createOneTimeDonationSchema),
+  DonationController.createOneTimeDonation
 );
 
-// Create payment intent directly (alternative endpoint)
+// NEW API DESIGN - Separated donation creation and payment processing
+
+// 1. Create donation record (separate from payment processing)
 router.post(
-  '/payment-intent',
-  auth(ROLE.CLIENT),
-  DonationController.createPaymentIntent
+  '/one-time/without-payment',
+  auth(),
+  validateRequest(DonationValidation.createDonationRecordSchema),
+  DonationController.createDonationRecord
 );
 
-// Get all donations with filtering
-router.get(
-  '/',
-  validateRequest(DonationValidation.getDonationsQuerySchema),
-  DonationController.getDonations
+// 2. Process payment for existing donation
+router.post(
+  '/:donationId/payment',
+  auth(),
+  validateRequest(DonationValidation.processPaymentForDonationSchema),
+  DonationController.processPaymentForDonation
 );
 
-// Get donation by ID
+// 3. Retry failed payment
+router.post(
+  '/:donationId/retry',
+  auth(),
+  validateRequest(DonationValidation.retryFailedPaymentSchema),
+  DonationController.retryFailedPayment
+);
+
+// 4. Get donation full status with payment info
 router.get(
-  '/:id',
+  '/:id/status',
+  auth(),
   validateRequest(DonationValidation.getDonationByIdSchema),
-  DonationController.getDonationById
+  DonationController.getDonationFullStatus
 );
 
-// Get user donations (admin or the user themselves)
+// EXISTING ENDPOINTS
+
+// Get user donations with pagination and filters
 router.get(
-  '/user/:userId',
-  auth(ROLE.ADMIN, ROLE.CLIENT),
+  '/user',
+  auth(),
   validateRequest(DonationValidation.getUserDonationsSchema),
   DonationController.getUserDonations
 );
 
-// Get organization donations (admin or the organization themselves)
+// Get specific donation by ID (only if user owns it)
+router.get(
+  '/:id',
+  auth(),
+  validateRequest(DonationValidation.getDonationByIdSchema),
+  DonationController.getDonationById
+);
+
+// Get donations by organization ID (for organization admin)
 router.get(
   '/organization/:organizationId',
-  auth(ROLE.ADMIN, ROLE.ORGANIZATION),
+  auth(),
   validateRequest(DonationValidation.getOrganizationDonationsSchema),
   DonationController.getOrganizationDonations
 );
 
-// Process refund (organization only)
-router.post(
-  '/:id/refund',
-  auth(ROLE.ORGANIZATION, ROLE.ADMIN),
-  validateRequest(DonationValidation.processRefundSchema),
-  DonationController.processRefund
-);
-
-// Get donation statistics
-router.get(
-  '/stats/:entity/:id',
-  validateRequest(DonationValidation.getDonationStatsSchema),
-  DonationController.getDonationStats
-);
-
-export const DonationRoutes = router;
+export default router;

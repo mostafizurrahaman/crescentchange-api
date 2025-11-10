@@ -13,7 +13,7 @@ let server: Server | null = null;
 async function bootstrap() {
   try {
     // Connect to MongoDB
-    await mongoose.connect(config.db_url as string);
+    await mongoose.connect(config.dbUrl as string);
     console.log('🛢 Database connected successfully');
 
     // Seed initial admin if not already present
@@ -21,6 +21,7 @@ async function bootstrap() {
 
     // Start the HTTP server
     const port = config.port;
+    console.log(`Debug: Config port is ${port}, process.env.PORT is ${process.env.PORT}`);
     server = http.createServer(app);
 
     server.listen(port, () => {

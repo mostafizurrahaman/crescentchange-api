@@ -1,107 +1,125 @@
 import { Document, Types } from 'mongoose';
-import { DONATION_TYPE, DONATION_STATUS } from './donation.constant';
 
-export type DonationType = typeof DONATION_TYPE[keyof typeof DONATION_TYPE];
-export type DonationStatus = typeof DONATION_STATUS[keyof typeof DONATION_STATUS];
-
-// Interface for creating a donation
-export interface ICreateDonation {
-  donor?: Types.ObjectId | string;
-  organization: Types.ObjectId | string;
-  cause?: Types.ObjectId | string;
-  donationType: DonationType;
-  amount: number; // Amount in cents (e.g., 1000 for $10.00)
-  currency?: string;
-  specialMessage?: string;
-  roundUpTransactionIds?: Types.ObjectId[] | string[];
-  scheduledDonationId?: Types.ObjectId | string;
-}
-
-// Interface for Stripe payment intent creation
-export interface ICreatePaymentIntent {
-  amount: number;
-  currency?: string;
-  metadata: {
-    donorId: string;
-    organizationId: string;
-    causeId?: string;
-    donationType: string;
-  };
-  transfer_data?: {
-    destination: string; // Stripe Connect account ID
-  };
-}
-
-// Interface for donation progress statistics
-export interface IDonationStats {
-  totalDonations: number;
-  totalAmount: number; // In cents
-  averageAmount: number;
-  donationCounts: {
-    oneTime: number;
-    recurring: number;
-    roundUp: number;
-  };
-  monthlyStats: Array<{
-    month: string;
-    count: number;
-    amount: number;
-  }>;
-}
-
-// Main donation document interface
-export interface IDonation extends Document {
-  _id: Types.ObjectId;
+export interface IDonation {
   donor: Types.ObjectId;
   organization: Types.ObjectId;
   cause?: Types.ObjectId;
-  donationType: DonationType;
-  amount: number; // Amount in cents
+  donationType: 'one-time' | 'recurring' | 'round-up';
+  amount: number;
   currency: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'refunded';
+  donationDate: Date;
   stripePaymentIntentId?: string;
   stripeChargeId?: string;
-  stripeConnectAccountId: string; // Organization's Stripe Connect account
-  status: DonationStatus;
-  donationDate: Date;
+  stripeSessionId?: string;
+  stripeCustomerId?: string;
   specialMessage?: string;
+  pointsEarned: number;
+  connectedAccountId?: string;
+  // Additional fields for recurring and round-up donations
   scheduledDonationId?: Types.ObjectId;
   roundUpId?: Types.ObjectId;
   roundUpTransactionIds?: Types.ObjectId[];
   receiptGenerated: boolean;
   receiptId?: Types.ObjectId;
-  pointsEarned: number; // Calculated: amount / 100
-  refundAmount?: number; // Amount refunded in cents
-  refundDate?: Date;
-  refundReason?: string;
+  // New fields for idempotency and payment tracking
+  idempotencyKey?: string;
+  paymentAttempts?: number;
+  lastPaymentAttempt?: Date;
+}
+
+// Extended interface for donations with tracking data
+export interface IDonationWithTracking extends IDonation {
+  paymentAttempts: number;
+  lastPaymentAttempt?: Date;
+  _id: Types.ObjectId;
+}
+
+// Donation service response type
+export interface IDonationWithPopulated {
+  _id: Types.ObjectId;
+  donor: { _id: Types.ObjectId; name: string; email: string };
+  organization: { _id: Types.ObjectId; name: string };
+  cause?: { _id: Types.ObjectId; name: string; description?: string };
+  donationType: 'one-time' | 'recurring' | 'round-up';
+  amount: number;
+  currency: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'refunded';
+  donationDate: Date;
+  stripePaymentIntentId?: string;
+  stripeChargeId?: string;
+  stripeSessionId?: string;
+  stripeCustomerId?: string;
+  specialMessage?: string;
+  pointsEarned: number;
+  connectedAccountId?: string;
+  paidAmount?: number;
+}
+
+export interface IDonationModel extends IDonation, Document {
   createdAt: Date;
   updatedAt: Date;
 }
 
-// Interface for donation filter options
-export interface IDonationFilters {
-  donor?: Types.ObjectId | string;
-  organization?: Types.ObjectId | string;
-  cause?: Types.ObjectId | string;
-  donationType?: DonationType;
-  status?: DonationStatus;
-  startDate?: Date;
-  endDate?: Date;
-  searchTerm?: string;
-  page?: number;
-  limit?: number;
-  sortBy?: string;
-  sortOrder?: 'asc' | 'desc';
-  fields?: string;
+export interface ICheckoutSessionRequest {
+  amount: number;
+  causeId?: string;
+  organizationId: string;
+  userId: string;
+  connectedAccountId?: string;
+  specialMessage?: string;
 }
 
-// Interface for Stripe webhook event
-export interface IStripeWebhookEvent {
-  id: string;
-  object: string;
-  api_version: string;
-  created: number;
-  type: string;
-  data: {
-    object: unknown;
-  };
+// ScheduledDonation interface for recurring donations
+export interface IScheduledDonation {
+  user: Types.ObjectId;
+  organization: Types.ObjectId;
+  amount: number;
+  currency: string;
+  frequency: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'custom';
+  startDate: Date;
+  nextDonationDate: Date;
+  endDate?: Date;
+  isActive: boolean;
+  lastExecutedDate?: Date;
+  totalExecutions: number;
+  causeCategory?: string;
+  specialMessage?: string;
+  stripeCustomerId?: string;
 }
+
+// RoundUp interface
+export interface IRoundUp {
+  user: Types.ObjectId;
+  organization: Types.ObjectId;
+  bankConnection: Types.ObjectId;
+  thresholdAmount?: number;
+  monthlyLimit?: number;
+  autoDonateTrigger: {
+    type: 'amount' | 'days' | 'both';
+    amount?: number;
+    days?: number;
+  };
+  specialMessage?: string;
+  isActive: boolean;
+  currentAccumulatedAmount: number;
+  lastDonationDate?: Date;
+  nextAutoDonationDate?: Date;
+  cycleStartDate: Date;
+}
+
+// Note: IRoundUpTransaction interface is handled by the existing RoundUpTransaction module
+// The existing module has a more comprehensive interface with additional fields
+
+// Extended model interfaces
+export interface IScheduledDonationModel extends IScheduledDonation, Document {
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IRoundUpModel extends IRoundUp, Document {
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Note: IRoundUpTransactionModel is handled by the existing RoundUpTransaction module

@@ -16,7 +16,10 @@ const auth = (...requiredRoles: TRole[]) => {
     }
 
     // checking if the given token is valid
-    const decoded = verifyToken(token, config.jwt.access_secret!) as JwtPayload;
+    const decoded = verifyToken(
+      token,
+      config.jwt.accessTokenSecret!
+    ) as JwtPayload;
 
     const { id, iat } = decoded;
 

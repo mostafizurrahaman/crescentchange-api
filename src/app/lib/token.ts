@@ -14,9 +14,9 @@ type TTokenData = {
 };
 
 export const createAccessToken = (payload: TTokenData): string => {
-  const token = jwt.sign(payload, config.jwt.access_secret!, {
+  const token = jwt.sign(payload, config.jwt.accessTokenSecret!, {
     algorithm: 'HS256',
-    expiresIn: config.jwt.access_expires_in!,
+    expiresIn: config.jwt.accessTokenExpiresIn!,
   } as SignOptions);
 
   return token;
@@ -41,9 +41,9 @@ export const createAccessToken = (payload: TTokenData): string => {
 // };
 
 export const createRefreshToken = (payload: { email: string }): string => {
-  const token = jwt.sign(payload, config.jwt.refresh_secret!, {
+  const token = jwt.sign(payload, config.jwt.refreshTokenSecret!, {
     algorithm: 'HS256',
-    expiresIn: config.jwt.refresh_expires_in!,
+    expiresIn: config.jwt.refreshTokenExpiresIn!,
   } as SignOptions);
 
   return token;

@@ -51,7 +51,7 @@
     "nodemailer": "^7.0.10",
     "otp-generator": "^4.0.1",
     "plaid": "^21.0.0",
-    "stripe": "^19.1.0",
+    "stripe": "^19.3.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {

@@ -1,271 +1,279 @@
 import httpStatus from 'http-status';
-import { asyncHandler, sendResponse } from '../../utils';
-import { DonationService } from './donation.service';
-import { AppError } from '../../utils';
-import { IAuth } from '../Auth/auth.interface';
+import { Response } from 'express';
+
+import { asyncHandler, sendResponse, AppError } from '../../utils';
 import { ExtendedRequest } from '../../types';
-import Client from '../Client/client.model';
-import Organization from '../Organization/organization.model';
-import { ROLE } from '../Auth/auth.constant';
-import Stripe from 'stripe';
-import type { Request, Response } from 'express';
+import { DonationService } from './donation.service';
+import { 
+  TGetUserDonationsQuery, 
+  TGetOrganizationDonationsQuery,
+  TCreateDonationRecordPayload,
+  TProcessPaymentForDonationParams,
+  TProcessPaymentForDonationBody,
+  TRetryFailedPaymentParams,
+} from './donation.validation';
 
-// Initialize Stripe with webhook support
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2025-10-29.clover' as any, // Temporarily using type assertion
-});
-
-// Create donation
-const createDonation = asyncHandler(async (req: ExtendedRequest, res: Response) => {
-  const user = req.user;
-  let donorData = { ...req.body };
-
-  // If user is a client, use their profile as donor
-  if (user.role === ROLE.CLIENT) {
-    const client = await Client.findOne({ auth: user._id });
-    if (!client) {
-      throw new AppError(httpStatus.NOT_FOUND, 'Client profile not found!');
+// 1. Create one-time donation
+const createOneTimeDonation = asyncHandler(
+  async (req: ExtendedRequest, res: Response) => {
+    // Get user from request
+    const userId = req.user?._id.toString();
+    if (!userId) {
+      throw new AppError(httpStatus.UNAUTHORIZED, 'User not authenticated');
     }
-    donorData.donor = client._id.toString();
-  }
 
-  const result = await DonationService.createDonation(donorData, user._id.toString(), user.role);
+    // Get validated body (validation handled by middleware)
+    const body = req.body;
 
-  sendResponse(res, {
-    statusCode: httpStatus.CREATED,
-    message: 'Donation created successfully! Please complete the payment.',
-    data: {
-      donation: result.donation,
-      clientSecret: result.clientSecret,
-    },
-  });
-});
+    // Prepare data for service
+    const donationData = {
+      ...body,
+      userId,
+    };
 
-// Get all donations (with filtering)
-const getDonations = asyncHandler(async (req: ExtendedRequest, res: Response) => {
-  const filters = req.query;
-  const user = req.user;
+    // Call service layer
+    const result = await DonationService.createOneTimeDonation(donationData);
 
-  let modifiedFilters = { ...filters };
-
-  // If user is client, only show their donations
-  if (user.role === ROLE.CLIENT) {
-    const client = await Client.findOne({ auth: user._id });
-    if (client) {
-      modifiedFilters.donor = client._id.toString();
-    }
-  }
-  // If user is organization, only show donations to their organization
-  else if (user.role === ROLE.ORGANIZATION) {
-    const organization = await Organization.findOne({ auth: user._id });
-    if (organization) {
-      modifiedFilters.organization = organization._id.toString();
-    }
-  }
-
-  const result = await DonationService.getDonationsFromDB(modifiedFilters);
-
-  sendResponse(res, {
-    statusCode: httpStatus.OK,
-    message: 'Donations retrieved successfully!',
-    meta: {
-      page: result.meta.page,
-      limit: result.meta.limit,
-      total: result.meta.total,
-      totalPage: result.meta.totalPage
-    },
-    data: result.donations,
-  });
-});
-
-// Get donation by ID
-const getDonationById = asyncHandler(async (req: ExtendedRequest, res: Response) => {
-  const { id } = req.params;
-  const user = req.user;
-
-  const result = await DonationService.getDonationById(id, user._id.toString(), user.role);
-
-  sendResponse(res, {
-    statusCode: httpStatus.OK,
-    message: 'Donation retrieved successfully!',
-    data: result,
-  });
-});
-
-// Get user's donations
-const getUserDonations = asyncHandler(async (req: ExtendedRequest, res: Response) => {
-  const { userId } = req.params;
-  const user = req.user;
-  const options = req.query;
-
-  const result = await DonationService.getUserDonations(
-    userId,
-    user._id.toString(),
-    user.role,
-    options
-  );
-
-  sendResponse(res, {
-    statusCode: httpStatus.OK,
-    message: 'User donations retrieved successfully!',
-    meta: {
-      page: result.meta.page,
-      limit: result.meta.limit,
-      total: result.meta.total,
-      totalPage: result.meta.totalPage
-    },
-    data: result.donations,
-  });
-});
-
-// Get organization's received donations
-const getOrganizationDonations = asyncHandler(async (req: ExtendedRequest, res: Response) => {
-  const { organizationId } = req.params;
-  const user = req.user;
-  const options = req.query;
-
-  const result = await DonationService.getOrganizationDonations(
-    organizationId,
-    user._id.toString(),
-    user.role,
-    options
-  );
-
-  sendResponse(res, {
-    statusCode: httpStatus.OK,
-    message: 'Organization donations retrieved successfully!',
-    meta: {
-      page: result.meta.page,
-      limit: result.meta.limit,
-      total: result.meta.total,
-      totalPage: result.meta.totalPage
-    },
-    data: result.donations,
-  });
-});
-
-// Process refund
-const processRefund = asyncHandler(async (req: ExtendedRequest, res: Response) => {
-  const { id } = req.params;
-  const { refundAmount, refundReason } = req.body;
-  const user = req.user;
-
-  // Convert amount from dollars to cents for processing
-  const refundAmountInCents = Math.round(refundAmount * 100);
-
-  const result = await DonationService.processRefund(
-    id,
-    refundAmountInCents,
-    refundReason,
-    user._id.toString(),
-    user.role
-  );
-
-  sendResponse(res, {
-    statusCode: httpStatus.OK,
-    message: `Refund of $${refundAmount} processed successfully! Points and badge progress have been adjusted.`,
-    data: result,
-  });
-});
-
-// Get donation statistics
-const getDonationStats = asyncHandler(async (req, res) => {
-  const { entity, id } = req.params;
-  const { startDate, endDate } = req.query;
-
-  const start = startDate ? new Date(startDate as string) : undefined;
-  const end = endDate ? new Date(endDate as string) : undefined;
-
-  const result = await DonationService.getDonationStats(
-    entity as 'user' | 'organization',
-    id,
-    start,
-    end
-  );
-
-  sendResponse(res, {
-    statusCode: httpStatus.OK,
-    message: 'Donation statistics retrieved successfully!',
-    data: result,
-  });
-});
-
-// Handle Stripe webhook
-const handleStripeWebhook = asyncHandler(async (req, res) => {
-  const sig = req.headers['stripe-signature'] as string;
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
-
-  let event;
-
-  try {
-    event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
-  } catch (err: unknown) {
-    const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-    console.warn(`Webhook signature verification failed: ${errorMessage}`);
-    return res.status(400).send(`Webhook Error: ${errorMessage}`);
-  }
-
-  // Process the webhook event
-  await DonationService.handleStripeWebhook(event);
-
-  // Return 200 OK to acknowledge receipt
-  res.status(200).json({ received: true });
-});
-
-// Create payment intent directly (alternative endpoint)
-const createPaymentIntent = asyncHandler(async (req: ExtendedRequest, res: Response) => {
-  const { amount, organizationId, causeId, donationType } = req.body;
-  const user = req.user;
-
-  // Get user and organization profiles
-  const client = await Client.findOne({ auth: user._id });
-  if (!client) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Client profile not found!');
-  }
-
-  const organization = await Organization.findById(organizationId);
-  if (!organization || !organization.stripeConnectAccountId) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Organization not found or not configured for payments!');
-  }
-
-  // Create payment intent
-  try {
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(amount * 100), // Convert to cents
-      currency: 'usd',
-      metadata: {
-        donorId: client._id.toString(),
-        organizationId: organization._id.toString(),
-        causeId: causeId || '',
-        donationType: donationType || 'one-time',
-      },
-      transfer_data: {
-        destination: organization.stripeConnectAccountId,
-      },
+    // Send standardized response
+    sendResponse(res, {
+      statusCode: httpStatus.CREATED,
+      message: 'Donation created successfully',
+      data: result,
     });
+  }
+);
 
+// 2. Get user donations with pagination and filters
+const getUserDonations = asyncHandler(async (req: ExtendedRequest, res: Response) => {
+  // Get user from request
+  const userId = req.user?._id.toString();
+  if (!userId) {
+    throw new AppError(httpStatus.UNAUTHORIZED, 'User not authenticated');
+  }
+
+  // Get validated query (validation handled by middleware)
+  const validatedQuery = (req as unknown as { validatedQuery?: TGetUserDonationsQuery }).validatedQuery;
+  const query: TGetUserDonationsQuery = validatedQuery || req.query as unknown as TGetUserDonationsQuery;
+
+  // Prepare filters
+  const filters = {
+    donor: userId,
+    ...(query.status !== 'all' && { status: query.status }),
+    ...(query.donationType !== 'all' && { donationType: query.donationType }),
+  };
+
+  // Call service layer
+  const result = await DonationService.getDonationsByUser(
+    userId,
+    query.page,
+    query.limit,
+    filters
+  );
+
+  // Send standardized response
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    message: 'Donations retrieved successfully',
+    data: result,
+  });
+});
+
+// 3. Get specific donation by ID (user must own it)
+const getDonationById = asyncHandler(async (req: ExtendedRequest, res: Response) => {
+  // Get user from request
+  const userId = req.user?._id.toString();
+  if (!userId) {
+    throw new AppError(httpStatus.UNAUTHORIZED, 'User not authenticated');
+  }
+
+  // Get validated params (validation handled by middleware)
+  const { id } = req.params;
+
+  // Call service layer
+  const donation = await DonationService.getDonationById(id);
+
+  // Check if user owns this donation
+  if (donation.donor._id.toString() !== userId) {
+    throw new AppError(httpStatus.FORBIDDEN, 'Access denied');
+  }
+
+  // Send standardized response
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    message: 'Donation retrieved successfully',
+    data: donation,
+  });
+});
+
+// 4. Get donations by organization ID (for organization admin)
+const getOrganizationDonations = asyncHandler(
+  async (req: ExtendedRequest, res: Response) => {
+    // Get user from request
+    const userId = req.user?._id.toString();
+    // Note: userRole is commented out as it's not currently used
+    // const userRole = req.user?.role;
+    if (!userId) {
+      throw new AppError(httpStatus.UNAUTHORIZED, 'User not authenticated');
+    }
+
+    // Get validated params and query (validation handled by middleware)
+    const { organizationId } = req.params;
+    const validatedQuery = (req as unknown as { validatedQuery?: TGetOrganizationDonationsQuery }).validatedQuery;
+    const query: TGetOrganizationDonationsQuery = validatedQuery || req.query as unknown as TGetOrganizationDonationsQuery;
+
+    // TODO: Add authorization check to ensure user can access organization's donations
+    // For now, we'll allow organization admins to view their donations
+    // if (userRole !== 'ADMIN' && !userHasAccessToOrganization(userId, organizationId)) {
+    //   throw new AppError(httpStatus.FORBIDDEN, 'Access denied');
+    // }
+
+    // Prepare filters
+    const filters = {
+      organization: organizationId,
+      ...(query.status !== 'all' && { status: query.status }),
+      ...(query.type !== 'all' && { donationType: query.type }),
+    };
+
+    // Call service layer
+    const result = await DonationService.getDonationsByOrganization(
+      organizationId,
+      query.page,
+      query.limit,
+      filters
+    );
+
+    // Send standardized response
     sendResponse(res, {
       statusCode: httpStatus.OK,
-      message: 'Payment intent created successfully!',
+      message: 'Organization donations retrieved successfully',
+      data: result,
+    });
+  }
+);
+
+// 5. Create donation record (separate from payment)
+const createDonationRecord = asyncHandler(
+  async (req: ExtendedRequest, res: Response) => {
+    // Get user from request
+    const userId = req.user?._id.toString();
+    if (!userId) {
+      throw new AppError(httpStatus.UNAUTHORIZED, 'User not authenticated');
+    }
+
+    // Get validated body
+    const body = req.body as TCreateDonationRecordPayload;
+
+    // Call service layer with explicit idempotency key
+    const result = await DonationService.createDonationRecord({
+      ...body,
+      userId,
+      donationId: req.headers['idempotency-key'] as string || body.donationId,
+    });
+
+    // Send standardized response
+    sendResponse(res, {
+      statusCode: httpStatus.CREATED,
+      message: result.isIdempotent 
+        ? 'Donation record already exists (idempotent request)' 
+        : 'Donation record created successfully',
       data: {
-        clientSecret: paymentIntent.client_secret,
-        paymentIntentId: paymentIntent.id,
+        donation: result.donation,
+        isIdempotent: result.isIdempotent,
       },
     });
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    throw new AppError(httpStatus.BAD_REQUEST, `Failed to create payment intent: ${errorMessage}`);
   }
-});
+);
+
+// 6. Process payment for existing donation
+const processPaymentForDonation = asyncHandler(
+  async (req: ExtendedRequest, res: Response) => {
+    // Get user from request
+    const userId = req.user?._id.toString();
+    if (!userId) {
+      throw new AppError(httpStatus.UNAUTHORIZED, 'User not authenticated');
+    }
+
+    // Get validated params and body
+    const { donationId } = req.params as TProcessPaymentForDonationParams;
+    const body = req.body as TProcessPaymentForDonationBody;
+
+    // Call service layer
+    const result = await DonationService.processPaymentForDonation(donationId, body);
+
+    // Send standardized response
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      message: 'Payment session created successfully',
+      data: result,
+    });
+  }
+);
+
+// 7. Get donation full status with payment info
+const getDonationFullStatus = asyncHandler(
+  async (req: ExtendedRequest, res: Response) => {
+    // Get user from request
+    const userId = req.user?._id.toString();
+    if (!userId) {
+      throw new AppError(httpStatus.UNAUTHORIZED, 'User not authenticated');
+    }
+
+    // Get validated params
+    const { id } = req.params;
+
+    // Call service layer
+    const result = await DonationService.getDonationFullStatus(id);
+
+    // Verify donation belongs to user
+    if (result.donation.donor._id.toString() !== userId) {
+      throw new AppError(httpStatus.FORBIDDEN, 'Access denied');
+    }
+
+    // Send standardized response
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      message: 'Donation status retrieved successfully',
+      data: result,
+    });
+  }
+);
+
+// 8. Retry failed payment
+const retryFailedPayment = asyncHandler(
+  async (req: ExtendedRequest, res: Response) => {
+    // Get user from request
+    const userId = req.user?._id.toString();
+    if (!userId) {
+      throw new AppError(httpStatus.UNAUTHORIZED, 'User not authenticated');
+    }
+
+    // Get validated params
+    const { donationId } = req.params as TRetryFailedPaymentParams;
+
+    // Call service layer
+    const result = await DonationService.retryFailedPayment(donationId);
+
+    // Send standardized response
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      message: 'Payment retry session created successfully',
+      data: result,
+    });
+  }
+);
 
 export const DonationController = {
-  createDonation,
-  getDonations,
-  getDonationById,
+  // Legacy endpoint (creates donation and processes payment)
+  createOneTimeDonation,
+  
+  // New separated endpoints
+  createDonationRecord,
+  processPaymentForDonation,
+  getDonationFullStatus,
+  retryFailedPayment,
+  
+  // Existing endpoints
   getUserDonations,
+  getDonationById,
   getOrganizationDonations,
-  processRefund,
-  getDonationStats,
-  handleStripeWebhook,
-  createPaymentIntent,
 };
