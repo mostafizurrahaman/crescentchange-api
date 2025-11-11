@@ -82,7 +82,7 @@ const config: IConfig = {
     otpSecret: process.env.JWT_OTP_SECRET || 'default_otp_secret',
     accessTokenExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
     refreshTokenExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
-    otpSecretExpiresIn: process.env.JWT_OTP_SECRET_EXPIRES_IN || '5m',
+    otpSecretExpiresIn: process.env.JWT_OTP_SECRET_EXPIRES_IN || '5',
   },
   bcrypt: {
     saltRounds: parseInt(process.env.BCRYPT_SALT_ROUNDS || '12', 10),

@@ -11,9 +11,6 @@ const generateEmailHTML = (
   logoCid: string,
   customMessage: string = ''
 ) => {
-  console.log({
-    siteName: config.preffered_website_name,
-  });
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -47,7 +44,7 @@ const generateEmailHTML = (
       margin-bottom: 25px;
     }
     .header h2 {
-      color: ${config.emailColor || '#C08FFF'};
+      color: ${config.preferredWebsite.emailColor || '#C08FFF'};
       font-size: 28px;
       margin-bottom: 10px;
       font-weight: bold;
@@ -94,7 +91,7 @@ const generateEmailHTML = (
   <div class="container">
     <div class="header">
       <img src="cid:${logoCid}" alt="Logo">
-      <h2>Welcome to ${config.preffered_website_name}!</h2>
+      <h2>Welcome to ${config.preferredWebsite.name}!</h2>
       <p>We're excited to have you on board.</p>
     </div>
 
@@ -106,7 +103,7 @@ const generateEmailHTML = (
     </div>
 
     <p>Please enter this OTP to complete your email verification and start using ${
-      config.preffered_website_name
+      config.preferredWebsite.name
     }.</p>
     <p><strong>Note:</strong> This OTP will expire in 5 minutes. Be sure to enter it before it expires.</p>
 
@@ -120,7 +117,7 @@ const generateEmailHTML = (
     <!-- Footer -->
     <div class="footer">
       <p>Thank you for being a part of ${
-        config.preffered_website_name
+        config.preferredWebsite.name
       }. If you did not request this, please ignore this email.</p>
     </div>
   </div>
@@ -152,8 +149,8 @@ const sendEmail = async ({
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
-        user: config.nodemailer.email,
-        pass: config.nodemailer.password,
+        user: config.email.nodemailerEmail,
+        pass: config.email.nodemailerPassword,
       },
     });
 
@@ -162,7 +159,7 @@ const sendEmail = async ({
 
     // Email options: from, to, subject, and HTML body
     const mailOptions = {
-      from: `${config.preffered_website_name} 🌙 <${config.nodemailer.email}>`,
+      from: `${config.preferredWebsite.name} 🌙 <${config.email.nodemailerEmail}>`,
       to: email,
       subject: subject,
       html: htmlTemplate,

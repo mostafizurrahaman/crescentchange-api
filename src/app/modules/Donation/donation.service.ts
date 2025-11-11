@@ -195,6 +195,14 @@ const getDonationById = async (donationId: string): Promise<IDonation> => {
     throw new AppError(httpStatus.NOT_FOUND, 'Donation not found!');
   }
 
+  // Ensure donor information is available
+  if (!donation.donor) {
+    throw new AppError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      'Donor information not available. The donor reference may be invalid.'
+    );
+  }
+
   return donation as IDonation;
 };
 

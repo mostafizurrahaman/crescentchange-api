@@ -78,7 +78,7 @@ authSchema.pre('save', async function (next) {
 
     this.password = await bcrypt.hash(
       this.password,
-      Number(config.bcrypt_salt_rounds)
+      Number(config.bcrypt.saltRounds)
     );
   }
   next();

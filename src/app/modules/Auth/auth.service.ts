@@ -21,7 +21,12 @@ import { updateProfileImage } from './auth.utils';
 import z from 'zod';
 import jwt, { JwtPayload, SignOptions } from 'jsonwebtoken';
 
-const OTP_EXPIRY_MINUTES = Number(config.otp_expiry_minutes);
+const OTP_EXPIRY_MINUTES =
+  Number.parseInt(config.jwt.otpSecretExpiresIn as string, 10) || 5;
+
+// Debug logging to check the value
+console.log('config.jwt.otpSecretExpiresIn:', config.jwt.otpSecretExpiresIn);
+console.log('OTP_EXPIRY_MINUTES:', OTP_EXPIRY_MINUTES);
 
 // 1. createAuthIntoDB
 const createAuthIntoDB = async (payload: IAuth) => {
@@ -38,7 +43,7 @@ const createAuthIntoDB = async (payload: IAuth) => {
 
       existingUser.otp = otp;
       existingUser.otpExpiry = new Date(
-        now.getTime() + OTP_EXPIRY_MINUTES * 60 * 1000
+        now.getTime() + (OTP_EXPIRY_MINUTES || 5) * 60 * 1000
       );
       await existingUser.save();
 
@@ -66,7 +71,9 @@ const createAuthIntoDB = async (payload: IAuth) => {
     const newUser = await Auth.create({
       ...payload,
       otp,
-      otpExpiry: new Date(now.getTime() + OTP_EXPIRY_MINUTES * 60 * 1000),
+      otpExpiry: new Date(
+        now.getTime() + (OTP_EXPIRY_MINUTES || 5) * 60 * 1000
+      ),
       isVerifiedByOTP: false,
     });
 
@@ -99,7 +106,9 @@ const sendSignupOtpAgain = async (userEmail: string) => {
     await sendOtpEmail({ email: user.email, otp });
 
     user.otp = otp;
-    user.otpExpiry = new Date(now.getTime() + OTP_EXPIRY_MINUTES * 60 * 1000);
+    user.otpExpiry = new Date(
+      now.getTime() + (OTP_EXPIRY_MINUTES || 5) * 60 * 1000
+    );
     await user.save();
 
     return {
@@ -734,8 +743,8 @@ const forgotPassword = async (email: string) => {
   }
 
   // Issue token (just with email)
-  const token = jwt.sign({ email }, config.jwt.otp_secret!, {
-    expiresIn: config.jwt.otp_secret_expires_in!,
+  const token = jwt.sign({ email }, config.jwt.otpSecret!, {
+    expiresIn: config.jwt.otpSecretExpiresIn!,
   } as SignOptions);
 
   return { token };
@@ -745,7 +754,7 @@ const forgotPassword = async (email: string) => {
 const sendForgotPasswordOtpAgain = async (forgotPassToken: string) => {
   let decoded: JwtPayload;
   try {
-    decoded = jwt.verify(forgotPassToken, config.jwt.otp_secret!, {
+    decoded = jwt.verify(forgotPassToken, config.jwt.otpSecret!, {
       ignoreExpiration: true,
     }) as JwtPayload;
   } catch {
@@ -826,7 +835,7 @@ const verifyOtpForForgotPassword = async (payload: {
 }) => {
   let decoded: JwtPayload;
   try {
-    decoded = jwt.verify(payload.token, config.jwt.otp_secret!, {
+    decoded = jwt.verify(payload.token, config.jwt.otpSecret!, {
       ignoreExpiration: true,
     }) as JwtPayload;
   } catch {
@@ -896,8 +905,8 @@ const verifyOtpForForgotPassword = async (payload: {
       email: user.email,
       isResetPassword: true,
     },
-    config.jwt.otp_secret!,
-    { expiresIn: config.jwt.otp_secret_expires_in! } as SignOptions
+    config.jwt.otpSecret!,
+    { expiresIn: config.jwt.otpSecretExpiresIn! } as SignOptions
   );
 
   return { resetPasswordToken };
@@ -912,7 +921,7 @@ const resetPasswordIntoDB = async (
     throw new AppError(httpStatus.FORBIDDEN, 'Invalid reset password token!');
   }
 
-  const payload = verifyToken(resetPasswordToken, config.jwt.otp_secret!) as {
+  const payload = verifyToken(resetPasswordToken, config.jwt.otpSecret!) as {
     email: string;
     isResetPassword?: boolean;
   };
@@ -1119,7 +1128,7 @@ const getNewAccessTokenFromServer = async (refreshToken: string) => {
   // checking if the given token is valid
   const decoded = verifyToken(
     refreshToken,
-    config.jwt.refresh_secret!
+    config.jwt.refreshTokenExpiresIn!
   ) as JwtPayload;
 
   const { email, iat } = decoded;

@@ -52,12 +52,13 @@ const sendSignupOtpAgainSchema = z.object({
 const verifySignupOtpSchema = z.object({
   body: z.object({
     userEmail: z
+      .string()
       .email({ message: 'Invalid email format!' }) // Ensure it's a valid email
-      .transform((email) => email.toLowerCase()) // Convert email to lowercase
       .refine((email) => email !== '', { message: 'Email is required!' }) // Check that email is not empty
       .refine((value) => typeof value === 'string', {
         message: 'Email must be string!', // Check that email is string
-      }),
+      })
+      .transform((email) => email.toLowerCase()), // Convert email to lowercase
 
     otp: z
       .string({

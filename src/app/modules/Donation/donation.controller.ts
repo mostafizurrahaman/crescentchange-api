@@ -97,6 +97,11 @@ const getDonationById = asyncHandler(
     // Call service layer
     const donation = await DonationService.getDonationById(id);
 
+    // Check if donation has donor information
+    if (!donation.donor) {
+      throw new AppError(httpStatus.INTERNAL_SERVER_ERROR, 'Donor information not available');
+    }
+
     // Check if user owns this donation
     if (donation.donor._id.toString() !== userId) {
       throw new AppError(httpStatus.FORBIDDEN, 'Access denied');
@@ -203,6 +208,15 @@ const getDonationFullStatus = asyncHandler(
 
     // Call service layer
     const result = await DonationService.getDonationFullStatus(id);
+
+    // Verify donation and donor exist
+    if (!result?.donation) {
+      throw new AppError(httpStatus.NOT_FOUND, 'Donation not found');
+    }
+
+    if (!result.donation.donor) {
+      throw new AppError(httpStatus.INTERNAL_SERVER_ERROR, 'Donor information not available');
+    }
 
     // Verify donation belongs to user
     if (result.donation.donor._id.toString() !== userId) {
