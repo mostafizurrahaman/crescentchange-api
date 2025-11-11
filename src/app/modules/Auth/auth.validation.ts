@@ -38,7 +38,7 @@ const createAuthSchema = z.object({
 // 2. sendSignupOtpAgainSchema
 const sendSignupOtpAgainSchema = z.object({
   body: z.object({
-    userEmail: z
+    email: z
       .email({ message: 'Invalid email format!' }) // Ensure it's a valid email
       .transform((email) => email.toLowerCase()) // Convert email to lowercase
       .refine((email) => email !== '', { message: 'Email is required!' }) // Check that email is not empty
@@ -51,7 +51,7 @@ const sendSignupOtpAgainSchema = z.object({
 // 3. verifySignupOtpSchema
 const verifySignupOtpSchema = z.object({
   body: z.object({
-    userEmail: z
+    email: z
       .string()
       .email({ message: 'Invalid email format!' }) // Ensure it's a valid email
       .refine((email) => email !== '', { message: 'Email is required!' }) // Check that email is not empty

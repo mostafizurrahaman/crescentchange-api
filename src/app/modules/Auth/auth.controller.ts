@@ -17,8 +17,8 @@ const createAuth = asyncHandler(async (req, res) => {
 
 // 2. sendSignupOtpAgain
 const sendSignupOtpAgain = asyncHandler(async (req, res) => {
-  const userEmail = req.body.userEmail;
-  const result = await AuthService.sendSignupOtpAgain(userEmail);
+  const email = req.body.email;
+  const result = await AuthService.sendSignupOtpAgain(email);
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
@@ -29,9 +29,9 @@ const sendSignupOtpAgain = asyncHandler(async (req, res) => {
 
 // 3. verifySignupOtp
 const verifySignupOtp = asyncHandler(async (req, res) => {
-  const userEmail = req.body.userEmail;
+  const email = req.body.email;
   const otp = req.body.otp;
-  const result = await AuthService.verifySignupOtpIntoDB(userEmail, otp);
+  const result = await AuthService.verifySignupOtpIntoDB(email, otp);
 
   sendResponse(res, {
     statusCode: httpStatus.CREATED,

@@ -82,16 +82,16 @@ const createAuthIntoDB = async (payload: IAuth) => {
     // } as SignOptions);
 
     return {
-      userEmail: newUser.email,
+      email: newUser.email,
       // token
     };
   }
 };
 
 // 2. sendSignupOtpAgain
-const sendSignupOtpAgain = async (userEmail: string) => {
+const sendSignupOtpAgain = async (email: string) => {
   const now = new Date();
-  const user = await Auth.isUserExistsByEmail(userEmail);
+  const user = await Auth.isUserExistsByEmail(email);
 
   if (!user) {
     throw new AppError(
@@ -112,7 +112,7 @@ const sendSignupOtpAgain = async (userEmail: string) => {
     await user.save();
 
     return {
-      userEmail: user.email,
+      email: user.email,
     };
   } else if (user.isVerifiedByOTP) {
     throw new AppError(
@@ -134,9 +134,9 @@ const sendSignupOtpAgain = async (userEmail: string) => {
 };
 
 // 3. verifySignupOtpIntoDB
-const verifySignupOtpIntoDB = async (userEmail: string, otp: string) => {
+const verifySignupOtpIntoDB = async (email: string, otp: string) => {
   const now = new Date();
-  const user = await Auth.isUserExistsByEmail(userEmail);
+  const user = await Auth.isUserExistsByEmail(email);
 
   if (!user) {
     throw new AppError(httpStatus.NOT_FOUND, 'User not found!');
