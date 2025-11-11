@@ -116,10 +116,6 @@ const createProfileSchema = z.object({
       address: z.string().optional(),
       state: z.string().optional(),
       postalCode: z.string().optional(),
-      nameInCard: z.string().optional(),
-      cardNumber: z.string().optional(),
-      cardExpiryDate: z.coerce.date().optional(),
-      cardCVC: z.string().optional(),
 
       // For BUSINESS
       category: z.string().optional(),
@@ -171,38 +167,6 @@ const createProfileSchema = z.object({
             path: ['postalCode'],
             code: z.ZodIssueCode.custom,
             message: 'Postal code is required!',
-          });
-        }
-
-        if (!data.nameInCard) {
-          ctx.addIssue({
-            path: ['nameInCard'],
-            code: z.ZodIssueCode.custom,
-            message: 'Name in card is required!',
-          });
-        }
-
-        if (!data.cardNumber) {
-          ctx.addIssue({
-            path: ['cardNumber'],
-            code: z.ZodIssueCode.custom,
-            message: 'Card number is required!',
-          });
-        }
-
-        if (!data.cardExpiryDate) {
-          ctx.addIssue({
-            path: ['cardExpiryDate'],
-            code: z.ZodIssueCode.custom,
-            message: 'Card expiry date is required!',
-          });
-        }
-
-        if (!data.cardCVC) {
-          ctx.addIssue({
-            path: ['cardCVC'],
-            code: z.ZodIssueCode.custom,
-            message: 'Card CVC is required!',
           });
         }
       }
@@ -351,38 +315,6 @@ const createProfileSchema = z.object({
             path: ['boardMemberPhoneNumber'],
             code: z.ZodIssueCode.custom,
             message: 'Board member phone number is required!',
-          });
-        }
-
-        if (!data.nameInCard) {
-          ctx.addIssue({
-            path: ['nameInCard'],
-            code: z.ZodIssueCode.custom,
-            message: 'Name in card is required!',
-          });
-        }
-
-        if (!data.cardNumber) {
-          ctx.addIssue({
-            path: ['cardNumber'],
-            code: z.ZodIssueCode.custom,
-            message: 'Card number is required!',
-          });
-        }
-
-        if (!data.cardExpiryDate) {
-          ctx.addIssue({
-            path: ['cardExpiryDate'],
-            code: z.ZodIssueCode.custom,
-            message: 'Card expiry date is required!',
-          });
-        }
-
-        if (!data.cardCVC) {
-          ctx.addIssue({
-            path: ['cardCVC'],
-            code: z.ZodIssueCode.custom,
-            message: 'Card CVC is required!',
           });
         }
 

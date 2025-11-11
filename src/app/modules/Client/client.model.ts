@@ -33,19 +33,6 @@ const clientSchema = new Schema<IClient>(
       default: defaultUserImage,
     },
 
-    nameInCard: {
-      type: String,
-    },
-    cardNumber: {
-      type: String,
-    },
-    cardExpiryDate: {
-      type: Date,
-    },
-    cardCVC: {
-      type: String,
-    },
-
     // phoneNumber: {
     //   type: String,
     //   unique: [true, 'This phone number is already used!'],

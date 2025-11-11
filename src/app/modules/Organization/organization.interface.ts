@@ -19,11 +19,6 @@ export interface IORGANIZATION extends Document {
   boardMemberPhoneNumber: string;
   drivingLicenseURL: string;
 
-  nameInCard: string;
-  cardNumber: string;
-  cardExpiryDate: Date;
-  cardCVC: string;
-
   tfnOrAbnNumber: string;
   zakatLicenseHolderNumber: string | null;
   stripeConnectAccountId?: string;

@@ -40,3 +40,31 @@ export interface IStripeWebhookEvent {
     object: any; // Stripe.PaymentIntent | Stripe.Charge
   };
 }
+
+export interface ISetupIntentRequest {
+  userId: string;
+  email: string;
+  paymentMethodType?: 'card' | 'ideal' | 'sepa_debit';
+}
+
+export interface ISetupIntentResponse {
+  client_secret: string;
+  setup_intent_id: string;
+}
+
+export interface IAttachPaymentMethodRequest {
+  paymentMethodId: string;
+  customerId: string;
+}
+
+export interface ICreatePaymentIntentWithMethodRequest {
+  amount: number;
+  currency?: string;
+  customerId: string;
+  paymentMethodId: string;
+  donationId: string;
+  organizationId: string;
+  causeId: string;
+  connectedAccountId?: string;
+  specialMessage?: string;
+}

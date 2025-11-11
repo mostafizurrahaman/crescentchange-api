@@ -12,7 +12,7 @@ import {
   TRetryFailedPaymentParams,
 } from './donation.validation';
 
-// 1. Create one-time donation
+// 1. Create one-time donation with Payment Intent
 const createOneTimeDonation = asyncHandler(
   async (req: ExtendedRequest, res: Response) => {
     // Get user from request
@@ -30,14 +30,21 @@ const createOneTimeDonation = asyncHandler(
       userId,
     };
 
-    // Call service layer
+    // Call service layer - now returns donation and payment intent
     const result = await DonationService.createOneTimeDonation(donationData);
 
-    // Send standardized response
+    // Send standardized response with both donation and payment details
     sendResponse(res, {
       statusCode: httpStatus.CREATED,
-      message: 'Donation created successfully',
-      data: result,
+      message: 'Donation created and payment initiated successfully',
+      data: {
+        donation: result.donation,
+        payment: {
+          clientSecret: result.paymentIntent.client_secret,
+          paymentIntentId: result.paymentIntent.payment_intent_id,
+          status: result.donation.status,
+        },
+      },
     });
   }
 );

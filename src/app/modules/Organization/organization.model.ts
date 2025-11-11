@@ -66,20 +66,6 @@ const organizationSchema = new Schema<IORGANIZATION>(
     drivingLicenseURL: {
       type: String,
     },
-
-    //  Payment method information :
-    nameInCard: {
-      type: String,
-    },
-    cardNumber: {
-      type: String,
-    },
-    cardExpiryDate: {
-      type: Date,
-    },
-    cardCVC: {
-      type: String,
-    },
   },
   { timestamps: true, versionKey: false }
 );

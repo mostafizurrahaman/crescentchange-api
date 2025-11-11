@@ -283,10 +283,6 @@ const createProfileIntoDB = async (
     address,
     state,
     postalCode,
-    nameInCard,
-    cardNumber,
-    cardExpiryDate,
-    cardCVC,
     // notificationPreferences,
 
     // BUSINESS fields
@@ -349,11 +345,6 @@ const createProfileIntoDB = async (
         postalCode,
 
         image: clientImage,
-
-        nameInCard,
-        cardNumber,
-        cardExpiryDate,
-        cardCVC,
       };
 
       const [client] = await Client.create([clientPayload], { session });
@@ -489,11 +480,6 @@ const createProfileIntoDB = async (
         boardMemberEmail,
         boardMemberPhoneNumber,
         drivingLicenseURL,
-
-        nameInCard,
-        cardNumber,
-        cardExpiryDate,
-        cardCVC,
 
         tfnOrAbnNumber,
         zakatLicenseHolderNumber,

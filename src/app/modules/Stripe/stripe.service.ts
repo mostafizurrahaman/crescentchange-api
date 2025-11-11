@@ -8,6 +8,10 @@ import {
   ICheckoutSessionResponse,
   IPaymentIntentRequest,
   IPaymentIntentResponse,
+  ISetupIntentRequest,
+  ISetupIntentResponse,
+  IAttachPaymentMethodRequest,
+  ICreatePaymentIntentWithMethodRequest,
 } from './stripe.interface';
 
 // 1. Create checkout session for one-time donation
@@ -346,13 +350,259 @@ const verifyWebhookSignature = (body: string, signature: string): any => {
   }
 };
 
+// 9. Create setup intent for saving payment method
+const createSetupIntent = async (
+  payload: ISetupIntentRequest
+): Promise<ISetupIntentResponse> => {
+  const { userId, email, paymentMethodType = 'card' } = payload;
+
+  try {
+    // Check if customer exists or create new one
+    let customer: Stripe.Customer;
+    const existingCustomers = await stripe.customers.list({
+      email,
+      limit: 1,
+    });
+
+    if (existingCustomers.data.length > 0) {
+      customer = existingCustomers.data[0];
+    } else {
+      customer = await createCustomer(email);
+    }
+
+    // Create setup intent
+    const setupIntent = await stripe.setupIntents.create({
+      customer: customer.id,
+      payment_method_types: [paymentMethodType],
+      metadata: {
+        userId,
+      },
+    });
+
+    return {
+      client_secret: setupIntent.client_secret || '',
+      setup_intent_id: setupIntent.id,
+    };
+  } catch (error) {
+    throw new AppError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      `Failed to create setup intent: ${(error as Error).message}`
+    );
+  }
+};
+
+// 10. Attach payment method to customer
+const attachPaymentMethod = async (
+  payload: IAttachPaymentMethodRequest
+): Promise<Stripe.PaymentMethod> => {
+  const { paymentMethodId, customerId } = payload;
+
+  if (!paymentMethodId || !customerId) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Payment method ID and customer ID are required!'
+    );
+  }
+
+  try {
+    const paymentMethod = await stripe.paymentMethods.attach(paymentMethodId, {
+      customer: customerId,
+    });
+    return paymentMethod;
+  } catch (error) {
+    throw new AppError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      `Failed to attach payment method: ${(error as Error).message}`
+    );
+  }
+};
+
+// 11. Get payment method details
+const getPaymentMethod = async (
+  paymentMethodId: string
+): Promise<Stripe.PaymentMethod> => {
+  if (!paymentMethodId) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Payment method ID is required!'
+    );
+  }
+
+  try {
+    const paymentMethod = await stripe.paymentMethods.retrieve(paymentMethodId);
+    return paymentMethod;
+  } catch (error) {
+    throw new AppError(
+      httpStatus.NOT_FOUND,
+      `Payment method not found: ${(error as Error).message}`
+    );
+  }
+};
+
+// 12. Detach payment method from customer
+const detachPaymentMethod = async (
+  paymentMethodId: string
+): Promise<Stripe.PaymentMethod> => {
+  if (!paymentMethodId) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Payment method ID is required!'
+    );
+  }
+
+  try {
+    const paymentMethod = await stripe.paymentMethods.detach(paymentMethodId);
+    return paymentMethod;
+  } catch (error) {
+    throw new AppError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      `Failed to detach payment method: ${(error as Error).message}`
+    );
+  }
+};
+
+// 13. Create payment intent with saved payment method (for direct charges)
+const createPaymentIntentWithMethod = async (
+  payload: ICreatePaymentIntentWithMethodRequest
+): Promise<IPaymentIntentResponse> => {
+  const {
+    amount,
+    currency = 'usd',
+    customerId,
+    paymentMethodId,
+    donationId,
+    organizationId,
+    causeId,
+    connectedAccountId,
+    specialMessage,
+  } = payload;
+
+  // Validate amount
+  if (amount < 1 || amount > 10000) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Invalid donation amount! Amount must be between $1 and $10,000.'
+    );
+  }
+
+  try {
+    // Create payment intent with saved payment method
+    const paymentIntentParams: Stripe.PaymentIntentCreateParams = {
+      amount: Math.round(amount * 100), // Convert to cents
+      currency,
+      customer: customerId,
+      payment_method: paymentMethodId,
+      confirm: true, // Automatically confirm the payment
+      return_url: config.stripe.stripeSuccessUrl, // Required for certain payment methods
+      metadata: {
+        donationId,
+        organizationId,
+        causeId,
+        specialMessage: specialMessage || '',
+      },
+    };
+
+    // Add transfer data for connected accounts
+    if (connectedAccountId) {
+      paymentIntentParams.transfer_data = {
+        destination: connectedAccountId,
+      };
+    }
+
+    const paymentIntent = await stripe.paymentIntents.create(
+      paymentIntentParams
+    );
+
+    return {
+      client_secret: paymentIntent.client_secret || '',
+      payment_intent_id: paymentIntent.id,
+    };
+  } catch (error) {
+    throw new AppError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      `Failed to create payment intent: ${(error as Error).message}`
+    );
+  }
+};
+
+// 14. List customer payment methods
+const listCustomerPaymentMethods = async (
+  customerId: string,
+  type: 'card' | 'us_bank_account' = 'card'
+): Promise<Stripe.PaymentMethod[]> => {
+  if (!customerId) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Customer ID is required!');
+  }
+
+  try {
+    const paymentMethods = await stripe.paymentMethods.list({
+      customer: customerId,
+      type,
+    });
+    return paymentMethods.data;
+  } catch (error) {
+    throw new AppError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      `Failed to list payment methods: ${(error as Error).message}`
+    );
+  }
+};
+
+// 15. Get or create customer by email
+const getOrCreateCustomer = async (
+  email: string,
+  name?: string
+): Promise<Stripe.Customer> => {
+  if (!email) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Email is required!');
+  }
+
+  try {
+    // Check if customer exists
+    const existingCustomers = await stripe.customers.list({
+      email,
+      limit: 1,
+    });
+
+    if (existingCustomers.data.length > 0) {
+      return existingCustomers.data[0];
+    }
+
+    // Create new customer
+    return await createCustomer(email, name);
+  } catch (error) {
+    throw new AppError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      `Failed to get or create customer: ${(error as Error).message}`
+    );
+  }
+};
+
 export const StripeService = {
+  // Checkout session methods (existing)
   createCheckoutSession,
   createCheckoutSessionWithDonation,
   retrieveCheckoutSession,
-  createRefund,
-  createCustomer,
-  getPaymentIntent,
+
+  // Payment intent methods
   createPaymentIntent,
+  createPaymentIntentWithMethod,
+  getPaymentIntent,
+
+  // Payment method methods
+  createSetupIntent,
+  attachPaymentMethod,
+  getPaymentMethod,
+  detachPaymentMethod,
+  listCustomerPaymentMethods,
+
+  // Customer methods
+  createCustomer,
+  getOrCreateCustomer,
+
+  // Refund methods
+  createRefund,
+
+  // Webhook methods
   verifyWebhookSignature,
 };

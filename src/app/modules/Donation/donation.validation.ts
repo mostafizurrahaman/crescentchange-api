@@ -81,9 +81,9 @@ const createRecurringDonationSchema = z.object({
       .number({
         error: 'Amount is required!',
       })
-      .min(0.01, { message: 'Amount must be at least 0.01!' })
-      .max(9999.99, {
-        message: 'Amount cannot exceed $9,999.99 for recurring donations!',
+      .min(1, { message: 'Amount must be at least $1!' })
+      .max(10000, {
+        message: 'Amount cannot exceed $10,000 for recurring donations!',
       }),
 
     organizationId: z
@@ -223,8 +223,8 @@ const createDonationRecordSchema = z.object({
       .number({
         error: 'Amount is required!',
       })
-      .min(0.01, { message: 'Amount must be at least 0.01!' })
-      .max(99999.99, { message: 'Amount cannot exceed $99,999.99!' }),
+      .min(1, { message: 'Amount must be at least $1!' })
+      .max(10000, { message: 'Amount cannot exceed $10,000!' }),
 
     causeId: z
       .string({
@@ -309,8 +309,8 @@ const createOneTimeDonationSchema = z.object({
       .number({
         error: 'Amount is required!',
       })
-      .min(0.01, { message: 'Amount must be at least 0.01!' })
-      .max(99999.99, { message: 'Amount cannot exceed $99,999.99!' }),
+      .min(1, { message: 'Amount must be at least $1!' })
+      .max(10000, { message: 'Amount cannot exceed $10,000!' }),
 
     currency: z
       .string()
@@ -330,6 +330,15 @@ const createOneTimeDonationSchema = z.object({
         error: 'Cause ID is required',
       })
       .min(1, { message: 'Cause ID is required!' }),
+
+    paymentMethodId: z
+      .string({
+        error: 'Payment method ID is required!',
+      })
+      .min(1, { message: 'Payment method ID is required!' })
+      .startsWith('pm_', {
+        message: 'Invalid Stripe payment method ID format!',
+      }),
 
     connectedAccountId: z.string().optional(),
 

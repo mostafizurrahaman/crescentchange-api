@@ -13,10 +13,5 @@ export interface IClient extends Document {
 
   image: string;
 
-  nameInCard: string;
-  cardNumber: string;
-  cardExpiryDate: Date;
-  cardCVC: string;
-
   // phoneNumber: string;
 }

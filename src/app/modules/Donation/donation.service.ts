@@ -9,26 +9,31 @@ import { StripeService } from '../Stripe/stripe.service';
 import { ICheckoutSessionResponse } from '../Stripe/stripe.interface';
 import { IDonationWithTracking } from './donation.interface';
 import Organization from '../Organization/organization.model';
+import { PaymentMethodService } from '../PaymentMethod/paymentMethod.service';
 
 // Helper function to generate unique idempotency key
 const generateIdempotencyKey = (): string => {
   return `don-${new Types.ObjectId().toString()}-${Date.now()}`;
 };
 
-// 1. Create donation record with transaction support (single consolidated function)
+// 1. Create one-time donation with Payment Intent (direct charge with saved payment method)
 const createOneTimeDonation = async (
   payload: TCreateOneTimeDonationPayload & {
     userId: string;
   }
 ): Promise<{
   donation: IDonation;
-  isIdempotent: boolean;
+  paymentIntent: {
+    client_secret: string;
+    payment_intent_id: string;
+  };
 }> => {
   const {
     amount,
     causeId,
     organizationId,
     userId,
+    paymentMethodId,
     connectedAccountId,
     specialMessage,
   } = payload;
@@ -36,37 +41,35 @@ const createOneTimeDonation = async (
   // Generate idempotency key on backend
   const idempotencyKey = generateIdempotencyKey();
 
+  // Validate organization exists
+  const organization = await Organization.findById(organizationId);
+  if (!organization) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Organization not found!');
+  }
+
+  // Validate causeId is provided
+  if (!causeId || causeId.trim() === '') {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Cause ID is required!');
+  }
+
+  // Verify payment method exists and belongs to user
+  const paymentMethod = await PaymentMethodService.getPaymentMethodById(
+    paymentMethodId,
+    userId
+  );
+
+  if (!paymentMethod.isActive) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Payment method is not active!'
+    );
+  }
+
   // Start mongoose session for transaction
   const session = await mongoose.startSession();
 
   try {
     await session.startTransaction();
-
-    // Check for existing donation with this idempotency key (within transaction)
-    const existingDonation = await Donation.findOne({
-      idempotencyKey,
-    }).session(session);
-
-    if (existingDonation) {
-      await session.commitTransaction();
-      return {
-        donation: existingDonation,
-        isIdempotent: true,
-      };
-    }
-
-    // Validate organization exists
-    const organization = await Organization.findById(organizationId).session(
-      session
-    );
-    if (!organization) {
-      throw new AppError(httpStatus.NOT_FOUND, 'Organization not found!');
-    }
-
-    // Validate causeId is provided
-    if (!causeId || causeId.trim() === '') {
-      throw new AppError(httpStatus.BAD_REQUEST, 'Cause ID is required!');
-    }
 
     // Generate unique ID for the donation
     const donationUniqueId = new Types.ObjectId();
@@ -76,7 +79,7 @@ const createOneTimeDonation = async (
       _id: donationUniqueId,
       donor: new Types.ObjectId(userId),
       organization: new Types.ObjectId(organizationId),
-      cause: new Types.ObjectId(causeId), // Required field
+      cause: new Types.ObjectId(causeId),
       donationType: 'one-time',
       amount,
       currency: 'USD',
@@ -84,6 +87,7 @@ const createOneTimeDonation = async (
       specialMessage,
       pointsEarned: Math.floor(amount * 100), // 100 points per dollar
       connectedAccountId,
+      stripeCustomerId: paymentMethod.stripeCustomerId,
       idempotencyKey,
       createdAt: new Date(),
     });
@@ -91,12 +95,30 @@ const createOneTimeDonation = async (
     // Save donation within transaction
     const savedDonation = await donation.save({ session });
 
+    // Create payment intent with saved payment method
+    const paymentIntent = await StripeService.createPaymentIntentWithMethod({
+      amount,
+      currency: 'usd',
+      customerId: paymentMethod.stripeCustomerId,
+      paymentMethodId: paymentMethod.stripePaymentMethodId,
+      donationId: donationUniqueId.toString(),
+      organizationId,
+      causeId,
+      connectedAccountId,
+      specialMessage,
+    });
+
+    // Update donation with payment intent ID
+    savedDonation.stripePaymentIntentId = paymentIntent.payment_intent_id;
+    savedDonation.status = 'processing';
+    await savedDonation.save({ session });
+
     // Commit transaction
     await session.commitTransaction();
 
     return {
       donation: savedDonation,
-      isIdempotent: false,
+      paymentIntent,
     };
   } catch (error: unknown) {
     // Rollback on any error
@@ -106,7 +128,7 @@ const createOneTimeDonation = async (
       error instanceof Error ? error.message : 'Unknown error occurred';
     throw new AppError(
       httpStatus.INTERNAL_SERVER_ERROR,
-      `Failed to create donation record: ${errorMessage}`
+      `Failed to create donation and process payment: ${errorMessage}`
     );
   } finally {
     await session.endSession();
