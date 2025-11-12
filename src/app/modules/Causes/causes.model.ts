@@ -4,6 +4,9 @@ import { causeNameTypeValues } from './causes.constant';
 
 const causeSchema = new Schema<ICause>(
   {
+    category: {
+
+    },
     name: {
       type: String,
       required: true,

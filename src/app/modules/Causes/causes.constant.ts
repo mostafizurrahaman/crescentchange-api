@@ -16,5 +16,10 @@ export const CAUSE_NAME_TYPE = {
   SOCIAL_CARE: 'social_care',
 } as const;
 
-export const causeNameTypeValues = Object.values(CAUSE_NAME_TYPE);
+// export const CAUSE_CATAEGORY_TYPE = {
+//   EDUCATION: 'education',
+//   YOUTH: 'youth',
+//   REFUGES: 'refuges',
+// };
 
+export const causeNameTypeValues = Object.values(CAUSE_NAME_TYPE);
