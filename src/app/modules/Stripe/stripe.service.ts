@@ -578,6 +578,97 @@ const getOrCreateCustomer = async (
   }
 };
 
+// 16. Create Stripe Connect account for organization
+const createConnectAccount = async (
+  email: string,
+  organizationName: string,
+  country: string = 'US'
+): Promise<{ accountId: string; onboardingUrl: string }> => {
+  if (!email) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Email is required!');
+  }
+
+  try {
+    // Create Connect account
+    const account = await stripe.accounts.create({
+      type: 'express', // Express accounts are easier to onboard
+      country,
+      email,
+      capabilities: {
+        card_payments: { requested: true },
+        transfers: { requested: true },
+      },
+      business_type: 'non_profit',
+      business_profile: {
+        name: organizationName,
+      },
+    });
+
+    // Create account link for onboarding
+    const accountLink = await stripe.accountLinks.create({
+      account: account.id,
+      refresh_url: `${config.stripe.stripeFailedUrl}?error=onboarding_failed`,
+      return_url: `${config.stripe.stripeSuccessUrl}?onboarding=complete`,
+      type: 'account_onboarding',
+    });
+
+    return {
+      accountId: account.id,
+      onboardingUrl: accountLink.url,
+    };
+  } catch (error) {
+    throw new AppError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      `Failed to create Connect account: ${(error as Error).message}`
+    );
+  }
+};
+
+// 17. Get Connect account details
+const getConnectAccount = async (
+  accountId: string
+): Promise<Stripe.Account> => {
+  if (!accountId) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Account ID is required!');
+  }
+
+  try {
+    return await stripe.accounts.retrieve(accountId);
+  } catch (error) {
+    throw new AppError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      `Failed to retrieve Connect account: ${(error as Error).message}`
+    );
+  }
+};
+
+// 18. Create new account link for re-onboarding
+const createAccountLink = async (
+  accountId: string
+): Promise<{ onboardingUrl: string }> => {
+  if (!accountId) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Account ID is required!');
+  }
+
+  try {
+    const accountLink = await stripe.accountLinks.create({
+      account: accountId,
+      refresh_url: `${config.stripe.stripeFailedUrl}?error=onboarding_failed`,
+      return_url: `${config.stripe.stripeSuccessUrl}?onboarding=complete`,
+      type: 'account_onboarding',
+    });
+
+    return {
+      onboardingUrl: accountLink.url,
+    };
+  } catch (error) {
+    throw new AppError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      `Failed to create account link: ${(error as Error).message}`
+    );
+  }
+};
+
 export const StripeService = {
   // Checkout session methods (existing)
   createCheckoutSession,
@@ -605,4 +696,9 @@ export const StripeService = {
 
   // Webhook methods
   verifyWebhookSignature,
+
+  // Stripe Connect methods
+  createConnectAccount,
+  getConnectAccount,
+  createAccountLink,
 };

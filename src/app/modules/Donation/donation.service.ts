@@ -1,7 +1,7 @@
 import { Types } from 'mongoose';
 import mongoose from 'mongoose';
 import { Donation } from './donation.model';
-import { IDonation } from './donation.interface';
+import { IDonation, IDonationModel } from './donation.interface';
 import { TCreateOneTimeDonationPayload } from './donation.validation';
 import { AppError } from '../../utils';
 import httpStatus from 'http-status';
@@ -10,6 +10,8 @@ import { ICheckoutSessionResponse } from '../Stripe/stripe.interface';
 import { IDonationWithTracking } from './donation.interface';
 import Organization from '../Organization/organization.model';
 import { PaymentMethodService } from '../PaymentMethod/paymentMethod.service';
+import Client from '../Client/client.model';
+import QueryBuilder from '../../builders/QueryBuilder';
 
 // Helper function to generate unique idempotency key
 const generateIdempotencyKey = (): string => {
@@ -34,17 +36,33 @@ const createOneTimeDonation = async (
     organizationId,
     userId,
     paymentMethodId,
-    connectedAccountId,
     specialMessage,
   } = payload;
 
   // Generate idempotency key on backend
   const idempotencyKey = generateIdempotencyKey();
 
+  // check is donar exists ?:
+  const donor = await Client?.findOne({
+    auth: userId,
+  });
+  if (!donor?._id) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Donor not found!');
+  }
+
   // Validate organization exists
   const organization = await Organization.findById(organizationId);
   if (!organization) {
     throw new AppError(httpStatus.NOT_FOUND, 'Organization not found!');
+  }
+
+  // Get organization's Stripe Connect account (required for receiving payments)
+  const connectedAccountId = organization.stripeConnectAccountId;
+  if (!connectedAccountId) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'This organization has not set up payment receiving. Please contact the organization to complete their Stripe Connect onboarding.'
+    );
   }
 
   // Validate causeId is provided
@@ -59,10 +77,7 @@ const createOneTimeDonation = async (
   );
 
   if (!paymentMethod.isActive) {
-    throw new AppError(
-      httpStatus.BAD_REQUEST,
-      'Payment method is not active!'
-    );
+    throw new AppError(httpStatus.BAD_REQUEST, 'Payment method is not active!');
   }
 
   // Start mongoose session for transaction
@@ -77,7 +92,7 @@ const createOneTimeDonation = async (
     // Create donation record with pending status
     const donation = new Donation({
       _id: donationUniqueId,
-      donor: new Types.ObjectId(userId),
+      donor: new Types.ObjectId(donor?._id),
       organization: new Types.ObjectId(organizationId),
       cause: new Types.ObjectId(causeId),
       donationType: 'one-time',
@@ -135,72 +150,6 @@ const createOneTimeDonation = async (
   }
 };
 
-// 1a. Process payment for existing donation (separate endpoint) - for CheckoutSession flow
-const processPaymentForDonation = async (
-  donationId: string,
-  paymentData?: {
-    successUrl?: string;
-    cancelUrl?: string;
-    paymentMethodType?: 'card' | 'ideal' | 'sepa_debit';
-  }
-): Promise<{ donation: IDonation; session: ICheckoutSessionResponse }> => {
-  // Validate donation exists
-  if (!donationId || donationId.trim() === '') {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Donation ID is required!');
-  }
-
-  const donation = await Donation.findById(donationId);
-  if (!donation) {
-    throw new AppError(httpStatus.NOT_FOUND, 'Donation not found!');
-  }
-
-  // Check if donation is already being processed
-  if (donation.stripeSessionId) {
-    throw new AppError(
-      httpStatus.CONFLICT,
-      'Payment session already exists for this donation'
-    );
-  }
-
-  // Prepare checkout session data
-  const checkoutSessionData = {
-    amount: donation.amount,
-    causeId: donation.cause?.toString(),
-    organizationId: donation.organization.toString(),
-    connectedAccountId: donation.connectedAccountId,
-    specialMessage: donation.specialMessage,
-    userId: donation.donor.toString(),
-    successUrl: paymentData?.successUrl,
-    cancelUrl: paymentData?.cancelUrl,
-    paymentMethodType: paymentData?.paymentMethodType || 'card',
-  };
-
-  try {
-    const session = await StripeService.createCheckoutSessionWithDonation(
-      checkoutSessionData,
-      donationId
-    );
-
-    // Update donation with session information
-    // Note: payment_intent_id will be set when the webhook is triggered
-    donation.stripeSessionId = session.sessionId;
-    donation.status = 'pending'; // Keep as pending until payment is completed
-    await donation.save();
-
-    return {
-      donation,
-      session,
-    };
-  } catch (error: unknown) {
-    const errorMessage =
-      error instanceof Error ? error.message : 'Unknown error occurred';
-    throw new AppError(
-      httpStatus.INTERNAL_SERVER_ERROR,
-      `Failed to create payment session: ${errorMessage}`
-    );
-  }
-};
-
 // 2. Get donation by ID
 const getDonationById = async (donationId: string): Promise<IDonation> => {
   // Validate donation ID
@@ -209,7 +158,7 @@ const getDonationById = async (donationId: string): Promise<IDonation> => {
   }
 
   const donation = await Donation.findById(donationId)
-    .populate('donor', 'name email')
+    .populate('donor', '_id name auth address state postalCode image')
     .populate('organization', 'name')
     .populate('cause', 'name description');
 
@@ -298,46 +247,57 @@ const updateDonationStatusByPaymentIntent = async (
     .populate('cause', 'name description');
 };
 
-// 6. Get donations by user with filters
+// 6. Get donations by user with filters (using QueryBuilder)
 const getDonationsByUser = async (
   userId: string,
-  page: number = 1,
-  limit: number = 10,
-  filter: Record<string, unknown> = {}
+  query: Record<string, unknown>
 ) => {
-  // Validate parameters
+  // Validate user ID
   if (!userId || userId.trim() === '') {
     throw new AppError(httpStatus.BAD_REQUEST, 'User ID is required!');
   }
 
-  if (page < 1) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Page must be at least 1!');
+  // Find donor by auth ID
+  const donor = await Client.findOne({ auth: userId });
+  if (!donor?._id) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Donor not found!');
   }
-
-  if (limit < 1 || limit > 100) {
-    throw new AppError(
-      httpStatus.BAD_REQUEST,
-      'Limit must be between 1 and 100!'
-    );
-  }
-
-  const skip = (page - 1) * limit;
 
   try {
-    const donations = await Donation.find({ donor: userId, ...filter })
-      .populate('organization', 'name')
-      .populate('cause', 'name')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    // Prepare modified query - remove 'all' values before QueryBuilder processes it
+    const modifiedQuery = { ...query };
+    if (modifiedQuery.status === 'all') {
+      delete modifiedQuery.status;
+    }
+    if (modifiedQuery.donationType === 'all') {
+      delete modifiedQuery.donationType;
+    }
 
-    const total = await Donation.countDocuments({ donor: userId, ...filter });
+    // Create base query with only donor filter
+    const baseQuery = Donation.find({ donor: donor._id })
+      .populate('organization', 'name')
+      .populate('cause', 'name');
+
+    // Define searchable fields for donations
+    const donationSearchFields = ['specialMessage', 'status', 'donationType'];
+
+    // Use QueryBuilder for flexible querying (it will apply status and donationType filters if present)
+    const donationQuery = new QueryBuilder<IDonationModel>(
+      baseQuery,
+      modifiedQuery
+    )
+      .search(donationSearchFields)
+      .filter()
+      .sort()
+      .paginate()
+      .fields();
+
+    const donations = await donationQuery.modelQuery;
+    const meta = await donationQuery.countTotal();
 
     return {
       donations,
-      total,
-      page,
-      totalPages: Math.ceil(total / limit),
+      meta,
     };
   } catch (error: unknown) {
     const errorMessage =
@@ -349,52 +309,57 @@ const getDonationsByUser = async (
   }
 };
 
-// 7. Get donations by organization with filters
+// 7. Get donations by organization with filters (using QueryBuilder)
 const getDonationsByOrganization = async (
   organizationId: string,
-  page: number = 1,
-  limit: number = 10,
-  filter: Record<string, unknown> = {}
+  query: Record<string, unknown>
 ) => {
-  // Validate parameters
+  // Validate organization ID
   if (!organizationId || organizationId.trim() === '') {
     throw new AppError(httpStatus.BAD_REQUEST, 'Organization ID is required!');
   }
 
-  if (page < 1) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Page must be at least 1!');
+  // Validate organization exists
+  const organization = await Organization.findById(organizationId);
+  if (!organization) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Organization not found!');
   }
-
-  if (limit < 1 || limit > 100) {
-    throw new AppError(
-      httpStatus.BAD_REQUEST,
-      'Limit must be between 1 and 100!'
-    );
-  }
-
-  const skip = (page - 1) * limit;
 
   try {
-    const donations = await Donation.find({
-      organization: organizationId,
-      ...filter,
-    })
-      .populate('donor', 'name email')
-      .populate('cause', 'name')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    // Prepare modified query - remove 'all' values before QueryBuilder processes it
+    const modifiedQuery = { ...query };
+    if (modifiedQuery.status === 'all') {
+      delete modifiedQuery.status;
+    }
+    if (modifiedQuery.donationType === 'all') {
+      delete modifiedQuery.donationType;
+    }
 
-    const total = await Donation.countDocuments({
-      organization: organizationId,
-      ...filter,
-    });
+    // Create base query with only organization filter
+    const baseQuery = Donation.find({ organization: organizationId })
+      .populate('donor')
+      .populate('cause', 'name');
+
+    // Define searchable fields for donations
+    const donationSearchFields = ['specialMessage', 'status', 'donationType'];
+
+    // Use QueryBuilder for flexible querying (it will apply status and donationType filters if present)
+    const donationQuery = new QueryBuilder<IDonationModel>(
+      baseQuery,
+      modifiedQuery
+    )
+      .search(donationSearchFields)
+      .filter()
+      .sort()
+      .paginate()
+      .fields();
+
+    const donations = await donationQuery.modelQuery;
+    const meta = await donationQuery.countTotal();
 
     return {
       donations,
-      total,
-      page,
-      totalPages: Math.ceil(total / limit),
+      meta,
     };
   } catch (error: unknown) {
     const errorMessage =
@@ -532,14 +497,50 @@ const retryFailedPayment = async (
     );
   }
 
-  // Clear previous session info and retry
-  donation.stripeSessionId = undefined;
-  donation.stripePaymentIntentId = undefined;
-  donation.status = 'pending';
+  // Get payment method info - need to fetch from stripe customer's default payment method
+  if (!donation.stripeCustomerId) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'No payment method associated with this donation. Please create a new donation.'
+    );
+  }
+
+  // Fetch organization for Stripe Connect account
+  const organization = await Organization.findById(donation.organization);
+  if (!organization?.stripeConnectAccountId) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Organization payment setup not found'
+    );
+  }
+
+  // For retry, we need the payment method ID which should be stored or retrieved
+  // Since we're using Payment Intent flow, we create a new payment intent
+  const paymentIntent = await StripeService.createPaymentIntentWithMethod({
+    amount: donation.amount,
+    currency: 'usd',
+    customerId: donation.stripeCustomerId,
+    paymentMethodId: donation.stripeCustomerId, // Note: This needs to be payment method ID, not customer ID
+    donationId: donation?._id.toString(),
+    organizationId: donation.organization.toString(),
+    causeId: donation.cause?.toString() || '',
+    connectedAccountId: organization.stripeConnectAccountId,
+    specialMessage: donation.specialMessage,
+  });
+
+  // Update donation with new payment intent
+  donation.stripePaymentIntentId = paymentIntent.payment_intent_id;
+  donation.status = 'processing';
+  donation.stripeSessionId = undefined; // Clear old session if any
   await donation.save();
 
-  // Create new payment session
-  return await processPaymentForDonation(donationId);
+  return {
+    donation,
+    session: {
+      sessionId: paymentIntent.payment_intent_id,
+      url: '', // Payment Intent doesn't have a URL, frontend handles with client secret
+    } as ICheckoutSessionResponse,
+  };
 };
 
 // 11. Get donation full status including payment info
@@ -586,7 +587,6 @@ export const DonationService = {
   getDonationFullStatus,
 
   // Payment processing
-  processPaymentForDonation,
   retryFailedPayment,
   updateDonationStatus,
   updateDonationPaymentStatus,

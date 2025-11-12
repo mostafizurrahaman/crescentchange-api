@@ -20,10 +20,6 @@ const createCheckoutSessionSchema = z.object({
       })
       .min(1, { message: 'Organization ID is required!' }),
     
-    connectedAccountId: z
-      .string()
-      .optional(),
-    
     specialMessage: z
       .string()
       .max(500, { message: 'Message must be less than 500 characters!' })

@@ -13,11 +13,31 @@ const createCheckoutSession = asyncHandler(async (req: Request, res: Response) =
   }
 
   // Extract validated body (validated by middleware)
-  const body = req.body;
+  const { amount, causeId, organizationId, specialMessage } = req.body;
 
-  // Prepare data for service
+  // Fetch organization to get Stripe Connect account
+  const Organization = (await import('../Organization/organization.model')).default;
+  const organization = await Organization.findById(organizationId);
+  
+  if (!organization) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Organization not found!');
+  }
+
+  const connectedAccountId = organization.stripeConnectAccountId;
+  if (!connectedAccountId) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'This organization has not set up payment receiving. Please contact the organization to complete their Stripe Connect onboarding.'
+    );
+  }
+
+  // Prepare data for service with fetched connectedAccountId
   const checkoutData = {
-    ...body,
+    amount,
+    causeId,
+    organizationId,
+    connectedAccountId,
+    specialMessage,
     userId,
   };
 

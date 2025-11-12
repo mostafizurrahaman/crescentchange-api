@@ -10,6 +10,7 @@ import DonationRoutes from '../modules/donation/donation.route';
 import { CauseRoutes } from '../modules/Causes/causes.route';
 import StripeRoutes from '../modules/Stripe/stripe.route';
 import { PaymentMethodRoutes } from '../modules/PaymentMethod/paymentMethod.route';
+import { OrganizationRoutes } from '../modules/Organization/organization.routes';
 // import { BankConnectionRoutes } from '../modules/BankConnection/bankConnection.route';
 // import { RoundUpTransactionRoutes } from '../modules/RoundUpTransaction/roundUpTransaction.route';
 
@@ -58,6 +59,10 @@ const moduleRoutes = [
   {
     path: '/payment-method',
     route: PaymentMethodRoutes,
+  },
+  {
+    path: '/organization',
+    route: OrganizationRoutes,
   },
   // {
   //   path: '/bank-connection',

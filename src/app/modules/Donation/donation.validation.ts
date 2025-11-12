@@ -1,30 +1,39 @@
 import { z } from 'zod';
 
-// 2. Get user donations schema
+// 2. Get user donations schema (with QueryBuilder support)
 const getUserDonationsSchema = z.object({
   query: z.object({
+    // Pagination
     page: z.coerce
       .number()
       .min(1, { message: 'Page must be at least 1!' })
+      .optional()
       .default(1),
 
     limit: z.coerce
       .number()
       .min(1, { message: 'Limit must be at least 1!' })
       .max(100, { message: 'Limit cannot exceed 100!' })
+      .optional()
       .default(10),
 
+    // QueryBuilder search
+    searchTerm: z.string().optional(),
+
+    // QueryBuilder sort
+    sort: z.string().optional(),
+
+    // QueryBuilder fields selection
+    fields: z.string().optional(),
+
+    // Filters
     status: z
-      .enum(['all', 'pending', 'completed', 'failed', 'refunded'], {
-        error: 'Invalid status option!',
-      })
-      .default('all'),
+      .enum(['pending', 'processing', 'completed', 'failed', 'refunded', 'all'])
+      .optional(),
 
     donationType: z
-      .enum(['all', 'one-time', 'recurring', 'round-up'], {
-        error: 'Invalid donation type!',
-      })
-      .default('all'),
+      .enum(['one-time', 'recurring', 'round-up', 'all'])
+      .optional(),
   }),
 });
 
@@ -39,7 +48,7 @@ const getDonationByIdSchema = z.object({
   }),
 });
 
-// 4. Get organization donations schema
+// 4. Get organization donations schema (with QueryBuilder support)
 const getOrganizationDonationsSchema = z.object({
   params: z.object({
     organizationId: z
@@ -49,28 +58,37 @@ const getOrganizationDonationsSchema = z.object({
       .min(1, { message: 'Organization ID is required!' }),
   }),
   query: z.object({
+    // Pagination
     page: z.coerce
       .number()
       .min(1, { message: 'Page must be at least 1!' })
+      .optional()
       .default(1),
 
     limit: z.coerce
       .number()
       .min(1, { message: 'Limit must be at least 1!' })
       .max(100, { message: 'Limit cannot exceed 100!' })
+      .optional()
       .default(10),
 
-    status: z
-      .enum(['all', 'pending', 'completed', 'failed', 'refunded'], {
-        error: 'Invalid status option!',
-      })
-      .default('all'),
+    // QueryBuilder search
+    searchTerm: z.string().optional(),
 
-    type: z
-      .enum(['all', 'one-time', 'recurring', 'round-up'], {
-        error: 'Invalid donation type!',
-      })
-      .default('all'),
+    // QueryBuilder sort
+    sort: z.string().optional(),
+
+    // QueryBuilder fields selection
+    fields: z.string().optional(),
+
+    // Filters
+    status: z
+      .enum(['pending', 'processing', 'completed', 'failed', 'refunded', 'all'])
+      .optional(),
+
+    donationType: z
+      .enum(['one-time', 'recurring', 'round-up', 'all'])
+      .optional(),
   }),
 });
 
@@ -238,8 +256,6 @@ const createDonationRecordSchema = z.object({
       })
       .min(1, { message: 'Organization ID is required!' }),
 
-    connectedAccountId: z.string().optional(),
-
     specialMessage: z
       .string()
       .max(500, { message: 'Message must be less than 500 characters!' })
@@ -250,27 +266,7 @@ const createDonationRecordSchema = z.object({
   }),
 });
 
-// 8. Process payment for donation schema
-const processPaymentForDonationSchema = z.object({
-  params: z.object({
-    donationId: z
-      .string({
-        error: 'Donation ID is required!',
-      })
-      .min(1, { message: 'Donation ID is required!' }),
-  }),
-  body: z.object({
-    successUrl: z.string().url({ message: 'Invalid success URL!' }).optional(),
 
-    cancelUrl: z.string().url({ message: 'Invalid cancel URL!' }).optional(),
-
-    paymentMethodType: z
-      .enum(['card', 'ideal', 'sepa_debit'], {
-        error: 'Invalid payment method type!',
-      })
-      .optional(),
-  }),
-});
 
 // 9. Retry failed payment schema
 const retryFailedPaymentSchema = z.object({
@@ -335,12 +331,7 @@ const createOneTimeDonationSchema = z.object({
       .string({
         error: 'Payment method ID is required!',
       })
-      .min(1, { message: 'Payment method ID is required!' })
-      .startsWith('pm_', {
-        message: 'Invalid Stripe payment method ID format!',
-      }),
-
-    connectedAccountId: z.string().optional(),
+      ,
 
     specialMessage: z
       .string()
@@ -359,7 +350,7 @@ export const DonationValidation = {
   createRecurringDonationSchema,
   createRoundUpSchema,
   createDonationRecordSchema,
-  processPaymentForDonationSchema,
+  // processPaymentForDonationSchema,
   retryFailedPaymentSchema,
   updatePaymentStatusSchema,
 };
@@ -383,12 +374,12 @@ export type TGetOrganizationDonationsQuery = z.infer<
 export type TCreateDonationRecordPayload = z.infer<
   typeof createDonationRecordSchema.shape.body
 >;
-export type TProcessPaymentForDonationParams = z.infer<
-  typeof processPaymentForDonationSchema.shape.params
->;
-export type TProcessPaymentForDonationBody = z.infer<
-  typeof processPaymentForDonationSchema.shape.body
->;
+// export type TProcessPaymentForDonationParams = z.infer<
+//   typeof processPaymentForDonationSchema.shape.params
+// >;
+// export type TProcessPaymentForDonationBody = z.infer<
+//   typeof processPaymentForDonationSchema.shape.body
+// >;
 export type TRetryFailedPaymentParams = z.infer<
   typeof retryFailedPaymentSchema.shape.params
 >;

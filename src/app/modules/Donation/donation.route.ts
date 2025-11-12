@@ -7,7 +7,7 @@ import { ROLE } from '../Auth/auth.constant';
 
 const router = Router();
 
-// NEW: Create one-time donation with PaymentIntent
+// 1. Create one-time donation with PaymentIntent
 router.post(
   '/one-time/create',
   auth(ROLE.CLIENT),
@@ -15,15 +15,7 @@ router.post(
   DonationController.createOneTimeDonation
 );
 
-// 2. Process payment for existing donation
-router.post(
-  '/:donationId/payment',
-  auth(ROLE.CLIENT),
-  validateRequest(DonationValidation.processPaymentForDonationSchema),
-  DonationController.processPaymentForDonation
-);
-
-// 3. Retry failed payment
+// 2. Retry failed payment
 router.post(
   '/:donationId/retry',
   auth(ROLE.CLIENT),
@@ -31,7 +23,7 @@ router.post(
   DonationController.retryFailedPayment
 );
 
-// 4. Get donation full status with payment info
+// 3. Get donation full status with payment info
 router.get(
   '/:id/status',
   auth(ROLE.CLIENT, ROLE.ADMIN, ROLE.ORGANIZATION),
@@ -39,9 +31,7 @@ router.get(
   DonationController.getDonationFullStatus
 );
 
-// EXISTING ENDPOINTS
-
-// Get user donations with pagination and filters
+// 4. Get user donations with pagination and filters (QueryBuilder)
 router.get(
   '/user',
   auth(ROLE.CLIENT, ROLE.ADMIN),
@@ -49,7 +39,7 @@ router.get(
   DonationController.getUserDonations
 );
 
-// Get specific donation by ID (only if user owns it)
+// 5. Get specific donation by ID (only if user owns it)
 router.get(
   '/:id',
   auth(ROLE.ADMIN, ROLE.CLIENT, ROLE.ORGANIZATION),
@@ -57,7 +47,7 @@ router.get(
   DonationController.getDonationById
 );
 
-// Get donations by organization ID (for organization admin)
+// 6. Get donations by organization ID (QueryBuilder)
 router.get(
   '/organization/:organizationId',
   auth(ROLE.ORGANIZATION, ROLE.ADMIN),
