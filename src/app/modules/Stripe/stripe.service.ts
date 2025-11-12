@@ -669,6 +669,26 @@ const createAccountLink = async (
   }
 };
 
+// 8. Cancel payment intent for one-time donation
+const cancelPaymentIntent = async (
+  paymentIntentId: string
+): Promise<{ canceled: boolean; status: string }> => {
+  try {
+    // Cancel the existing PaymentIntent
+    const canceledIntent = await stripe.paymentIntents.cancel(paymentIntentId);
+
+    return {
+      canceled: true,
+      status: canceledIntent.status,
+    };
+  } catch (error) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Failed to cancel payment intent: ${(error as Error).message}`
+    );
+  }
+};
+
 export const StripeService = {
   // Checkout session methods (existing)
   createCheckoutSession,
@@ -679,6 +699,7 @@ export const StripeService = {
   createPaymentIntent,
   createPaymentIntentWithMethod,
   getPaymentIntent,
+  cancelPaymentIntent,
 
   // Payment method methods
   createSetupIntent,

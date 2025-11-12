@@ -103,6 +103,7 @@ const createOneTimeDonation = async (
       pointsEarned: Math.floor(amount * 100), // 100 points per dollar
       connectedAccountId,
       stripeCustomerId: paymentMethod.stripeCustomerId,
+      stripePaymentMethodId: paymentMethod.stripePaymentMethodId,
       idempotencyKey,
       createdAt: new Date(),
     });
@@ -397,6 +398,12 @@ const getDonationStatistics = async (
         failedDonations: {
           $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] },
         },
+        refundedDonations: {
+          $sum: { $cond: [{ $eq: ['$status', 'refunded'] }, 1, 0] },
+        },
+        canceledDonations: {
+          $sum: { $cond: [{ $eq: ['$status', 'canceled'] }, 1, 0] },
+        },
         totalPointsEarned: { $sum: '$pointsEarned' },
         averageDonationAmount: { $avg: '$amount' },
       },
@@ -497,8 +504,8 @@ const retryFailedPayment = async (
     );
   }
 
-  // Get payment method info - need to fetch from stripe customer's default payment method
-  if (!donation.stripeCustomerId) {
+  // Get payment method info
+  if (!donation.stripeCustomerId || !donation.stripePaymentMethodId) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
       'No payment method associated with this donation. Please create a new donation.'
@@ -514,13 +521,12 @@ const retryFailedPayment = async (
     );
   }
 
-  // For retry, we need the payment method ID which should be stored or retrieved
-  // Since we're using Payment Intent flow, we create a new payment intent
+  // Create a new payment intent for retry
   const paymentIntent = await StripeService.createPaymentIntentWithMethod({
     amount: donation.amount,
     currency: 'usd',
     customerId: donation.stripeCustomerId,
-    paymentMethodId: donation.stripeCustomerId, // Note: This needs to be payment method ID, not customer ID
+    paymentMethodId: donation.stripePaymentMethodId,
     donationId: donation?._id.toString(),
     organizationId: donation.organization.toString(),
     causeId: donation.cause?.toString() || '',
@@ -579,6 +585,139 @@ const getDonationFullStatus = async (
   };
 };
 
+// 12. Cancel donation (only pending/processing donations)
+const cancelDonation = async (
+  donationId: string,
+  userId: string
+): Promise<IDonation> => {
+  // Validate donation ID
+  if (!donationId || donationId.trim() === '') {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Donation ID is required!');
+  }
+
+  // Find donor by auth ID
+  const donor = await Client.findOne({ auth: userId });
+  if (!donor?._id) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Donor not found!');
+  }
+
+  // Find donation
+  const donation = await Donation.findById(donationId);
+  console.log(donation);
+  if (!donation) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Donation not found!');
+  }
+
+  // Verify donation belongs to user
+  if (donation.donor.toString() !== donor._id.toString()) {
+    throw new AppError(
+      httpStatus.FORBIDDEN,
+      'You do not have permission to cancel this donation'
+    );
+  }
+
+  // Check if donation can be canceled
+  if (!['pending', 'processing'].includes(donation.status)) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Cannot cancel donation with status: ${donation.status}. Only pending or processing donations can be canceled.`
+    );
+  }
+
+  // Cancel payment intent in Stripe if it exists
+  if (donation.stripePaymentIntentId) {
+    try {
+      await StripeService.cancelPaymentIntent(donation.stripePaymentIntentId);
+    } catch (error) {
+      console.error(
+        `Failed to cancel payment intent ${donation.stripePaymentIntentId}:`,
+        error
+      );
+      // Continue with cancellation even if Stripe cancellation fails
+    }
+  }
+
+  // Update donation status
+  donation.status = 'canceled';
+  await donation.save();
+
+  return donation;
+};
+
+// 13. Refund donation (only completed donations)
+const refundDonation = async (
+  donationId: string,
+  userId: string,
+  reason?: string
+): Promise<IDonation> => {
+  // Validate donation ID
+  if (!donationId || donationId.trim() === '') {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Donation ID is required!');
+  }
+
+  // Find donor by auth ID
+  const donor = await Client.findOne({ auth: userId });
+  if (!donor?._id) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Donor not found!');
+  }
+
+  // Find donation
+  const donation = await Donation.findById(donationId);
+  if (!donation) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Donation not found!');
+  }
+
+  // Verify donation belongs to user
+  if (donation.donor.toString() !== donor._id.toString()) {
+    throw new AppError(
+      httpStatus.FORBIDDEN,
+      'You do not have permission to refund this donation'
+    );
+  }
+
+  if (donation.status === 'refunded') {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'This donation has already been refunded'
+    );
+  }
+
+  if (donation.status !== 'completed') {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Cannot refund donation with status: ${donation.status}. Only completed donations can be refunded.`
+    );
+  }
+  // Refund in Stripe
+  if (!donation.stripePaymentIntentId) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Cannot refund donation: No payment intent found'
+    );
+  }
+
+  try {
+    // Create full refund in Stripe
+    await StripeService.createRefund(donation.stripePaymentIntentId);
+
+    // Update donation status
+    donation.status = 'refunding';
+    if (reason) {
+      donation.refundReason = reason;
+    }
+    await donation.save();
+
+    return donation;
+  } catch (error: unknown) {
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error occurred';
+    throw new AppError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      `Failed to process refund: ${errorMessage}`
+    );
+  }
+};
+
 export const DonationService = {
   // Core donation functions
   createOneTimeDonation, // Single consolidated function
@@ -588,6 +727,8 @@ export const DonationService = {
 
   // Payment processing
   retryFailedPayment,
+  cancelDonation,
+  refundDonation,
   updateDonationStatus,
   updateDonationPaymentStatus,
   updateDonationStatusByPaymentIntent,

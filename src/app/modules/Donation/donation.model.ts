@@ -63,7 +63,13 @@ const donationSchema = new Schema<IDonationModel>(
     stripeCustomerId: {
       type: String,
     },
+    stripePaymentMethodId: {
+      type: String,
+    },
     specialMessage: {
+      type: String,
+    },
+    refundReason: {
       type: String,
     },
     pointsEarned: {

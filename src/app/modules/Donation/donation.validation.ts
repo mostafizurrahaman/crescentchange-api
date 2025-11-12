@@ -28,7 +28,7 @@ const getUserDonationsSchema = z.object({
 
     // Filters
     status: z
-      .enum(['pending', 'processing', 'completed', 'failed', 'refunded', 'all'])
+      .enum(['pending', 'processing', 'completed', 'failed', 'refunded', 'canceled', 'all'])
       .optional(),
 
     donationType: z
@@ -83,7 +83,7 @@ const getOrganizationDonationsSchema = z.object({
 
     // Filters
     status: z
-      .enum(['pending', 'processing', 'completed', 'failed', 'refunded', 'all'])
+      .enum(['pending', 'processing', 'completed', 'failed', 'refunded', 'canceled', 'all'])
       .optional(),
 
     donationType: z
@@ -279,6 +279,34 @@ const retryFailedPaymentSchema = z.object({
   }),
 });
 
+// 11. Cancel donation schema
+const cancelDonationSchema = z.object({
+  params: z.object({
+    id: z
+      .string({
+        error: 'Donation ID is required!',
+      })
+      .min(1, { message: 'Donation ID is required!' }),
+  }),
+});
+
+// 12. Refund donation schema
+const refundDonationSchema = z.object({
+  params: z.object({
+    id: z
+      .string({
+        error: 'Donation ID is required!',
+      })
+      .min(1, { message: 'Donation ID is required!' }),
+  }),
+  body: z.object({
+    reason: z
+      .string()
+      .max(500, { message: 'Reason must be less than 500 characters!' })
+      .optional(),
+  }),
+});
+
 // 10. Webhook payment status update schema (internal use)
 const updatePaymentStatusSchema = z.object({
   body: z.object({
@@ -353,6 +381,8 @@ export const DonationValidation = {
   // processPaymentForDonationSchema,
   retryFailedPaymentSchema,
   updatePaymentStatusSchema,
+  cancelDonationSchema,
+  refundDonationSchema,
 };
 
 // Export types for TypeScript inference
@@ -388,6 +418,15 @@ export type TUpdatePaymentStatusBody = z.infer<
 >;
 export type TCreateOneTimeDonation = z.infer<
   typeof createOneTimeDonationSchema.shape.body
+>;
+export type TCancelDonationParams = z.infer<
+  typeof cancelDonationSchema.shape.params
+>;
+export type TRefundDonationParams = z.infer<
+  typeof refundDonationSchema.shape.params
+>;
+export type TRefundDonationBody = z.infer<
+  typeof refundDonationSchema.shape.body
 >;
 
 // Keep response schemas separate for API documentation

@@ -31,16 +31,17 @@ const handleCheckoutSessionCompleted = async (
       );
 
       if (!donation) {
-        console.error('Could not find donation to update with payment intent ID');
+        console.error(
+          'Could not find donation to update with payment intent ID'
+        );
         return;
       }
 
-      console.log(`Donation ${metadata.donationId} updated with payment intent ID: ${session.payment_intent}`);
-    } catch (error) {
-      console.error(
-        `Failed to update donation with payment intent ID:`,
-        error
+      console.log(
+        `Donation ${metadata.donationId} updated with payment intent ID: ${session.payment_intent}`
       );
+    } catch (error) {
+      console.error(`Failed to update donation with payment intent ID:`, error);
     }
   }
 };
@@ -52,7 +53,7 @@ const handlePaymentIntentSucceeded = async (
   const { metadata } = paymentIntent;
 
   console.log({ metadata });
-  
+
   // First try to find donation by paymentIntentId
   try {
     const donation = await Donation.findOneAndUpdate(
@@ -67,10 +68,12 @@ const handlePaymentIntentSucceeded = async (
     );
 
     console.log({ donation });
-    
+
     if (!donation && metadata?.donationId) {
       // Fallback: try to find by MongoDB ID from metadata and update with paymentIntentId
-      console.log('Trying fallback: updating donation by donationId from metadata');
+      console.log(
+        'Trying fallback: updating donation by donationId from metadata'
+      );
       const fallbackUpdate = await Donation.findOneAndUpdate(
         {
           _id: new Types.ObjectId(metadata.donationId),
@@ -82,13 +85,17 @@ const handlePaymentIntentSucceeded = async (
           stripeChargeId: paymentIntent.latest_charge as string,
         }
       );
-      
+
       if (!fallbackUpdate) {
-        console.error('Could not find donation to update for payment_intent.succeeded');
+        console.error(
+          'Could not find donation to update for payment_intent.succeeded'
+        );
         return;
       }
     } else if (!donation) {
-      console.error('Could not find donation to update for payment_intent.succeeded (no metadata)');
+      console.error(
+        'Could not find donation to update for payment_intent.succeeded (no metadata)'
+      );
       return;
     }
 
@@ -123,7 +130,9 @@ const handlePaymentIntentFailed = async (
 
     if (!donation && metadata?.donationId) {
       // Fallback: try to find by MongoDB ID from metadata and update with paymentIntentId
-      console.log('Trying fallback: updating donation by donationId from metadata');
+      console.log(
+        'Trying fallback: updating donation by donationId from metadata'
+      );
       const fallbackUpdate = await Donation.findOneAndUpdate(
         {
           _id: new Types.ObjectId(metadata.donationId),
@@ -136,13 +145,17 @@ const handlePaymentIntentFailed = async (
           lastPaymentAttempt: new Date(),
         }
       );
-      
+
       if (!fallbackUpdate) {
-        console.error('Could not find donation to update for payment_intent.payment_failed');
+        console.error(
+          'Could not find donation to update for payment_intent.payment_failed'
+        );
         return;
       }
     } else if (!donation) {
-      console.error('Could not find donation to update for payment_intent.payment_failed (no metadata)');
+      console.error(
+        'Could not find donation to update for payment_intent.payment_failed (no metadata)'
+      );
       return;
     }
 
@@ -177,7 +190,9 @@ const handlePaymentIntentCanceled = async (
 
     if (!donation && metadata?.donationId) {
       // Fallback: try to find by MongoDB ID from metadata and update with paymentIntentId
-      console.log('Trying fallback: updating donation by donationId from metadata');
+      console.log(
+        'Trying fallback: updating donation by donationId from metadata'
+      );
       const fallbackUpdate = await Donation.findOneAndUpdate(
         {
           _id: new Types.ObjectId(metadata.donationId),
@@ -190,13 +205,17 @@ const handlePaymentIntentCanceled = async (
           lastPaymentAttempt: new Date(),
         }
       );
-      
+
       if (!fallbackUpdate) {
-        console.error('Could not find donation to update for payment_intent.canceled');
+        console.error(
+          'Could not find donation to update for payment_intent.canceled'
+        );
         return;
       }
     } else if (!donation) {
-      console.error('Could not find donation to update for payment_intent.canceled (no metadata)');
+      console.error(
+        'Could not find donation to update for payment_intent.canceled (no metadata)'
+      );
       return;
     }
 
@@ -204,6 +223,46 @@ const handlePaymentIntentCanceled = async (
   } catch (error) {
     console.error(
       `Failed to update donation for payment intent ${paymentIntent.id}:`,
+      error
+    );
+  }
+};
+
+// Handle charged.refunded event
+const handleChargeRefunded = async (charge: Stripe.Charge) => {
+  const paymentIntentId = charge.payment_intent as string;
+
+  if (!paymentIntentId) {
+    console.error('Refund event received without a payment_intent ID');
+    return;
+  }
+
+  try {
+    const donation = await Donation.findOneAndUpdate(
+      {
+        stripePaymentIntentId: paymentIntentId,
+        status: 'refunding', // <-- Ensure we only update donations awaiting refund confirmation
+      },
+      {
+        status: 'refunded',
+      },
+      { new: true }
+    );
+
+    if (!donation) {
+      console.error(
+        `Could not find a matching donation in 'refunding' state for payment intent ${paymentIntentId}`
+      );
+      return;
+    }
+
+    console.log(
+      `Donation for payment intent ${paymentIntentId} successfully marked as refunded.`
+    );
+    // Here you could also add logic to deduct points that were earned from this donation.
+  } catch (error) {
+    console.error(
+      `Failed to update donation status to refunded for payment intent ${paymentIntentId}:`,
       error
     );
   }
@@ -257,7 +316,9 @@ const handleStripeWebhook = async (
           event.data.object as Stripe.PaymentIntent
         );
         break;
-
+      case 'charge.refunded':
+        await handleChargeRefunded(event.data.object as Stripe.Charge);
+        break;
       // Add other event handlers as needed
       case 'account.updated':
       case 'customer.created':

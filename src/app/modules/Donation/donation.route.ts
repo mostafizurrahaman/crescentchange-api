@@ -55,4 +55,27 @@ router.get(
   DonationController.getOrganizationDonations
 );
 
+// 7. Cancel donation
+router.post(
+  '/:id/cancel',
+  auth(ROLE.CLIENT),
+  validateRequest(DonationValidation.cancelDonationSchema),
+  DonationController.cancelDonation
+);
+
+// 8. Refund donation
+router.post(
+  '/:id/refund',
+  auth(ROLE.CLIENT, ROLE.ADMIN),
+  validateRequest(DonationValidation.refundDonationSchema),
+  DonationController.refundDonation
+);
+
+// 9. Get donation stats for user
+router.get(
+  '/stats/user',
+  auth(ROLE.CLIENT, ROLE.ADMIN),
+  DonationController.getDonationStatistics
+);
+
 export default router;

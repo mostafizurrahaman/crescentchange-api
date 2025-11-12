@@ -93,7 +93,7 @@ const getDonationById = asyncHandler(
     }
 
     // Check if user owns this donation
-    if (donation.donor.auth.toString() !== userId) {
+    if (donation.donor?.auth.toString() !== userId) {
       throw new AppError(httpStatus.FORBIDDEN, 'Access denied');
     }
 
@@ -121,8 +121,22 @@ const getOrganizationDonations = asyncHandler(
     // Get query parameters
     const query = req.query as Record<string, unknown>;
 
-    // TODO: Add authorization check to ensure user can access organization's donations
-    // For now, we'll allow organization admins to view their donations
+    // Authorization check: Verify user owns/manages the organization
+    const Organization = (await import('../Organization/organization.model'))
+      .default;
+    const organization = await Organization.findById(organizationId);
+
+    if (!organization) {
+      throw new AppError(httpStatus.NOT_FOUND, 'Organization not found');
+    }
+
+    // Check if the authenticated user is the owner of this organization
+    if (organization.auth.toString() !== userId) {
+      throw new AppError(
+        httpStatus.FORBIDDEN,
+        'You do not have permission to access this organization\'s donations'
+      );
+    }
 
     // Call service layer with full query object for QueryBuilder
     const result = await DonationService.getDonationsByOrganization(
@@ -216,11 +230,92 @@ const retryFailedPayment = asyncHandler(
   }
 );
 
+// 9. Cancel donation
+const cancelDonation = asyncHandler(
+  async (req: ExtendedRequest, res: Response) => {
+    // Get user from request
+    const userId = req.user?._id.toString();
+    if (!userId) {
+      throw new AppError(httpStatus.UNAUTHORIZED, 'User not authenticated');
+    }
+
+    // Get validated params
+    const { id } = req.params;
+
+    // Call service layer
+    const donation = await DonationService.cancelDonation(id, userId);
+
+    // Send standardized response
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      message: 'Donation canceled successfully',
+      data: donation,
+    });
+  }
+);
+
+// 10. Refund donation
+const refundDonation = asyncHandler(
+  async (req: ExtendedRequest, res: Response) => {
+    // Get user from request
+    const userId = req.user?._id.toString();
+    if (!userId) {
+      throw new AppError(httpStatus.UNAUTHORIZED, 'User not authenticated');
+    }
+
+    // Get validated params and body
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    // Call service layer
+    const donation = await DonationService.refundDonation(id, userId, reason);
+
+    // Send standardized response
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      message: 'Donation refunded successfully',
+      data: donation,
+    });
+  }
+);
+
+// 11. Get donation statistics
+const getDonationStatistics = asyncHandler(
+  async (req: ExtendedRequest, res: Response) => {
+    // Get user from request
+    const userId = req.user?._id.toString();
+    if (!userId) {
+      throw new AppError(httpStatus.UNAUTHORIZED, 'User not authenticated');
+    }
+
+    // Find donor by auth ID
+    const donor = await Client.findOne({ auth: userId });
+    if (!donor?._id) {
+      throw new AppError(httpStatus.NOT_FOUND, 'Donor not found!');
+    }
+
+    // Call service layer
+    const stats = await DonationService.getDonationStatistics(
+      donor._id.toString()
+    );
+
+    // Send standardized response
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      message: 'Donation statistics retrieved successfully',
+      data: stats,
+    });
+  }
+);
+
 export const DonationController = {
   createOneTimeDonation,
 
   getDonationFullStatus,
   retryFailedPayment,
+  cancelDonation,
+  refundDonation,
+  getDonationStatistics,
 
   // Existing endpoints
   getUserDonations,

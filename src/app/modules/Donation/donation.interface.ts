@@ -7,13 +7,22 @@ export interface IDonation {
   donationType: 'one-time' | 'recurring' | 'round-up';
   amount: number;
   currency: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed' | 'refunded';
+  status:
+    | 'pending'
+    | 'processing'
+    | 'completed'
+    | 'failed'
+    | 'refunded'
+    | 'canceled'
+    | 'refunding';
   donationDate: Date;
   stripePaymentIntentId?: string;
+  stripePaymentMethodId?: string;
   stripeChargeId?: string;
   stripeSessionId?: string;
   stripeCustomerId?: string;
   specialMessage?: string;
+  refundReason?: string;
   pointsEarned: number;
   connectedAccountId?: string;
   // Additional fields for recurring and round-up donations

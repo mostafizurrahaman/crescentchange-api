@@ -1,18 +1,14 @@
-
-
 export const DONATION_STATUS = [
   'pending',
   'processing',
   'completed',
   'failed',
   'refunded',
+  'canceled',
+  'refunding',
 ] as const;
 
-export const DONATION_TYPE = [
-  'one-time',
-  'recurring',
-  'round-up',
-] as const;
+export const DONATION_TYPE = ['one-time', 'recurring', 'round-up'] as const;
 
 export const DEFAULT_CURRENCY = 'USD';
 
@@ -38,11 +34,7 @@ export const ROUNDUP_THRESHOLD_OPTIONS = [
 ] as const;
 
 // Auto donate trigger types
-export const AUTODONATE_TRIGGER_TYPE = [
-  'amount',
-  'days',
-  'both',
-] as const;
+export const AUTODONATE_TRIGGER_TYPE = ['amount', 'days', 'both'] as const;
 
 // Bank account status
 export const BANK_ACCOUNT_STATUS = [
