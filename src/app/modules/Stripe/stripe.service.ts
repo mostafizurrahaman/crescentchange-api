@@ -330,7 +330,7 @@ const createPaymentIntent = async (
 };
 
 // 8. Verify webhook signature
-const verifyWebhookSignature = (body: string, signature: string): any => {
+const verifyWebhookSignature = (body: string, signature: string): Stripe.Event => {
   try {
     const webhookSecret = config.stripe.webhookSecret;
 

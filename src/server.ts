@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import app from './app';
 import config from './app/config';
 import seedAdmin from './app/seed';
+import { initializeJobs } from './app/jobs';
 
 let server: Server | null = null;
 
@@ -18,6 +19,9 @@ async function bootstrap() {
 
     // Seed initial admin if not already present
     await seedAdmin();
+
+    // Initialize background jobs (cron jobs)
+    initializeJobs();
 
     // Start the HTTP server
     const port = config.port;

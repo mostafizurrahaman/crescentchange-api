@@ -1,6 +1,6 @@
 // src/app/modules/Causes/causes.service.ts
 import httpStatus from 'http-status';
-import { FilterQuery, startSession } from 'mongoose';
+import {  startSession } from 'mongoose';
 import { AppError } from '../../utils';
 import QueryBuilder from '../../builders/QueryBuilder';
 import Cause from './causes.model';
@@ -88,12 +88,13 @@ const causeSearchFields = ['name', 'notes'];
 
 // Get all causes with filters
 const getCausesFromDB = async (query: Record<string, unknown>) => {
-  // Apply additional filters for specific IDs
-  const filters = { ...query };
+  // Create base query without filters (QueryBuilder will handle filtering)
+  const baseQuery = Cause.find().populate(
+    'organization',
+    'name serviceType coverImage'
+  );
 
-  // Create base query with population
-  const baseQuery = Cause.find(filters)
-    .populate('organization', 'name serviceType coverImage');
+  console.log('Query received:', query);
 
   const causeQuery = new QueryBuilder<ICause>(baseQuery, query)
     .search(causeSearchFields)
@@ -104,6 +105,9 @@ const getCausesFromDB = async (query: Record<string, unknown>) => {
 
   const result = await causeQuery.modelQuery;
   const meta = await causeQuery.countTotal();
+
+  console.log('Result count:', result.length);
+  console.log('Meta:', meta);
 
   return { causes: result, meta };
 };

@@ -11,6 +11,8 @@ import { CauseRoutes } from '../modules/Causes/causes.route';
 import StripeRoutes from '../modules/Stripe/stripe.route';
 import { PaymentMethodRoutes } from '../modules/PaymentMethod/paymentMethod.route';
 import { OrganizationRoutes } from '../modules/Organization/organization.routes';
+import ScheduledDonationRoutes from '../modules/ScheduledDonation/scheduledDonation.route';
+import { CronJobsRoutes } from '../modules/CronJobs/cronJobs.route';
 // import { BankConnectionRoutes } from '../modules/BankConnection/bankConnection.route';
 // import { RoundUpTransactionRoutes } from '../modules/RoundUpTransaction/roundUpTransaction.route';
 
@@ -46,6 +48,14 @@ const moduleRoutes = [
   {
     path: '/donation',
     route: DonationRoutes,
+  },
+  {
+    path: '/scheduled-donation',
+    route: ScheduledDonationRoutes,
+  },
+  {
+    path: '/cron-jobs',
+    route: CronJobsRoutes,
   },
   {
     path: '/cause',

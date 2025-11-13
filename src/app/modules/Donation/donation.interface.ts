@@ -79,22 +79,39 @@ export interface ICheckoutSessionRequest {
   specialMessage?: string;
 }
 
-// ScheduledDonation interface for recurring donations
+/**
+ * ScheduledDonation interface - Minimal Approach
+ *
+ * Stores ONLY scheduling configuration, execution tracking, and template data.
+ * When executed, creates full Donation records with donationType: 'recurring'
+ */
 export interface IScheduledDonation {
+  // Template Data (what to donate)
   user: Types.ObjectId;
   organization: Types.ObjectId;
   amount: number;
   currency: string;
+  cause: Types.ObjectId;
+  specialMessage?: string;
+
+  // Payment Information
+  stripeCustomerId: string;
+  paymentMethod: Types.ObjectId;
+
+  // Scheduling Configuration
   frequency: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'custom';
+  customInterval?: {
+    value: number;
+    unit: 'days' | 'weeks' | 'months';
+  };
   startDate: Date;
   nextDonationDate: Date;
   endDate?: Date;
+
+  // Status & Execution Tracking
   isActive: boolean;
   lastExecutedDate?: Date;
   totalExecutions: number;
-  causeCategory?: string;
-  specialMessage?: string;
-  stripeCustomerId?: string;
 }
 
 // RoundUp interface

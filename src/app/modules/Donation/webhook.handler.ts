@@ -7,6 +7,96 @@ import { Donation } from './donation.model';
 import { StripeService } from '../Stripe/stripe.service';
 import { ExtendedRequest } from '../../types';
 import { Types } from 'mongoose';
+import { ScheduledDonation } from '../ScheduledDonation/scheduledDonation.model';
+
+// Helper function to calculate next donation date for recurring donations
+const calculateNextDonationDate = (
+  currentDate: Date,
+  frequency: string,
+  customInterval?: { value: number; unit: 'days' | 'weeks' | 'months' }
+): Date => {
+  const nextDate = new Date(currentDate);
+
+  switch (frequency) {
+    case 'daily':
+      nextDate.setDate(nextDate.getDate() + 1);
+      break;
+    case 'weekly':
+      nextDate.setDate(nextDate.getDate() + 7);
+      break;
+    case 'monthly':
+      nextDate.setMonth(nextDate.getMonth() + 1);
+      break;
+    case 'quarterly':
+      nextDate.setMonth(nextDate.getMonth() + 3);
+      break;
+    case 'yearly':
+      nextDate.setFullYear(nextDate.getFullYear() + 1);
+      break;
+    case 'custom':
+      if (customInterval) {
+        switch (customInterval.unit) {
+          case 'days':
+            nextDate.setDate(nextDate.getDate() + customInterval.value);
+            break;
+          case 'weeks':
+            nextDate.setDate(nextDate.getDate() + customInterval.value * 7);
+            break;
+          case 'months':
+            nextDate.setMonth(nextDate.getMonth() + customInterval.value);
+            break;
+        }
+      }
+      break;
+  }
+
+  return nextDate;
+};
+
+// Helper to update scheduled donation after successful payment
+const updateScheduledDonationAfterSuccess = async (
+  scheduledDonationId: string
+) => {
+  try {
+    const scheduledDonation = await ScheduledDonation.findById(
+      scheduledDonationId
+    );
+
+    if (!scheduledDonation) {
+      console.error(`❌ Scheduled donation not found: ${scheduledDonationId}`);
+      return;
+    }
+
+    // Update execution tracking
+    scheduledDonation.lastExecutedDate = new Date();
+    scheduledDonation.totalExecutions += 1;
+
+    // Calculate next donation date
+    const nextDate = calculateNextDonationDate(
+      new Date(),
+      scheduledDonation.frequency,
+      scheduledDonation.customInterval
+    );
+    scheduledDonation.nextDonationDate = nextDate;
+
+    // Check if end date has passed
+    if (scheduledDonation.endDate && nextDate > scheduledDonation.endDate) {
+      scheduledDonation.isActive = false;
+      console.log(
+        `🏁 Scheduled donation ${scheduledDonationId} completed (reached end date)`
+      );
+    }
+
+    await scheduledDonation.save();
+
+    console.log(`✅ Updated scheduled donation: ${scheduledDonationId}`);
+    console.log(`   Next donation date: ${nextDate.toISOString()}`);
+    console.log(`   Total executions: ${scheduledDonation.totalExecutions}`);
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error(`❌ Error updating scheduled donation: ${err.message}`);
+  }
+};
 
 // Handle checkout.session.completed event
 const handleCheckoutSessionCompleted = async (
@@ -52,7 +142,14 @@ const handlePaymentIntentSucceeded = async (
 ) => {
   const { metadata } = paymentIntent;
 
-  console.log({ metadata });
+  console.log(`🔔 WEBHOOK: payment_intent.succeeded`);
+  console.log(`   Payment Intent ID: ${paymentIntent.id}`);
+  console.log(
+    `   Amount: ${
+      paymentIntent.amount / 100
+    } ${paymentIntent.currency.toUpperCase()}`
+  );
+  console.log(`   Donation Type: ${metadata?.donationType || 'one-time'}`);
 
   // First try to find donation by paymentIntentId
   try {
@@ -64,10 +161,12 @@ const handlePaymentIntentSucceeded = async (
       {
         status: 'completed',
         stripeChargeId: paymentIntent.latest_charge as string,
-      }
+        pointsEarned: Math.floor((paymentIntent.amount / 100) * 100), // Award points now
+      },
+      { new: true }
     );
 
-    console.log({ donation });
+    console.log({ PaymentIndentInside: donation });
 
     if (!donation && metadata?.donationId) {
       // Fallback: try to find by MongoDB ID from metadata and update with paymentIntentId
@@ -83,7 +182,9 @@ const handlePaymentIntentSucceeded = async (
           status: 'completed',
           stripePaymentIntentId: paymentIntent.id,
           stripeChargeId: paymentIntent.latest_charge as string,
-        }
+          pointsEarned: Math.floor((paymentIntent.amount / 100) * 100),
+        },
+        { new: true }
       );
 
       if (!fallbackUpdate) {
@@ -92,6 +193,21 @@ const handlePaymentIntentSucceeded = async (
         );
         return;
       }
+
+      console.log(`✅ Payment succeeded for donation: ${fallbackUpdate._id}`);
+
+      // ✅ Handle recurring donations - update scheduled donation
+      if (
+        metadata?.donationType === 'recurring' &&
+        metadata?.scheduledDonationId
+      ) {
+        console.log(
+          `🔄 Updating scheduled donation: ${metadata.scheduledDonationId}`
+        );
+        await updateScheduledDonationAfterSuccess(metadata.scheduledDonationId);
+      }
+
+      return;
     } else if (!donation) {
       console.error(
         'Could not find donation to update for payment_intent.succeeded (no metadata)'
@@ -99,7 +215,18 @@ const handlePaymentIntentSucceeded = async (
       return;
     }
 
-    console.log(`Payment intent ${paymentIntent.id} marked as completed`);
+    console.log(`✅ Payment succeeded for donation: ${donation._id}`);
+
+    // ✅ Handle recurring donations - update scheduled donation
+    if (
+      metadata?.donationType === 'recurring' &&
+      metadata?.scheduledDonationId
+    ) {
+      console.log(
+        `🔄 Updating scheduled donation: ${metadata.scheduledDonationId}`
+      );
+      await updateScheduledDonationAfterSuccess(metadata.scheduledDonationId);
+    }
   } catch (error) {
     console.error(
       `Failed to update donation for payment intent ${paymentIntent.id}:`,
@@ -114,6 +241,13 @@ const handlePaymentIntentFailed = async (
 ) => {
   const { metadata } = paymentIntent;
 
+  console.log(`🔔 WEBHOOK: payment_intent.payment_failed`);
+  console.log(`   Payment Intent ID: ${paymentIntent.id}`);
+  console.log(
+    `   Error: ${paymentIntent.last_payment_error?.message || 'Unknown'}`
+  );
+  console.log(`   Donation Type: ${metadata?.donationType || 'one-time'}`);
+
   // First try to find donation by paymentIntentId
   try {
     const donation = await Donation.findOneAndUpdate(
@@ -125,7 +259,8 @@ const handlePaymentIntentFailed = async (
         status: 'failed',
         $inc: { paymentAttempts: 1 },
         lastPaymentAttempt: new Date(),
-      }
+      },
+      { new: true }
     );
 
     if (!donation && metadata?.donationId) {
@@ -143,7 +278,8 @@ const handlePaymentIntentFailed = async (
           stripePaymentIntentId: paymentIntent.id,
           $inc: { paymentAttempts: 1 },
           lastPaymentAttempt: new Date(),
-        }
+        },
+        { new: true }
       );
 
       if (!fallbackUpdate) {
@@ -152,6 +288,25 @@ const handlePaymentIntentFailed = async (
         );
         return;
       }
+
+      console.log(`❌ Payment failed for donation: ${fallbackUpdate._id}`);
+
+      // ✅ For recurring donations, don't update scheduledDonation - let cron retry
+      if (
+        metadata?.donationType === 'recurring' &&
+        metadata?.scheduledDonationId
+      ) {
+        console.log(
+          `⏭️  Will retry in next cron run for scheduled donation: ${metadata.scheduledDonationId}`
+        );
+        console.log(
+          `   Reason: ${
+            paymentIntent.last_payment_error?.message || 'Unknown error'
+          }`
+        );
+      }
+
+      return;
     } else if (!donation) {
       console.error(
         'Could not find donation to update for payment_intent.payment_failed (no metadata)'
@@ -159,7 +314,22 @@ const handlePaymentIntentFailed = async (
       return;
     }
 
-    console.log(`Payment intent ${paymentIntent.id} marked as failed`);
+    console.log(`❌ Payment failed for donation: ${donation._id}`);
+
+    // ✅ For recurring donations, don't update scheduledDonation - let cron retry
+    if (
+      metadata?.donationType === 'recurring' &&
+      metadata?.scheduledDonationId
+    ) {
+      console.log(
+        `⏭️  Will retry in next cron run for scheduled donation: ${metadata.scheduledDonationId}`
+      );
+      console.log(
+        `   Reason: ${
+          paymentIntent.last_payment_error?.message || 'Unknown error'
+        }`
+      );
+    }
   } catch (error) {
     console.error(
       `Failed to update donation for payment intent ${paymentIntent.id}:`,

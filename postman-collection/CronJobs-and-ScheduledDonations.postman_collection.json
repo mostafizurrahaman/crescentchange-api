@@ -1,0 +1,380 @@
+{
+  "info": {
+    "name": "Cron Jobs & Scheduled Donations API",
+    "description": "API collection for Cron Jobs monitoring (5 endpoints) and Scheduled Donations management (7 endpoints)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "adminToken",
+      "value": "YOUR_ADMIN_TOKEN_HERE",
+      "type": "string"
+    },
+    {
+      "key": "clientToken",
+      "value": "YOUR_CLIENT_TOKEN_HERE",
+      "type": "string"
+    },
+    {
+      "key": "scheduledDonationId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Cron Jobs",
+      "item": [
+        {
+          "name": "1. Trigger Scheduled Donations",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/cron-jobs/trigger/scheduled-donations",
+              "host": ["{{baseUrl}}"],
+              "path": ["cron-jobs", "trigger", "scheduled-donations"]
+            },
+            "description": "Manually trigger the scheduled donations cron job. Requires ADMIN role."
+          },
+          "response": []
+        },
+        {
+          "name": "2. Get Cron Job Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/cron-jobs/status?jobName=scheduled-donations&hours=24",
+              "host": ["{{baseUrl}}"],
+              "path": ["cron-jobs", "status"],
+              "query": [
+                {
+                  "key": "jobName",
+                  "value": "scheduled-donations",
+                  "description": "Optional: Filter by job name"
+                },
+                {
+                  "key": "hours",
+                  "value": "24",
+                  "description": "Optional: Time range in hours"
+                }
+              ]
+            },
+            "description": "Get comprehensive status of cron jobs."
+          },
+          "response": []
+        },
+        {
+          "name": "3. Get Execution History",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/cron-jobs/scheduled-donations/history?limit=50&hours=24",
+              "host": ["{{baseUrl}}"],
+              "path": ["cron-jobs", "scheduled-donations", "history"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "Optional: Maximum records"
+                },
+                {
+                  "key": "hours",
+                  "value": "24",
+                  "description": "Optional: Time range in hours"
+                }
+              ]
+            },
+            "description": "Get execution history for a specific cron job."
+          },
+          "response": []
+        },
+        {
+          "name": "4. Get Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/cron-jobs/dashboard",
+              "host": ["{{baseUrl}}"],
+              "path": ["cron-jobs", "dashboard"]
+            },
+            "description": "Get overview dashboard of all cron jobs."
+          },
+          "response": []
+        },
+        {
+          "name": "5. Get Health Check",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/cron-jobs/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["cron-jobs", "health"]
+            },
+            "description": "Get health check status for all cron jobs."
+          },
+          "response": []
+        }
+      ],
+      "description": "Cron Jobs monitoring and management endpoints (5 routes). Requires ADMIN role."
+    },
+    {
+      "name": "Scheduled Donations",
+      "item": [
+        {
+          "name": "1. Create Scheduled Donation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.data && jsonData.data._id) {",
+                  "        pm.collectionVariables.set(\"scheduledDonationId\", jsonData.data._id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{clientToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"organizationId\": \"507f1f77bcf86cd799439011\",\n  \"causeId\": \"507f1f77bcf86cd799439012\",\n  \"amount\": 50.00,\n  \"frequency\": \"monthly\",\n  \"specialMessage\": \"Monthly support for this amazing cause!\",\n  \"paymentMethodId\": \"pm_1234567890abcdef\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/scheduled-donation/create",
+              "host": ["{{baseUrl}}"],
+              "path": ["scheduled-donation", "create"]
+            },
+            "description": "Create a new scheduled donation (recurring donation). Requires CLIENT role."
+          },
+          "response": []
+        },
+        {
+          "name": "2. Get User's Scheduled Donations",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{clientToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/scheduled-donation/user?page=1&limit=10&isActive=all&frequency=all",
+              "host": ["{{baseUrl}}"],
+              "path": ["scheduled-donation", "user"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (default: 1)"
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Items per page (1-100)"
+                },
+                {
+                  "key": "isActive",
+                  "value": "all",
+                  "description": "Filter: true, false, all"
+                },
+                {
+                  "key": "frequency",
+                  "value": "all",
+                  "description": "Filter: daily, weekly, monthly, quarterly, yearly, custom, all"
+                },
+                {
+                  "key": "searchTerm",
+                  "value": "",
+                  "description": "Search term",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "-amount",
+                  "description": "Sort field",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get user's scheduled donations with pagination and filters. Requires CLIENT role."
+          },
+          "response": []
+        },
+        {
+          "name": "3. Get Scheduled Donation by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{clientToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/scheduled-donation/{{scheduledDonationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["scheduled-donation", "{{scheduledDonationId}}"]
+            },
+            "description": "Get details of a specific scheduled donation by ID. Requires CLIENT role."
+          },
+          "response": []
+        },
+        {
+          "name": "4. Update Scheduled Donation",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{clientToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 75.00,\n  \"frequency\": \"weekly\",\n  \"specialMessage\": \"Updated donation details\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/scheduled-donation/{{scheduledDonationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["scheduled-donation", "{{scheduledDonationId}}"]
+            },
+            "description": "Update scheduled donation details (amount, frequency, message). Requires CLIENT role."
+          },
+          "response": []
+        },
+        {
+          "name": "5. Pause Scheduled Donation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{clientToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/scheduled-donation/{{scheduledDonationId}}/pause",
+              "host": ["{{baseUrl}}"],
+              "path": ["scheduled-donation", "{{scheduledDonationId}}", "pause"]
+            },
+            "description": "Pause a scheduled donation. Requires CLIENT role."
+          },
+          "response": []
+        },
+        {
+          "name": "6. Resume Scheduled Donation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{clientToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/scheduled-donation/{{scheduledDonationId}}/resume",
+              "host": ["{{baseUrl}}"],
+              "path": ["scheduled-donation", "{{scheduledDonationId}}", "resume"]
+            },
+            "description": "Resume a paused scheduled donation. Requires CLIENT role."
+          },
+          "response": []
+        },
+        {
+          "name": "7. Cancel Scheduled Donation",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{clientToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/scheduled-donation/{{scheduledDonationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["scheduled-donation", "{{scheduledDonationId}}"]
+            },
+            "description": "Cancel (delete) a scheduled donation permanently. Requires CLIENT role."
+          },
+          "response": []
+        }
+      ],
+      "description": "Scheduled Donations management endpoints (7 routes). Requires CLIENT role."
+    }
+  ]
+}

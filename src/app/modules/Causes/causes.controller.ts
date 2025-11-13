@@ -40,16 +40,8 @@ const createCause = asyncHandler(async (req, res) => {
 
 // Get all causes
 const getCauses = asyncHandler(async (req, res) => {
-  const filters = req.query;
-
-  const result = await CauseService.getCausesFromDB({
-    name: filters.name as CauseNameType,
-    organization: filters.organization as string,
-    page: filters.page ? Number(filters.page) : undefined,
-    limit: filters.limit ? Number(filters.limit) : undefined,
-    sortBy: filters.sortBy as string,
-    sortOrder: filters.sortOrder as 'asc' | 'desc',
-  });
+  // Pass the entire query object to service - QueryBuilder will handle it
+  const result = await CauseService.getCausesFromDB(req.query);
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
@@ -59,7 +51,7 @@ const getCauses = asyncHandler(async (req, res) => {
       page: result.meta.page,
       limit: result.meta.limit,
       total: result.meta.total,
-      totalPage: result.meta.totalPages,
+      totalPage: result.meta.totalPage,
     },
   });
 });
