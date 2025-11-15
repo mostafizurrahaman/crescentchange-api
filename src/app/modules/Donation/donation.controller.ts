@@ -93,7 +93,8 @@ const getDonationById = asyncHandler(
     }
 
     // Check if user owns this donation
-    if (donation.donor?.auth.toString() !== userId) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((donation.donor as any)?.auth?.toString() !== userId) {
       throw new AppError(httpStatus.FORBIDDEN, 'Access denied');
     }
 

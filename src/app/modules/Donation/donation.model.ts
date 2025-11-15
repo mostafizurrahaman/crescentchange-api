@@ -129,3 +129,4 @@ donationSchema.index({ idempotencyKey: 1, donor: 1 }, { unique: true });
 donationSchema.index({ lastPaymentAttempt: 1 });
 
 export const Donation = model<IDonationModel>('Donation', donationSchema);
+export default Donation;

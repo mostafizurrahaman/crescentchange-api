@@ -1,389 +1,384 @@
-import { BadRequestError, NotFoundError } from '../../errors';
-import RoundUpTransaction from './roundUpTransaction.model';
-import BankConnection from '../BankConnection/bankConnection.model';
-import { 
-  IRoundUpTransactionPayload, 
-  ICreateRoundUpTransactionPayload,
-  ISyncRoundUpTransactionsResponse,
-  IGetTransactionsQuery,
-  ITransactionSummary,
-  IPlaidTransaction,
-  IPlaidTransactionWithRoundUp
+import { PlaidApi, TransactionsGetRequest } from 'plaid';
+import plaidClient from '../../config/plaid';
+import { RoundUpTransactionModel } from './roundUpTransaction.model';
+import { RoundUpModel } from '../RoundUp/roundUp.model';
+import { BankConnectionModel } from '../BankConnection/bankConnection.model';
+import {
+  IRoundUpTransaction,
+  ITransactionProcessingResult,
+  IEligibleTransactions,
+  ITransactionFilter,
 } from './roundUpTransaction.interface';
-import { 
-  EXCLUDED_TRANSACTION_CATEGORIES,
-  ELIGIBLE_TRANSACTION_TYPES
-} from '../BankConnection/bankConnection.constant';
-import { STATUS_CODES } from '../BankConnection/bankConnection.constant';
+import { IPlaidTransaction } from '../BankConnection/bankConnection.interface';
+import { IRoundUpDocument } from '../RoundUp/roundUp.model';
+import { IBankConnectionDocument } from '../BankConnection/bankConnection.model';
+import { StripeService } from '../Stripe/stripe.service';
 
 class RoundUpTransactionService {
-  /**
-   * Create round-up transactions from Plaid transactions
-   */
-  async createRoundUpTransactions(
+  // Process Plaid transactions and create round-up entries
+  async processTransactionsFromPlaid(
     userId: string,
     bankConnectionId: string,
     plaidTransactions: IPlaidTransaction[]
-  ): Promise<ISyncRoundUpTransactionsResponse> {
+  ): Promise<ITransactionProcessingResult> {
+    const result: ITransactionProcessingResult = {
+      processed: 0,
+      skipped: 0,
+      failed: 0,
+      roundUpsCreated: [],
+    };
+
     try {
-      // Validate bank connection belongs to user
-      const bankConnection = await BankConnection.findOne({ 
-        _id: bankConnectionId, 
-        user: userId, 
-        isActive: true 
+      // Get user's round-up configuration
+      const roundUpConfig = await RoundUpModel.findOne({
+        user: userId,
+        bankConnection: bankConnectionId,
+        isActive: true,
+        enabled: true,
       });
-      
-      if (!bankConnection) {
-        throw new NotFoundError('Bank connection not found or inactive');
+
+      if (!roundUpConfig) {
+        throw new Error('No active round-up configuration found');
       }
 
-      const createdTransactions = [];
-      let totalProcessed = 0;
-      let totalAmount = 0;
+      // Reset monthly total if needed
+      await this.checkAndResetMonthlyTotal(roundUpConfig);
 
-      for (const plaidTx of plaidTransactions) {
-        // Check if transaction already exists
-        const existingTx = await RoundUpTransaction.findByPlaidTransactionId(plaidTx.transaction_id);
-        if (existingTx) {
-          continue; // Skip if already processed
-        }
-
-        // Check if transaction is eligible for round-up
-        const eligibleTx = this.filterEligibleTransaction(plaidTx);
-        if (!eligibleTx) {
-          continue; // Skip ineligible transactions
-        }
-
-        // Calculate round-up value
-        const originalAmount = Math.abs(eligibleTx.amount);
-        const roundUpValue = this.calculateRoundUp(originalAmount);
-
-        // Only create round-up if there's a non-zero value
-        if (roundUpValue <= 0) {
-          continue;
-        }
-
-        // Create round-up transaction
-        const roundUpTx = await RoundUpTransaction.create({
-          user: userId,
-          bankConnection: bankConnectionId,
-          plaidTransactionId: eligibleTx.transaction_id,
-          plaidAccountId: eligibleTx.account_id,
-          originalAmount: originalAmount,
-          roundUpValue: roundUpValue,
-          transactionDate: new Date(eligibleTx.date),
-          transactionDescription: eligibleTx.name || eligibleTx.merchant_name || 'Transaction',
-          transactionType: 'debit',
-          category: eligibleTx.category || [],
-          merchantName: eligibleTx.merchant_name,
-          location: this.formatLocation(eligibleTx.location),
-          processed: false,
-        });
-
-        createdTransactions.push(roundUpTx);
-        totalProcessed++;
-        totalAmount += roundUpValue;
+      // Check if monthly threshold is already met
+      if (
+        roundUpConfig.monthlyThreshold !== 'no-limit' &&
+        typeof roundUpConfig.monthlyThreshold === 'number' &&
+        roundUpConfig.currentMonthTotal >= roundUpConfig.monthlyThreshold
+      ) {
+        result.skipped = plaidTransactions.length;
+        return result;
       }
 
-      return {
-        transactions: createdTransactions,
-        totalProcessed,
-        totalAmount,
-        lastSyncDate: new Date(),
-      };
-    } catch (error: any) {
-      throw new BadRequestError(`Failed to create round-up transactions: ${error.message}`);
+      // Process each transaction
+      for (const plaidTransaction of plaidTransactions) {
+        try {
+          // Check if transaction already processed
+          const existingRoundUp =
+            await RoundUpTransactionModel.existsTransaction(
+              plaidTransaction.transaction_id
+            );
+
+          if (existingRoundUp) {
+            result.skipped++;
+            continue;
+          }
+
+          // Check if transaction is eligible for round-up
+          if (
+            !RoundUpTransactionModel.isTransactionEligible(plaidTransaction)
+          ) {
+            result.skipped++;
+            continue;
+          }
+
+          // Calculate round-up amount
+          const roundUpAmount = RoundUpTransactionModel.calculateRoundUpAmount(
+            plaidTransaction.amount
+          );
+
+          // Skip if no round-up needed (exact dollar amount)
+          if (roundUpAmount === 0) {
+            result.skipped++;
+            continue;
+          }
+
+          // Check if adding this would exceed monthly threshold
+          const newMonthlyTotal =
+            roundUpConfig.currentMonthTotal + roundUpAmount;
+          if (
+            roundUpConfig.monthlyThreshold !== 'no-limit' &&
+            typeof roundUpConfig.monthlyThreshold === 'number' &&
+            newMonthlyTotal > roundUpConfig.monthlyThreshold
+          ) {
+            result.skipped++;
+            continue;
+          }
+
+          // Create round-up transaction
+          const roundUpTransaction = new RoundUpTransactionModel({
+            user: userId,
+            bankConnection: bankConnectionId,
+            roundUp: roundUpConfig._id,
+            transactionId: plaidTransaction.transaction_id,
+            originalAmount: plaidTransaction.amount,
+            roundUpAmount,
+            currency: plaidTransaction.iso_currency_code,
+            organization: roundUpConfig.organization,
+            transactionDate: new Date(plaidTransaction.date),
+            transactionName: plaidTransaction.name,
+            transactionCategory: plaidTransaction.category,
+            status: 'processed',
+          });
+
+          await roundUpTransaction.save();
+
+          // Update round-up configuration totals
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const thresholdReached = (roundUpConfig as any).addRoundUpAmount(roundUpAmount);
+
+          result.processed++;
+          result.roundUpsCreated.push(roundUpTransaction as any);
+
+          // If threshold reached, trigger donation
+          if (thresholdReached && roundUpConfig.monthlyThreshold !== 'no-limit') {
+            result.thresholdReached = {
+              roundUpId: String(roundUpConfig._id),
+              amount: roundUpConfig.currentMonthTotal,
+              charityId: roundUpConfig.organization,
+            };
+
+            // Trigger immediate donation processing
+            await this.triggerDonation(roundUpConfig);
+            break; // Stop processing further transactions
+          }
+        } catch (error) {
+          console.error('Error processing transaction:', error);
+          result.failed++;
+        }
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Error in processTransactionsFromPlaid:', error);
+      throw error;
     }
   }
 
-  /**
-   * Get round-up transactions for a user
-   */
-  async getUserTransactions(
-    userId: string, 
-    query: IGetTransactionsQuery = {}
-  ): Promise<any> {
-    try {
-      const page = query.page || 1;
-      const limit = Math.min(query.limit || 20, 100); // Max 100 items per page
-      const skip = (page - 1) * limit;
+  // Check and reset monthly total at the beginning of each month
+  private async checkAndResetMonthlyTotal(
+    roundUpConfig: IRoundUpDocument
+  ): Promise<void> {
+    const now = new Date();
+    const lastReset = new Date(roundUpConfig.lastMonthReset);
 
-      // Build filter conditions
-      const filter: any = { user: userId };
-      
-      if (query.processed !== undefined) {
-        filter.processed = query.processed;
-      }
-      
-      if (query.startDate || query.endDate) {
-        filter.transactionDate = {};
-        if (query.startDate) {
-          filter.transactionDate.$gte = new Date(query.startDate);
-        }
-        if (query.endDate) {
-          filter.transactionDate.$lte = new Date(query.endDate);
-        }
-      }
-      
-      if (query.category) {
-        filter.category = { $regex: query.category, $options: 'i' };
-      }
-      
-      if (query.minAmount || query.maxAmount) {
-        filter.roundUpValue = {};
-        if (query.minAmount) {
-          filter.roundUpValue.$gte = query.minAmount;
-        }
-        if (query.maxAmount) {
-          filter.roundUpValue.$lte = query.maxAmount;
-        }
-      }
-      
-      if (query.searchTerm) {
-        filter.$or = [
-          { transactionDescription: { $regex: query.searchTerm, $options: 'i' } },
-          { merchantName: { $regex: query.searchTerm, $options: 'i' } },
-        ];
-      }
-
-      const transactions = await RoundUpTransaction.find(filter)
-        .populate('bankConnection', 'institutionName accountName accountNumber')
-        .populate('donationId', 'amount status')
-        .sort({ transactionDate: -1 })
-        .skip(skip)
-        .limit(limit);
-
-      const total = await RoundUpTransaction.countDocuments(filter);
-
-      return {
-        transactions,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit),
-        },
-      };
-    } catch (error: any) {
-      throw new BadRequestError(`Failed to fetch transactions: ${error.message}`);
+    // Check if we're in a new month
+    if (
+      now.getMonth() !== lastReset.getMonth() ||
+      now.getFullYear() !== lastReset.getFullYear()
+    ) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (roundUpConfig as any).resetMonthlyTotal();
     }
   }
 
-  /**
-   * Get transaction summary for a user
-   */
-  async getTransactionSummary(userId: string): Promise<ITransactionSummary> {
-    try {
-      // Get basic summary
-      const summaryResult = await RoundUpTransaction.getTransactionSummary(userId);
-      const summary = summaryResult[0] || {
-        totalTransactions: 0,
-        totalRoundUpAmount: 0,
-        totalDonatedAmount: 0,
-        averageRoundUp: 0,
-      };
-
-      // Get category breakdown
-      const categoryBreakdown = await RoundUpTransaction.getCategoryBreakdown(userId);
-
-      // Get monthly breakdown to find most active month
-      const monthlyBreakdown = await RoundUpTransaction.getMonthlyBreakdown(userId);
-      const mostActiveMonth = monthlyBreakdown.length > 0 
-        ? monthlyBreakdown[0].month 
-        : null;
-
-      return {
-        ...summary,
-        mostActiveMonth,
-        topCategories: categoryBreakdown.slice(0, 5), // Top 5 categories
-      };
-    } catch (error: any) {
-      throw new BadRequestError(`Failed to fetch transaction summary: ${error.message}`);
-    }
-  }
-
-  /**
-   * Process unprocessed round-up transactions into donations
-   */
-  async processUnprocessedTransactions(
-    userId: string,
-    thresholdAmount: number
-  ): Promise<any> {
-    try {
-      // Get unprocessed transactions
-      const unprocessedTx = await RoundUpTransaction.findUnprocessedTransactions()
-        .find({ user: userId })
-        .sort({ transactionDate: 1 }); // Process in chronological order
-
-      if (unprocessedTx.length === 0) {
-        return {
-          message: 'No unprocessed transactions found',
-          donationCreated: false,
-        };
-      }
-
-      // Calculate total amount to donate
-      const totalAmount = unprocessedTx.reduce((sum, tx) => sum + tx.roundUpValue, 0);
-
-      // Check if threshold is met
-      if (totalAmount < thresholdAmount) {
-        return {
-          message: `Threshold not met. Current total: $${totalAmount.toFixed(2)}, Required: $${thresholdAmount.toFixed(2)}`,
-          donationCreated: false,
-          totalAmount,
-          pendingTransactions: unprocessedTx.length,
-        };
-      }
-
-      // Create donation record here (would integrate with Donation module)
-      // For now, we'll just mark transactions as processed
-      const donationId = `DONATION_${Date.now()}`; // Placeholder
-      
-      // Mark all transactions as processed
-      const processedTransactions = [];
-      for (const tx of unprocessedTx) {
-        await tx.markAsProcessed(donationId);
-        processedTransactions.push(tx);
-      }
-
-      return {
-        message: 'Donation created successfully',
-        donationCreated: true,
-        donationId,
-        totalAmount,
-        transactionsProcessed: processedTransactions.length,
-      };
-    } catch (error: any) {
-      throw new BadRequestError(`Failed to process transactions: ${error.message}`);
-    }
-  }
-
-  /**
-   * Mark transaction as processed with donation ID
-   */
-  async markTransactionAsProcessed(
-    transactionId: string,
-    donationId: string,
-    userId: string
+  // Trigger donation when threshold is met
+  private async triggerDonation(
+    roundUpConfig: IRoundUpDocument
   ): Promise<void> {
     try {
-      const transaction = await RoundUpTransaction.findOne({
-        _id: transactionId,
-        user: userId,
+      // Get all pending round-up transactions for this user/month
+      const now = new Date();
+      const currentMonth = `${now.getFullYear()}-${String(
+        now.getMonth() + 1
+      ).padStart(2, '0')}`;
+
+      const pendingTransactions = await RoundUpTransactionModel.find({
+        user: roundUpConfig.user,
+        bankConnection: roundUpConfig.bankConnection,
+        status: 'processed',
+        transactionDate: {
+          $gte: new Date(now.getFullYear(), now.getMonth(), 1),
+          $lt: new Date(now.getFullYear(), now.getMonth() + 1, 1),
+        },
       });
 
-      if (!transaction) {
-        throw new NotFoundError('Transaction not found');
-      }
+      if (pendingTransactions.length === 0) return;
 
-      if (transaction.processed) {
-        throw new BadRequestError('Transaction is already processed');
-      }
+      // Calculate total amount for donation
+      const totalAmount = pendingTransactions.reduce(
+        (sum, transaction) => sum + (transaction as any).roundUpAmount,
+        0
+      );
 
-      await transaction.markAsProcessed(donationId);
-    } catch (error: any) {
+      // Process donation through Stripe
+      await StripeService.processRoundUpDonation({
+        roundUpId: String(roundUpConfig._id),
+        userId: roundUpConfig.user,
+        charityId: roundUpConfig.organization,
+        causeId: roundUpConfig.cause,
+        amount: totalAmount,
+        month: currentMonth,
+        year: now.getFullYear(),
+        specialMessage: roundUpConfig.specialMessage,
+      });
+
+      // Mark transactions as donated
+      await RoundUpTransactionModel.updateMany(
+        { _id: { $in: pendingTransactions.map((t) => t._id) } },
+        { status: 'donated' }
+      );
+
+      // Reset monthly total and pause round-up
+      roundUpConfig.currentMonthTotal = 0;
+      roundUpConfig.lastMonthReset = new Date();
+      roundUpConfig.enabled = false; // Pause after donation
+      await roundUpConfig.save();
+    } catch (error) {
+      console.error('Error triggering donation:', error);
       throw error;
     }
   }
 
-  /**
-   * Get transaction by ID
-   */
-  async getTransactionById(transactionId: string, userId: string): Promise<any> {
+  // Get user's round-up transaction summary
+  async getTransactionSummary(userId: string): Promise<any> {
     try {
-      const transaction = await RoundUpTransaction.findById(transactionId)
-        .populate('bankConnection', 'institutionName accountName accountNumber')
-        .populate('donationId', 'amount status createdAt');
+      const pipeline = [
+        {
+          $match: { user: userId },
+        },
+        {
+          $group: {
+            _id: '$status',
+            count: { $sum: 1 },
+            totalAmount: { $sum: '$roundUpAmount' },
+          },
+        },
+      ];
 
-      if (!transaction) {
-        throw new NotFoundError('Transaction not found');
-      }
+      const statusCounts = await RoundUpTransactionModel.aggregate(pipeline);
 
-      // Verify user owns this transaction
-      if (transaction.user.toString() !== userId) {
-        throw new BadRequestError('Access denied');
-      }
+      // Get current month total
+      const now = new Date();
+      const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-      return transaction;
-    } catch (error: any) {
+      const currentMonthTotal = await RoundUpTransactionModel.aggregate([
+        {
+          $match: {
+            user: userId,
+            transactionDate: { $gte: currentMonthStart },
+            status: { $in: ['processed', 'donated'] },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: '$roundUpAmount' },
+            count: { $sum: 1 },
+          },
+        },
+      ]);
+
+      const totalStats = await RoundUpTransactionModel.aggregate([
+        {
+          $match: { user: userId },
+        },
+        {
+          $group: {
+            _id: null,
+            totalTransactions: { $sum: 1 },
+            totalDonated: { $sum: '$roundUpAmount' },
+            averageRoundUp: { $avg: '$roundUpAmount' },
+          },
+        },
+      ]);
+
+      return {
+        statusCounts: statusCounts.reduce((acc, curr) => {
+          acc[curr._id] = { count: curr.count, amount: curr.totalAmount };
+          return acc;
+        }, {}),
+        currentMonthTotal: currentMonthTotal[0]?.total || 0,
+        currentMonthCount: currentMonthTotal[0]?.count || 0,
+        totalStats: totalStats[0] || {
+          totalTransactions: 0,
+          totalDonated: 0,
+          averageRoundUp: 0,
+        },
+      };
+    } catch (error) {
+      console.error('Error getting transaction summary:', error);
       throw error;
     }
   }
 
-  /**
-   * Calculate round-up value for an amount
-   */
-  calculateRoundUp(amount: number): number {
-    const rounded = Math.ceil(amount);
-    return parseFloat((rounded - amount).toFixed(2));
-  }
-
-  /**
-   * Filter transactions eligible for round-ups
-   */
-  private filterEligibleTransaction(transaction: IPlaidTransaction): IPlaidTransaction | null {
-    // Only process completed transactions (not pending)
-    if (transaction.pending) {
-      return null;
-    }
-
-    // Only process debit transactions (purchases)
-    if (transaction.amount >= 0) { // Credit transactions are >= 0, debits are < 0
-      return null;
-    }
-
-    // Skip if transaction falls under excluded categories
-    if (transaction.category && transaction.category.some(cat => 
-      EXCLUDED_TRANSACTION_CATEGORIES.some(excluded => 
-        cat.toLowerCase().includes(excluded.toLowerCase())
-      )
-    )) {
-      return null;
-    }
-
-    // Skip transfers and other non-purchase transactions
-    if (transaction.transaction_type && !ELIGIBLE_TRANSACTION_TYPES.includes(transaction.transaction_type.toLowerCase())) {
-      return null;
-    }
-
-    return transaction;
-  }
-
-  /**
-   * Format location data from Plaid transaction
-   */
-  private formatLocation(location: any): any {
-    if (!location) return undefined;
-
-    return {
-      address: location.address,
-      city: location.city,
-      region: location.region,
-      postalCode: location.postal_code,
-      country: location.country,
-      lat: location.lat,
-      lon: location.lon,
-    };
-  }
-
-  /**
-   * Delete transaction (admin only)
-   */
-  async deleteTransaction(transactionId: string): Promise<void> {
+  // Get transactions with filtering
+  async getTransactions(
+    filter: ITransactionFilter,
+    page = 1,
+    limit = 50
+  ): Promise<IRoundUpTransaction[]> {
     try {
-      const transaction = await RoundUpTransaction.findById(transactionId);
-      
-      if (!transaction) {
-        throw new NotFoundError('Transaction not found');
+      const query: any = {};
+
+      if (filter.user) query.user = filter.user;
+      if (filter.bankConnection)
+        query.bankConnection = filter.bankConnection;
+      if (filter.organization) query.organization = filter.organization;
+      if (filter.status) query.status = filter.status;
+
+      if (filter.dateRange) {
+        query.transactionDate = {
+          $gte: filter.dateRange.start,
+          $lte: filter.dateRange.end,
+        };
+      } else if (filter.month && filter.year) {
+        const month = String(filter.month).padStart(2, '0');
+        const startDate = new Date(`${filter.year}-${month}-01`);
+        const endDate = new Date(filter.year, parseInt(month), 0, 23, 59, 59);
+
+        query.transactionDate = {
+          $gte: startDate,
+          $lte: endDate,
+        };
       }
 
-      // Only allow deletion of unprocessed transactions
-      if (transaction.processed) {
-        throw new BadRequestError('Cannot delete processed transactions');
+      return await RoundUpTransactionModel.find(query)
+        .sort({ transactionDate: -1 })
+        .limit(limit)
+        .skip((page - 1) * limit) as any;
+    } catch (error) {
+      console.error('Error getting transactions:', error);
+      throw error;
+    }
+  }
+
+  // Get eligible transactions for date range (for admin purposes)
+  async getEligibleTransactions(
+    startDate: Date,
+    endDate: Date,
+    charityId?: string
+  ): Promise<IEligibleTransactions> {
+    try {
+      const matchPipeline: any = {
+        transactionDate: { $gte: startDate, $lte: endDate },
+        status: { $in: ['processed', 'donated'] },
+      };
+
+      if (charityId) {
+        matchPipeline.organization = charityId;
       }
 
-      await RoundUpTransaction.findByIdAndDelete(transactionId);
-    } catch (error: any) {
+      const pipeline = [
+        { $match: matchPipeline },
+        {
+          $group: {
+            _id: null,
+            totalTransactions: { $sum: 1 },
+            totalRoundUpAmount: { $sum: '$roundUpAmount' },
+            averageRoundUpAmount: { $avg: '$roundUpAmount' },
+          },
+        },
+      ];
+
+      const stats = await RoundUpTransactionModel.aggregate(pipeline);
+      const transactions = await RoundUpTransactionModel.find(matchPipeline)
+        .sort({ transactionDate: -1 })
+        .limit(100); // Limit for admin view
+
+      return {
+        totalTransactions: stats[0]?.totalTransactions || 0,
+        eligibleTransactions: stats[0]?.totalTransactions || 0,
+        totalRoundUpAmount: stats[0]?.totalRoundUpAmount || 0,
+        averageRoundUpAmount: stats[0]?.averageRoundUpAmount || 0,
+        transactions: transactions as any,
+      };
+    } catch (error) {
+      console.error('Error getting eligible transactions:', error);
       throw error;
     }
   }

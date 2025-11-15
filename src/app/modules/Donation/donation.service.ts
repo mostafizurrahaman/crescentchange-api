@@ -466,7 +466,7 @@ const updateDonationPaymentStatus = async (
   }
 
   return (await Donation.findByIdAndUpdate(
-    donationWithTracking._id,
+    String(donationWithTracking._id),
     { $set: updateData },
     { new: true }
   )
@@ -527,7 +527,7 @@ const retryFailedPayment = async (
     currency: 'usd',
     customerId: donation.stripeCustomerId,
     paymentMethodId: donation.stripePaymentMethodId,
-    donationId: donation?._id.toString(),
+    donationId: String(donation._id),
     organizationId: donation.organization.toString(),
     causeId: donation.cause?.toString() || '',
     connectedAccountId: organization.stripeConnectAccountId,

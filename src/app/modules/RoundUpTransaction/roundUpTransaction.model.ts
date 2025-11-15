@@ -1,268 +1,211 @@
-import { Schema, model, Document } from 'mongoose';
+import mongoose, { Schema, Document, Model } from 'mongoose';
 import { IRoundUpTransaction } from './roundUpTransaction.interface';
 
-type RoundUpTransactionDocument = Document & IRoundUpTransaction;
+export interface IRoundUpTransactionDocument
+  extends IRoundUpTransaction,
+    Document {}
 
-const roundUpTransactionSchema = new Schema<RoundUpTransactionDocument>(
+export interface IRoundUpTransactionModel
+  extends Model<IRoundUpTransactionDocument> {
+  existsTransaction(transactionId: string): Promise<IRoundUpTransactionDocument | null>;
+  calculateRoundUpAmount(amount: number): number;
+  isTransactionEligible(transaction: {
+    amount: number;
+    category?: string[];
+    name?: string;
+  }): boolean;
+}
+
+// Categories to exclude from round-up calculations
+const EXCLUDED_CATEGORIES = [
+  'Transfer',
+  'Transfer, Debit',
+  'Transfer, Credit',
+  'ATM',
+  'ATM, Cash',
+  'Withdrawal',
+  'Cash Withdrawal',
+  'Payment',
+  'Bill Payment',
+  'Refund',
+  'Deposit',
+  'Interest',
+  'Dividend',
+  'Service Fee',
+  'Overdraft',
+  'Loan',
+  'Credit Card Payment',
+];
+
+const RoundUpTransactionSchema = new Schema(
   {
-    roundUp: {
-      type: Schema.Types.ObjectId,
-      ref: 'RoundUp',
-      default: null, // Allow null initially
-    },
     user: {
       type: Schema.Types.ObjectId,
-      ref: 'Client',
       required: true,
+      ref: 'Client',
+      index: true,
     },
     bankConnection: {
       type: Schema.Types.ObjectId,
-      ref: 'BankConnection',
       required: true,
+      ref: 'BankConnection',
+      index: true,
     },
-    plaidTransactionId: {
+    roundUp: {
+      type: Schema.Types.ObjectId,
+      required: true,
+      ref: 'RoundUp',
+      index: true,
+    },
+    transactionId: {
       type: String,
       required: true,
       unique: true,
+      index: true, // Critical for deduplication
     },
-    plaidAccountId: {
-      type: String,
-      required: true,
-    },
-    
-    // Transaction details
     originalAmount: {
       type: Number,
       required: true,
-      min: 0.01,
     },
-    roundUpValue: {
+    roundUpAmount: {
       type: Number,
       required: true,
-      min: 0.01,
-      max: 0.99,
+      min: 0.01, // Minimum round-up amount
+    },
+    currency: {
+      type: String,
+      required: true,
+      default: 'USD',
+    },
+    organization: {
+      type: Schema.Types.ObjectId,
+      required: true,
+      ref: 'Organization',
+      index: true,
     },
     transactionDate: {
       type: Date,
       required: true,
+      index: true,
     },
-    transactionDescription: {
+    transactionName: {
       type: String,
       required: true,
-      trim: true,
     },
-    
-    // Plaid-specific fields
-    transactionType: {
-      type: String,
-      enum: ['debit', 'credit'],
-      required: true,
-    },
-    category: {
+    transactionCategory: {
       type: [String],
-      default: [],
+      required: true,
     },
-    merchantName: {
+    status: {
       type: String,
-      trim: true,
+      enum: ['pending', 'processed', 'donated', 'failed'],
+      default: 'processed',
+      index: true,
     },
-    location: {
-      address: String,
-      city: String,
-      region: String,
-      postalCode: String,
-      country: String,
-      lat: Number,
-      lon: Number,
-    },
-    
-    // Status
-    processed: {
-      type: Boolean,
-      default: false,
-    },
-    donationId: {
+    donation: {
       type: Schema.Types.ObjectId,
       ref: 'Donation',
-      default: null,
     },
   },
   {
     timestamps: true,
-    toJSON: {
-      transform: function (doc, ret) {
-        // Format dates for frontend consumption
-        if (ret.transactionDate) {
-          ret.transactionDate = ret.transactionDate.toISOString();
-        }
-        if (ret.createdAt) {
-          ret.createdAt = ret.createdAt.toISOString();
-        }
-        if (ret.updatedAt) {
-          ret.updatedAt = ret.updatedAt.toISOString();
-        }
-        return ret;
-      },
-    },
+    toJSON: { virtuals: true },
     toObject: { virtuals: true },
   }
 );
 
-// Indexes for performance
-roundUpTransactionSchema.index({ user: 1 });
-roundUpTransactionSchema.index({ bankConnection: 1 });
-roundUpTransactionSchema.index({ plaidTransactionId: 1 });
-roundUpTransactionSchema.index({ processed: 1 });
-roundUpTransactionSchema.index({ transactionDate: -1 });
-roundUpTransactionSchema.index({ user: 1, processed: 1 });
+// Virtual to check if transaction is eligible for round-up
+RoundUpTransactionSchema.virtual('isEligible').get(function (this: IRoundUpTransactionDocument) {
+  // Transaction must be a purchase (negative amount for outgoing money)
+  if (this.originalAmount >= 0) return false;
 
-// Compound index for user transaction queries
-roundUpTransactionSchema.index({ user: 1, transactionDate: -1 });
+  // Must have some round-up amount
+  if (this.roundUpAmount <= 0) return false;
 
-// Static methods
-roundUpTransactionSchema.statics.findByUser = function (userId: string, query: any = {}) {
-  return this.find({ user: userId, ...query });
-};
+  // Must not be in excluded categories
+  const hasExcludedCategory = this.transactionCategory.some((category: string) =>
+    EXCLUDED_CATEGORIES.includes(category.toLowerCase())
+  );
 
-roundUpTransactionSchema.statics.findByBankConnection = function (bankConnectionId: string) {
-  return this.find({ bankConnection: bankConnectionId });
-};
-
-roundUpTransactionSchema.statics.findUnprocessedTransactions = function () {
-  return this.find({ processed: false });
-};
-
-roundUpTransactionSchema.statics.findByPlaidTransactionId = function (plaidTransactionId: string) {
-  return this.findOne({ plaidTransactionId: plaidTransactionId });
-};
-
-roundUpTransactionSchema.statics.getTransactionSummary = function (userId: string) {
-  return this.aggregate([
-    { $match: { user: new Schema.Types.ObjectId(userId) } },
-    {
-      $group: {
-        _id: null,
-        totalTransactions: { $sum: 1 },
-        totalRoundUpAmount: { $sum: '$roundUpValue' },
-        totalDonatedAmount: {
-          $sum: {
-            $cond: ['$processed', '$roundUpValue', 0]
-          }
-        },
-        averageRoundUp: { $avg: '$roundUpValue' },
-      }
-    },
-    {
-      $project: {
-        _id: 0,
-        totalTransactions: 1,
-        totalRoundUpAmount: 1,
-        totalDonatedAmount: 1,
-        averageRoundUp: { $round: ['$averageRoundUp', 2] },
-      }
-    }
-  ]);
-};
-
-roundUpTransactionSchema.statics.getCategoryBreakdown = function (userId: string) {
-  return this.aggregate([
-    { $match: { user: new Schema.Types.ObjectId(userId) } },
-    { $unwind: { path: '$category', preserveNullIfEmpty: true } },
-    {
-      $group: {
-        _id: '$category',
-        count: { $sum: 1 },
-        amount: { $sum: '$roundUpValue' },
-      }
-    },
-    { $sort: { amount: -1 } },
-    {
-      $project: {
-        category: { $ifNull: ['$_id', 'Uncategorized'] },
-        count: 1,
-        amount: { $round: ['$amount', 2] },
-        _id: 0,
-      }
-    }
-  ]);
-};
-
-roundUpTransactionSchema.statics.getMonthlyBreakdown = function (userId: string) {
-  return this.aggregate([
-    { $match: { user: new Schema.Types.ObjectId(userId) } },
-    {
-      $group: {
-        _id: { $dateToString: { format: '%Y-%m', date: '$transactionDate' } },
-        totalTransactions: { $sum: 1 },
-        totalRoundUpAmount: { $sum: '$roundUpValue' },
-        totalDonatedAmount: {
-          $sum: {
-            $cond: ['$processed', '$roundUpValue', 0]
-          }
-        },
-      }
-    },
-    { $sort: { _id: -1 } },
-    {
-      $project: {
-        month: '$_id',
-        totalTransactions: 1,
-        totalRoundUpAmount: { $round: ['$totalRoundUpAmount', 2] },
-        totalDonatedAmount: { $round: ['$totalDonatedAmount', 2] },
-        _id: 0,
-      }
-    }
-  ]);
-};
-
-// Instance methods
-roundUpTransactionSchema.methods.markAsProcessed = function (donationId?: string) {
-  this.processed = true;
-  if (donationId) {
-    this.donationId = donationId;
-  }
-  return this.save();
-};
-
-roundUpTransactionSchema.methods.calculateRoundUp = function (amount: number): number {
-  const rounded = Math.ceil(amount);
-  return parseFloat((rounded - amount).toFixed(2));
-};
-
-// Virtual for formatted round-up value
-roundUpTransactionSchema.virtual('formattedRoundUp').get(function () {
-  return this.roundUpValue.toFixed(2);
+  return !hasExcludedCategory;
 });
 
-// Pre-save validation
-roundUpTransactionSchema.pre('save', function (next) {
-  // Validate round-up value is within allowed range
-  if (this.roundUpValue < 0.01 || this.roundUpValue > 0.99) {
-    next(new Error('Round-up value must be between 0.01 and 0.99'));
-    return;
+// Static method to check for duplicates
+RoundUpTransactionSchema.statics.existsTransaction = function (
+  transactionId: string
+) {
+  return this.findOne({ transactionId });
+};
+
+// Static method to calculate round-up amount
+RoundUpTransactionSchema.statics.calculateRoundUpAmount = function (
+  amount: number
+): number {
+  // Calculate round-up: ceil(abs(amount)) - abs(amount)
+  // Example: $4.60 -> $0.40, $20.00 -> $0.00 (skip if exact dollar)
+  const absAmount = Math.abs(amount);
+  const roundedUp = Math.ceil(absAmount);
+  const roundUpAmount = roundedUp - absAmount;
+
+  // Return 0 if exact dollar amount (no round-up needed)
+  return roundUpAmount === 0 ? 0 : roundUpAmount;
+};
+
+// Static method to check if transaction is eligible
+RoundUpTransactionSchema.statics.isTransactionEligible = function (
+  transaction: {
+    amount: number;
+    category?: string[];
+    name?: string;
+  }
+): boolean {
+  // Must be a debit (negative for outgoing)
+  if (transaction.amount >= 0) return false;
+
+  // Exclude specific transaction categories
+  const excludedCategories = [
+    'Transfer',
+    'Withdrawal',
+    'ATM',
+    'Payment',
+    'Refund',
+    'Deposit',
+    'Interest',
+    'Service Fee',
+    'Overdraft',
+  ];
+
+  if (transaction.category) {
+    const hasExcludedCategory = transaction.category.some((cat: string) =>
+      excludedCategories.some((excluded) =>
+        cat.toLowerCase().includes(excluded.toLowerCase())
+      )
+    );
+
+    if (hasExcludedCategory) return false;
   }
 
-  // Ensure original amount is positive
-  if (this.originalAmount <= 0) {
-    next(new Error('Original amount must be positive'));
-    return;
+  // Check for specific transaction names to exclude
+  const excludedNames = ['ATM', 'WITHDRAWAL', 'TRANSFER', 'PAYMENT', 'REFUND'];
+  const transactionName = (transaction.name || '').toUpperCase();
+
+  if (excludedNames.some((excluded) => transactionName.includes(excluded))) {
+    return false;
   }
 
-  // Ensure transaction type is valid for round-ups
-  if (this.transactionType !== 'debit') {
-    next(new Error('Only debit transactions are eligible for round-ups'));
-    return;
-  }
+  return true;
+};
 
-  next();
-});
+// Compound indexes for optimal performance
+RoundUpTransactionSchema.index({ user: 1, status: 1 });
+RoundUpTransactionSchema.index({ bankConnection: 1, transactionDate: -1 });
+RoundUpTransactionSchema.index({ organization: 1, status: 1 });
+RoundUpTransactionSchema.index({ roundUp: 1, status: 1 });
+RoundUpTransactionSchema.index({ transactionDate: 1, status: 1 });
+RoundUpTransactionSchema.index({ user: 1, createdAt: -1 });
 
-// Text index for searching
-roundUpTransactionSchema.index({
-  transactionDescription: 'text',
-  merchantName: 'text',
-});
-
-const RoundUpTransaction = model<RoundUpTransactionDocument>('RoundUpTransaction', roundUpTransactionSchema);
-
-export default RoundUpTransaction;
+export const RoundUpTransactionModel =
+  mongoose.model<IRoundUpTransactionDocument, IRoundUpTransactionModel>(
+    'RoundUpTransaction',
+    RoundUpTransactionSchema
+  );

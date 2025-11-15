@@ -13,8 +13,8 @@ import { PaymentMethodRoutes } from '../modules/PaymentMethod/paymentMethod.rout
 import { OrganizationRoutes } from '../modules/Organization/organization.routes';
 import ScheduledDonationRoutes from '../modules/ScheduledDonation/scheduledDonation.route';
 import { CronJobsRoutes } from '../modules/CronJobs/cronJobs.route';
-// import { BankConnectionRoutes } from '../modules/BankConnection/bankConnection.route';
-// import { RoundUpTransactionRoutes } from '../modules/RoundUpTransaction/roundUpTransaction.route';
+import { BankConnectionRoutes } from '../modules/BankConnection/bankConnection.route';
+import { SecureRoundUpRoutes } from '../modules/RoundUp/secureRoundUp.route';
 
 const router = Router();
 
@@ -74,14 +74,14 @@ const moduleRoutes = [
     path: '/organization',
     route: OrganizationRoutes,
   },
-  // {
-  //   path: '/bank-connection',
-  //   route: BankConnectionRoutes,
-  // },
-  // {
-  //   path: '/roundup-transaction',
-  //   route: RoundUpTransactionRoutes,
-  // },
+  {
+    path: '/bank-connection',
+    route: BankConnectionRoutes,
+  },
+  {
+    path: '/secure-roundup',
+    route: SecureRoundUpRoutes,
+  },
 ];
 
 moduleRoutes.forEach((route) => router.use(route.path, route.route));

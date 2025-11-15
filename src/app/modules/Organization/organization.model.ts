@@ -73,3 +73,4 @@ const organizationSchema = new Schema<IORGANIZATION>(
 const Organization = model<IORGANIZATION>('Organization', organizationSchema);
 
 export default Organization;
+export { Organization as OrganizationModel };

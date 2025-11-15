@@ -3,6 +3,9 @@ import { stripe } from '../../lib/stripeHelper';
 import config from '../../config';
 import { AppError } from '../../utils';
 import httpStatus from 'http-status';
+import { OrganizationModel } from '../Organization/organization.model';
+
+import { Donation } from '../donation/donation.model';
 import {
   ICheckoutSessionRequest,
   ICheckoutSessionResponse,
@@ -669,7 +672,84 @@ const createAccountLink = async (
   }
 };
 
-// 8. Cancel payment intent for one-time donation
+// 18. Process round-up donation transfer to charity
+const processRoundUpDonation = async (payload: {
+  roundUpId: string;
+  userId: string;
+  charityId: string;
+  causeId?: string;
+  amount: number;
+  month: string;
+  year: number;
+  specialMessage?: string;
+}): Promise<{ donationId: string; transferId: string }> => {
+  try {
+    // Get charity's Stripe Connect account
+    const charity = await OrganizationModel.findById(payload.charityId);
+    if (!charity || !charity.stripeConnectAccountId) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'Charity does not have a connected Stripe account'
+      );
+    }
+
+    // For round-up donations, we'll use a direct charge with transfer data
+    // This ensures funds go directly to the charity
+    const transfer = await stripe.transfers.create({
+      amount: Math.round(payload.amount * 100), // Convert to cents
+      currency: 'usd',
+      destination: charity.stripeConnectAccountId,
+      source_transaction: 'tok_visa', // We'll need to implement actual payment processing
+      description: `Round-up donation for ${payload.month} ${payload.year}`,
+      metadata: {
+        roundUpId: payload.roundUpId,
+        userId: payload.userId,
+        charityId: payload.charityId,
+        month: payload.month,
+        year: payload.year.toString(),
+        type: 'roundup_donation',
+      },
+    });
+
+    // Create donation record in main donation model
+    const mainDonation = await Donation.create({
+      donor: payload.userId, // Assume userId corresponds to Client ObjectId for now
+      organization: payload.charityId,
+      cause: payload.causeId, // Cause specified during round-up setup
+      donationType: 'round-up',
+      amount: payload.amount,
+      currency: 'USD',
+      status: 'completed',
+      donationDate: new Date(),
+      stripePaymentIntentId: transfer.id,
+      specialMessage: payload.specialMessage || `Round-up donation for ${payload.month} ${payload.year}`,
+      pointsEarned: Math.round(payload.amount * 10), // Example: 10 points per dollar
+      connectedAccountId: charity.stripeConnectAccountId,
+      roundUpId: payload.roundUpId,
+      receiptGenerated: false,
+      // Additional round-up specific metadata
+      metadata: {
+        userId: payload.userId,
+        month: payload.month,
+        year: payload.year.toString(),
+        type: 'roundup_donation',
+        description: `Round-up donation for ${payload.month} ${payload.year}`,
+      },
+    });
+
+    return {
+      donationId: String(mainDonation._id),
+      transferId: transfer.id,
+    };
+  } catch (error) {
+    throw new AppError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      `Failed to process round-up donation: ${(error as Error).message}`
+    );
+  }
+};
+
+// 19. Cancel payment intent for one-time donation
 const cancelPaymentIntent = async (
   paymentIntentId: string
 ): Promise<{ canceled: boolean; status: string }> => {
@@ -722,4 +802,5 @@ export const StripeService = {
   createConnectAccount,
   getConnectAccount,
   createAccountLink,
+  processRoundUpDonation,
 };

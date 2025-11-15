@@ -65,6 +65,7 @@ interface IConfig {
     env: string;
     webhookUrl: string;
     webhookKey: string;
+    redirectUri: string;
   };
   encryptionKey: string;
 }
@@ -134,6 +135,7 @@ const config: IConfig = {
     env: process.env.PLAID_ENV || 'sandbox',
     webhookUrl: process.env.PLAID_WEBHOOK_URL || '',
     webhookKey: process.env.PLAID_WEBHOOK_KEY || '',
+    redirectUri: process.env.PLAID_REDIRECT_URI!,
   },
   encryptionKey: process.env.ENCRYPTION_KEY || '',
 };

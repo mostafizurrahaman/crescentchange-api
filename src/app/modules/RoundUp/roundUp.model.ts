@@ -1,86 +1,283 @@
-import { Schema, model } from 'mongoose';
-import {
-  ROUNDUP_THRESHOLD_OPTIONS,
-  AUTODONATE_TRIGGER_TYPE,
-} from '../Donation/donation.constant';
-import {
-  IRoundUp,
-  IRoundUpModel,
-} from '../Donation/donation.interface';
+import mongoose, { Schema, Document } from 'mongoose';
+import { IRoundUp, TRoundUpStatus } from './roundUp.interface';
 
-const roundUpSchema = new Schema<IRoundUp>(
+export interface IRoundUpDocument extends IRoundUp, Document {
+  resetMonthlyTotal(): void;
+  addRoundUpAmount(amount: number): boolean;
+  updateStatus(newStatus: TRoundUpStatus): void;
+  checkAndUpdateThresholdStatus(): TRoundUpStatus;
+  completeDonationCycle(): Promise<void>;
+  cancelRoundUp(reason?: string): Promise<void>;
+  markAsFailed(failureReason?: string): Promise<void>;
+  resetToPending(): Promise<void>;
+  canSwitchCharity(): boolean;
+  switchCharity(newOrganizationId: string): boolean;
+}
+
+const RoundUpSchema = new Schema(
   {
     user: {
       type: Schema.Types.ObjectId,
       ref: 'Client',
       required: true,
+      index: true,
     },
     organization: {
       type: Schema.Types.ObjectId,
-      ref: 'Organization',
       required: true,
+      ref: 'Organization',
+      index: true,
+    },
+    cause: {
+      type: Schema.Types.ObjectId,
+      ref: 'Cause',
+      required: [true, 'Cause is required'],
+      index: true,
     },
     bankConnection: {
       type: Schema.Types.ObjectId,
-      ref: 'BankConnection',
       required: true,
+      ref: 'BankConnection',
+      index: true,
     },
-    thresholdAmount: {
-      type: Number,
-    },
-    monthlyLimit: {
-      type: Number,
-      min: 0,
-    },
-    autoDonateTrigger: {
-      type: {
-        type: String,
-        enum: AUTODONATE_TRIGGER_TYPE,
-        required: true,
+    monthlyThreshold: {
+      type: Schema.Types.Mixed, // Can be Number or "no-limit" string
+      validate: {
+        validator: function (value: any) {
+          return (
+            value === 'no-limit' ||
+            (typeof value === 'number' && value >= 3 && value <= 1000)
+          );
+        },
+        message: 'Monthly threshold must be "no-limit" or a number at least $3',
       },
-      amount: {
-        type: Number,
-        min: 0,
-      },
-      days: {
-        type: Number,
-        default: 30,
-        min: 1,
-      },
+      default: undefined, // undefined for 'No-limit' option
     },
     specialMessage: {
       type: String,
-      maxlength: 500,
+      maxlength: [250, 'Special message must not exceed 250 characters'],
+      trim: true,
+    },
+    status: {
+      type: String,
+      enum: ['pending', 'processing', 'completed', 'cancelled', 'failed'],
+      default: 'pending',
+      required: true,
+      // Note: This field should only be modified by backend processes
+      // It gets updated automatically when threshold is reached or donations are processed
+      // pending: accumulating roundups, processing: threshold met, completed: donation processed
+      // cancelled: user cancelled or bank connection lost, failed: payment processing failed
     },
     isActive: {
       type: Boolean,
       default: true,
     },
-    currentAccumulatedAmount: {
+    enabled: {
+      type: Boolean,
+      default: true,
+    },
+    totalAccumulated: {
       type: Number,
       default: 0,
       min: 0,
     },
-    lastDonationDate: {
-      type: Date,
+    currentMonthTotal: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
-    nextAutoDonationDate: {
-      type: Date,
-    },
-    cycleStartDate: {
+    lastMonthReset: {
       type: Date,
       default: Date.now,
+    },
+    lastCharitySwitch: {
+      type: Date,
     },
   },
   {
     timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
 
-// Indexes for better query performance
-roundUpSchema.index({ user: 1, isActive: 1 });
-roundUpSchema.index({ organization: 1 });
-roundUpSchema.index({ bankConnection: 1, isActive: 1 });
-roundUpSchema.index({ nextAutoDonationDate: 1, isActive: 1 });
+// Virtual for checking if monthly threshold is met
+RoundUpSchema.virtual('isThresholdMet').get(function (this: IRoundUpDocument) {
+  return (
+    this.monthlyThreshold !== 'no-limit' &&
+    typeof this.monthlyThreshold === 'number' &&
+    this.currentMonthTotal >= this.monthlyThreshold
+  );
+});
 
-export const RoundUp = model<IRoundUpModel>('RoundUp', roundUpSchema);
+// Virtual for days since last charity switch
+RoundUpSchema.virtual('daysSinceLastCharitySwitch').get(function (
+  this: IRoundUpDocument
+) {
+  if (!this.lastCharitySwitch) return Infinity;
+  return Math.floor(
+    (Date.now() - this.lastCharitySwitch.getTime()) / (1000 * 60 * 60 * 24)
+  );
+});
+
+// Method to reset monthly total
+RoundUpSchema.methods.resetMonthlyTotal = function (
+  this: IRoundUpDocument
+): void {
+  this.currentMonthTotal = 0;
+  this.lastMonthReset = new Date();
+  this.save();
+};
+
+// Method to add round-up amount
+RoundUpSchema.methods.addRoundUpAmount = function (
+  this: IRoundUpDocument,
+  amount: number
+): boolean {
+  this.currentMonthTotal += amount;
+  this.totalAccumulated += amount;
+
+  const thresholdMet =
+    this.monthlyThreshold !== 'no-limit' &&
+    typeof this.monthlyThreshold === 'number' &&
+    this.currentMonthTotal >= this.monthlyThreshold;
+
+  // Update status if threshold is met and current status is pending
+  if (thresholdMet && this.status === 'pending') {
+    this.status = 'processing';
+  }
+
+  this.save();
+  return !!thresholdMet;
+};
+
+// Method to update status (backend only)
+RoundUpSchema.methods.updateStatus = function (
+  this: IRoundUpDocument,
+  newStatus: TRoundUpStatus
+): void {
+  this.status = newStatus;
+  this.save();
+};
+
+// Method to check if monthly threshold is met and update status
+RoundUpSchema.methods.checkAndUpdateThresholdStatus = function (
+  this: IRoundUpDocument
+): TRoundUpStatus {
+  const thresholdMet =
+    this.monthlyThreshold !== 'no-limit' &&
+    typeof this.monthlyThreshold === 'number' &&
+    this.currentMonthTotal >= this.monthlyThreshold;
+
+  if (thresholdMet && this.status === 'pending') {
+    this.status = 'processing';
+  }
+  
+  this.save();
+  return this.status;
+};
+
+// Method to complete donation cycle (sets status to completed and resets monthly total)
+RoundUpSchema.methods.completeDonationCycle = async function (
+  this: IRoundUpDocument
+): Promise<void> {
+  this.status = 'completed';
+  this.currentMonthTotal = 0;
+  this.lastMonthReset = new Date();
+  await this.save();
+  
+  // Reset to pending for next cycle after a short delay
+  setTimeout(async () => {
+    this.status = 'pending';
+    await this.save();
+  }, 1000); // Small delay to ensure completion is recorded
+};
+
+// Method to cancel round-up (user initiated or bank connection lost)
+RoundUpSchema.methods.cancelRoundUp = async function (
+  this: IRoundUpDocument,
+  reason?: string
+): Promise<void> {
+  this.status = 'cancelled';
+  this.enabled = false;
+  await this.save();
+};
+
+// Method to mark round-up as failed (payment processing failed)
+RoundUpSchema.methods.markAsFailed = async function (
+  this: IRoundUpDocument,
+  failureReason?: string
+): Promise<void> {
+  this.status = 'failed';
+  await this.save();
+};
+
+// Method to reset status to pending (after failure resolution)
+RoundUpSchema.methods.resetToPending = async function (
+  this: IRoundUpDocument
+): Promise<void> {
+  this.status = 'pending';
+  await this.save();
+};
+
+// Method to check if organization switch is allowed
+RoundUpSchema.methods.canSwitchCharity = function (
+  this: IRoundUpDocument & { canSwitchCharity: () => boolean }
+): boolean {
+  if (!this.lastCharitySwitch) return true;
+  const daysSinceSwitch = Math.floor(
+    (Date.now() - this.lastCharitySwitch.getTime()) / (1000 * 60 * 60 * 24)
+  );
+  return daysSinceSwitch >= 30;
+};
+
+// Method to switch organization
+RoundUpSchema.methods.switchCharity = function (
+  this: IRoundUpDocument & { canSwitchCharity: () => boolean },
+  newOrganizationId: string
+): boolean {
+  if (!this.canSwitchCharity()) {
+    return false;
+  }
+
+  this.organization = newOrganizationId;
+  this.lastCharitySwitch = new Date();
+  this.save();
+  return true;
+};
+
+// Static methods
+RoundUpSchema.statics.findActiveByUserId = function (userId: string) {
+  return this.findOne({
+    user: userId,
+    isActive: true,
+    enabled: true,
+  });
+};
+
+RoundUpSchema.statics.findByBankConnection = function (
+  bankConnectionId: string
+) {
+  return this.findOne({
+    bankConnection: bankConnectionId,
+    isActive: true,
+  });
+};
+
+RoundUpSchema.statics.findByOrganization = function (organizationId: string) {
+  return this.find({
+    organization: organizationId,
+    isActive: true,
+  });
+};
+
+// Compound indexes
+RoundUpSchema.index({ user: 1, isActive: 1 });
+RoundUpSchema.index({ organization: 1, isActive: 1 });
+RoundUpSchema.index({ bankConnection: 1, isActive: 1 });
+RoundUpSchema.index({ isActive: 1, enabled: 1 });
+
+export const RoundUpModel = mongoose.model<IRoundUpDocument>(
+  'RoundUp',
+  RoundUpSchema
+);

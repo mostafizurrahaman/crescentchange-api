@@ -1,0 +1,400 @@
+info:
+  name: Bank Connection & Round-Up API
+  description: API collection for Bank Connection management (7 endpoints) and Round-Up donation processing (6 endpoints)
+  schema: https://schema.getpostman.com/json/collection/v2.1.0/collection.json
+
+variable:
+  - key: baseUrl
+    value: http://localhost:3000/api/v1
+    type: string
+  - key: authToken
+    value: YOUR_JWT_TOKEN_HERE
+    type: string
+  - key: userId
+    value: ""
+    type: string
+  - key: bankConnectionId
+    value: ""
+    type: string
+  - key: roundUpId
+    value: ""
+    type: string
+  - key: charityId
+    value: ""
+    type: string
+
+item:
+  - name: Bank Connection
+    description: Bank Connection management endpoints (7 routes). Requires authenticated user.
+    item:
+      - name: 1. Sign In (Get Auth Token)
+        event:
+          - listen: test
+            script:
+              exec:
+                - if (pm.response.code === 200) {
+                - '    var jsonData = pm.response.json();'
+                - '    if (jsonData.data && jsonData.data.accessToken) {'
+                - '        pm.collectionVariables.set("authToken", jsonData.data.accessToken);'
+                - '    }'
+                - '    if (jsonData.data && jsonData.data.user && jsonData.data.user._id) {'
+                - '        pm.collectionVariables.set("userId", jsonData.data.user._id);'
+                - '    }'
+                - '}'
+                - ''
+                - 'pm.test('Authentication successful', function() {'
+                - '    pm.expect(pm.response.code).to.eql(200);'
+                - '    pm.expect(pm.response.json()).to.have.property('data');'
+                - '    pm.expect(pm.response.json().data).to.have.property('accessToken');'
+                - '});'
+              type: text/javascript
+        request:
+          method: POST
+          header:
+            - key: Content-Type
+              value: application/json
+              type: text
+          body:
+            mode: raw
+            raw: |
+              {
+                "email": "user@example.com",
+                "password": "securePassword123"
+              }
+          url:
+            raw: "{{baseUrl}}/auth/signin"
+            host:
+              - "{{baseUrl}}"
+            path:
+              - auth
+              - signin
+        description: Sign in to get JWT authentication token. Sets authToken and userId variables automatically.
+        response: []
+
+      - name: 2. Generate Plaid Link Token
+        request:
+          method: POST
+          header:
+            - key: Authorization
+              value: Bearer {{authToken}}
+              type: text
+            - key: Content-Type
+              value: application/json
+              type: text
+          body:
+            mode: raw
+            raw: |
+              {
+                "clientUserId": "{{userId}}"
+              }
+          url:
+            raw: "{{baseUrl}}/bank-connection/link-token
+            host:
+              - "{{baseUrl}}"
+            path:
+              - bank-connection
+              - link-token
+        description: Generate Plaid link token for bank account connection.
+        response: []
+
+      - name: 3. Create Bank Connection
+        event:
+          - listen: test
+            script:
+              exec:
+                - if (pm.response.code === 200 || pm.response.code === 201) {
+                - '    var jsonData = pm.response.json();'
+                - '    if (jsonData.success && jsonData.success.data && jsonData.success.data._id) {'
+                - '        pm.collectionVariables.set("bankConnectionId", jsonData.success.data._id);'
+                - '    }'
+                - '}'
+                - ''
+                - 'pm.test('Bank connection created successfully', function() {'
+                - '    pm.expect([200, 201]).to.include(pm.response.code);'
+                - '    pm.expect(pm.response.json()).to.have.property('success');'
+                - '});'
+              type: text/javascript
+        request:
+          method: POST
+          header:
+            - key: Authorization
+              value: Bearer {{authToken}}
+              type: text
+            - key: Content-Type
+              value: application/json
+              type: text
+          body:
+            mode: raw
+            raw: |
+              {
+                "publicToken": "public-sandbox-xxx-xxx-xxx",
+                "institutionId": "ins_123456",
+                "institutionName": "Test Bank"
+              }
+          url:
+            raw: "{{baseUrl}}/bank-connection
+            host:
+              - "{{baseUrl}}"
+            path:
+              - bank-connection
+        description: Exchange public token from Plaid Link to create bank connection. Sets bankConnectionId automatically.
+        response: []
+
+      - name: 4. Get User Bank Connection
+        request:
+          method: GET
+          header:
+            - key: Authorization
+              value: Bearer {{authToken}}
+              type: text
+          url:
+            raw: "{{baseUrl}}/bank-connection/me
+            host:
+              - "{{baseUrl}}"
+            path:
+              - bank-connection
+              - me
+        description: Get authenticated user's bank connection details.
+        response: []
+
+      - name: 5. Sync Transactions
+        request:
+          method: POST
+          header:
+            - key: Authorization
+              value: Bearer {{authToken}}
+              type: text
+            - key: Content-Type
+              value: application/json
+              type: text
+          body:
+            mode: raw
+            raw: |
+              {
+                "cursor": null
+              }
+          url:
+            raw: "{{baseUrl}}/bank-connection/{{bankConnectionId}}/sync
+            host:
+              - "{{baseUrl}}"
+            path:
+              - bank-connection
+              - "{{bankConnectionId}}"
+              - sync
+        description: Sync transactions from Plaid for a specific bank connection.
+        response: []
+
+      - name: 6. Get Transactions
+        request:
+          method: GET
+          header:
+            - key: Authorization
+              value: Bearer {{authToken}}
+              type: text
+          url:
+            raw: "{{baseUrl}}/bank-connection/{{bankConnectionId}}/transactions?startDate=2024-01-01&endDate=2024-12-31&limit=50"
+            host:
+              - "{{baseUrl}}"
+            path:
+              - bank-connection
+              - "{{bankConnectionId}}"
+              - transactions
+            query:
+              - key: startDate
+                value: "2024-01-01"
+                description: Start date for transaction filtering
+              - key: endDate
+                value: "2024-12-31"
+                description: End date for transaction filtering
+              - key: limit
+                value: "50"
+                description: Maximum number of transactions to return
+        description: Get transactions for a bank connection within date range.
+        response: []
+
+      - name: 7. Revoke Bank Connection
+        request:
+          method: POST
+          header:
+            - key: Authorization
+              value: Bearer {{authToken}}
+              type: text
+          url:
+            raw: "{{baseUrl}}/bank-connection/{{bankConnectionId}}/revoke
+            host:
+              - "{{baseUrl}}"
+            path:
+              - bank-connection
+              - "{{bankConnectionId}}"
+              - revoke
+        description: Revoke consent and disconnect bank account.
+        response: []
+
+  - name: Round-Up Donations
+    description: Round-Up donation processing endpoints (6 routes). Requires authenticated user with active bank connection.
+    item:
+      - name: 1. Save Plaid Consent (Start RoundUp)
+        event:
+          - listen: test
+            script:
+              exec:
+                - if (pm.response.code === 200 || pm.response.code === 201) {
+                - '    var jsonData = pm.response.json();'
+                - '    if (jsonData.success && jsonData.success.data && jsonData.success.data._id) {'
+                - '        pm.collectionVariables.set("roundUpId", jsonData.success.data._id);'
+                - '    }'
+                - '}'
+                - ''
+                - 'pm.test('RoundUp consent saved successfully', function() {'
+                - '    pm.expect([200, 201]).to.include(pm.response.code);'
+                - '    pm.expect(pm.response.json()).to.have.property('success');'
+                - '});'
+              type: text/javascript
+        request:
+          method: POST
+          header:
+            - key: Authorization
+              value: Bearer {{authToken}}
+              type: text
+            - key: Content-Type
+              value: application/json
+              type: text
+          body:
+            mode: raw
+            raw: |
+              {
+                "bankConnectionId": "{{bankConnectionId}}",
+                "charityId": "{{charityId}}",
+                "monthlyThreshold": 10.00,
+                "roundUpPercentage": 100,
+                "maxRoundUpPerTransaction": 5.00
+              }
+          url:
+            raw: "{{baseUrl}}/secure-roundup/consent/save
+            host:
+              - "{{baseUrl}}"
+            path:
+              - secure-roundup
+              - consent
+              - save
+        description: Save Plaid consent and create round-up configuration. Sets roundUpId automatically.
+        response: []
+
+      - name: 2. Sync RoundUp Transactions
+        request:
+          method: POST
+          header:
+            - key: Authorization
+              value: Bearer {{authToken}}
+              type: text
+            - key: Content-Type
+              value: application/json
+              type: text
+          body:
+            mode: raw
+            raw: |
+              {
+                "cursor": null
+              }
+          url:
+            raw: "{{baseUrl}}/secure-roundup/transactions/sync/{{bankConnectionId}}
+            host:
+              - "{{baseUrl}}"
+            path:
+              - secure-roundup
+              - transactions
+              - sync
+              - "{{bankConnectionId}}"
+        description: Sync transactions and process round-ups for bank connection.
+        response: []
+
+      - name: 3. Process Monthly Donation
+        request:
+          method: POST
+          header:
+            - key: Authorization
+              value: Bearer {{authToken}}
+              type: text
+            - key: Content-Type
+              value: application/json
+              type: text
+          body:
+            mode: raw
+            raw: |
+              {
+                "roundUpId": "{{roundUpId}}"
+              }
+          url:
+            raw: "{{baseUrl}}/secure-roundup/process-monthly-donation
+            host:
+              - "{{baseUrl}}"
+            path:
+              - secure-roundup
+              - process-monthly-donation
+        description: Process accumulated monthly round-up donation to charity.
+        response: []
+
+      - name: 4. Switch Charity
+        request:
+          method: POST
+          header:
+            - key: Authorization
+              value: Bearer {{authToken}}
+              type: text
+            - key: Content-Type
+              value: application/json
+              type: text
+          body:
+            mode: raw
+            raw: |
+              {
+                "roundUpId": "{{roundUpId}}",
+                "newCharityId": "{{charityId}}",
+                "reason": "User preference change"
+              }
+          url:
+            raw: "{{baseUrl}}/secure-roundup/charity/switch
+            host:
+              - "{{baseUrl}}"
+            path:
+              - secure-roundup
+              - charity
+              - switch
+        description: Switch charity for round-up donations (30-day validation required).
+        response: []
+
+      - name: 5. Get User Dashboard
+        request:
+          method: GET
+          header:
+            - key: Authorization
+              value: Bearer {{authToken}}
+              type: text
+          url:
+            raw: "{{baseUrl}}/secure-roundup/dashboard
+            host:
+              - "{{baseUrl}}"
+            path:
+              - secure-roundup
+              - dashboard
+        description: Get user's round-up dashboard with statistics and summaries.
+        response: []
+
+      - name: 6. Revoke RoundUp Consent
+        request:
+          method: POST
+          header:
+            - key: Authorization
+              value: Bearer {{authToken}}
+              type: text
+          url:
+            raw: "{{baseUrl}}/secure-roundup/consent/revoke/{{bankConnectionId}}
+            host:
+              - "{{baseUrl}}"
+            path:
+              - secure-roundup
+              - consent
+              - revoke
+              - "{{bankConnectionId}}"
+        description: Revoke round-up consent and stop processing donations for this bank connection.
+        response: []

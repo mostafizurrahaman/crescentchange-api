@@ -1,85 +1,66 @@
-import { IPlaidTransaction } from '../BankConnection/bankConnection.interface';
-
 export interface IRoundUpTransaction {
-  _id?: string;
-  roundUp?: string; // ObjectId ref: 'RoundUp'
-  user: string; // ObjectId ref: 'Client'
-  bankConnection: string; // ObjectId ref: 'BankConnection'
-  plaidTransactionId: string; // From Plaid API
-  plaidAccountId: string; // Plaid account ID
-  
-  // Transaction details
-  originalAmount: number; // Always positive
-  roundUpValue: number; // Between 0.01 and 0.99
+  user: string; // Reference to Client
+  bankConnection: string; // Reference to BankConnection
+  roundUp: string; // Reference to RoundUp configuration
+  transactionId: string; // Plaid transaction ID for deduplication
+  originalAmount: number;
+  roundUpAmount: number;
+  currency: string; // Will be "USD" for Plaid US
+  organization: string; // Reference to Organization
   transactionDate: Date;
-  transactionDescription: string;
-  
-  // Plaid-specific fields
-  transactionType: 'debit' | 'credit';
-  category?: string[];
-  merchantName?: string;
-  location?: {
-    address?: string;
-    city?: string;
-    region?: string;
-    postalCode?: string;
-    country?: string;
-    lat?: number;
-    lon?: number;
+  transactionName: string;
+  transactionCategory: string[];
+  status: 'pending' | 'processed' | 'donated' | 'failed';
+  donation?: string; // Reference to main Donation record
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface ITransactionProcessingResult {
+  processed: number;
+  skipped: number;
+  failed: number;
+  roundUpsCreated: IRoundUpTransaction[];
+  thresholdReached?: {
+    roundUpId: string;
+    amount: number;
+    charityId: string;
   };
-  
-  // Status
-  processed: boolean;
-  donationId?: string; // ObjectId ref: 'Donation'
-  
-  // Metadata
-  createdAt: Date;
-  updatedAt: Date;
 }
 
-export interface IRoundUpTransactionPayload extends Partial<IRoundUpTransaction> {
-  user: string;
-  bankConnection: string;
+export interface ITransactionFilter {
+  user?: string;
+  bankConnection?: string;
+  organization?: string;
+  status?: string;
+  dateRange?: {
+    start: Date;
+    end: Date;
+  };
+  month?: string; // Format: "2024-01"
+  year?: number;
 }
 
-export interface ICreateRoundUpTransactionPayload {
-  user: string;
-  bankConnection: string;
-  plaidTransaction: IPlaidTransaction;
-}
-
-export interface ISyncRoundUpTransactionsResponse {
+export interface IEligibleTransactions {
+  totalTransactions: number;
+  eligibleTransactions: number;
+  totalRoundUpAmount: number;
+  averageRoundUpAmount: number;
   transactions: IRoundUpTransaction[];
-  totalProcessed: number;
-  totalAmount: number;
-  lastSyncDate: Date;
-}
-
-export interface IGetTransactionsQuery {
-  page?: number;
-  limit?: number;
-  startDate?: string;
-  endDate?: string;
-  processed?: boolean;
-  category?: string;
-  minAmount?: number;
-  maxAmount?: number;
-  searchTerm?: string;
 }
 
 export interface ITransactionSummary {
+  user: string;
   totalTransactions: number;
-  totalRoundUpAmount: number;
-  totalDonatedAmount: number;
+  totalRoundUps: number;
+  totalDonated: number;
+  currentMonthTotal: number;
   averageRoundUp: number;
-  mostActiveMonth: string;
-  topCategories: {
-    category: string;
-    count: number;
-    amount: number;
-  }[];
-}
-
-export interface IPlaidTransactionWithRoundUp extends IPlaidTransaction {
-  roundUpValue: number;
+  lastTransactionDate: Date;
+  statusCounts: {
+    pending: number;
+    processed: number;
+    donated: number;
+    failed: number;
+  };
 }
