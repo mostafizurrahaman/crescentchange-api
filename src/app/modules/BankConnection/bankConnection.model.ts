@@ -1,30 +1,22 @@
-import { Schema, model, Document } from 'mongoose';
-import {
-  IBankConnection,
-  TAccountType,
-  TBankConnectionStatus,
-} from './bankConnection.interface';
+import mongoose, { Schema, Document } from 'mongoose';
+import { IBankConnection } from './bankConnection.interface';
+import plaidService from './bankConnection.service';
 
-type BankConnectionDocument = Document & IBankConnection;
+export interface IBankConnectionDocument extends IBankConnection, Document {}
 
-const bankConnectionSchema = new Schema<BankConnectionDocument>(
+const BankConnectionSchema = new Schema(
   {
-    user: { type: Schema.Types.ObjectId, ref: 'Client', required: true },
-    plaidItemId: {
+    user: {
+      type: Schema.Types.ObjectId,
+      required: true,
+      ref: 'Client',
+    },
+    itemId: {
       type: String,
       required: true,
       unique: true,
     },
-    plaidAccessToken: {
-      type: String,
-      required: true,
-      select: false, // Never return in queries by default for security
-    },
-    institutionId: {
-      type: String,
-      required: true,
-    },
-    institutionName: {
+    accessToken: {
       type: String,
       required: true,
     },
@@ -38,138 +30,87 @@ const bankConnectionSchema = new Schema<BankConnectionDocument>(
     },
     accountType: {
       type: String,
-      enum: ['depository', 'credit', 'loan', 'investment', 'other'],
       required: true,
     },
-    accountSubtype: {
-      type: String,
-      required: true,
-    },
-    accountNumber: {
+    institutionName: {
       type: String,
       required: true,
     },
-    consentStatus: {
+    institutionId: {
       type: String,
-      enum: ['active', 'expired', 'revoked', 'error'],
-      default: 'active',
+      required: true,
     },
-    consentExpiryDate: {
+    consentGivenAt: {
       type: Date,
-    },
-    webhookUrl: {
-      type: String,
-    },
-    lastSuccessfulUpdate: {
-      type: Date,
-    },
-    errorCode: {
-      type: String,
-    },
-    errorMessage: {
-      type: String,
-    },
-    connectedDate: {
-      type: Date,
+      required: true,
       default: Date.now,
     },
-    lastSyncedDate: {
+    consentExpiry: {
       type: Date,
+      // No expiry for Plaid (unlike CDR 90 days)
     },
     isActive: {
       type: Boolean,
       default: true,
+    },
+    plaidWebhookId: {
+      type: String,
+    },
+    lastSyncAt: {
+      type: Date,
     },
   },
   {
     timestamps: true,
     toJSON: {
       transform: function (doc, ret) {
-        // Remove sensitive fields when converting to JSON
-        delete ret.plaidAccessToken;
-        return ret;
+        // Remove sensitive fields
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const retObj = ret as any;
+        delete retObj.accessToken;
+        return retObj;
       },
     },
   }
 );
 
-// Indexes for performance
-bankConnectionSchema.index({ user: 1 });
-bankConnectionSchema.index({ plaidItemId: 1 });
-bankConnectionSchema.index({ consentStatus: 1 });
+// Indexes for optimal performance
+BankConnectionSchema.index({ userId: 1, isActive: 1 });
+BankConnectionSchema.index({ itemId: 1 });
+BankConnectionSchema.index({ isActive: 1, lastSyncAt: 1 });
+
+// Method to check if consent is still valid
+BankConnectionSchema.methods.isConsentValid = function (): boolean {
+  return this.isActive && !!this.accessToken;
+};
+
+// Method to revoke consent
+BankConnectionSchema.methods.revokeConsent = async function (): Promise<void> {
+  try {
+    // Remove from Plaid
+    await plaidService.removeItem(this.itemId);
+    
+    // Mark as inactive in our database
+    this.isActive = false;
+    await this.save();
+  } catch (error) {
+    // Still mark as inactive even if Plaid removal fails
+    this.isActive = false;
+    await this.save();
+    throw error;
+  }
+};
 
 // Static methods
-bankConnectionSchema.statics.findByUser = function (userId: string) {
-  return this.find({ user: userId, isActive: true });
+BankConnectionSchema.statics.findActiveByUserId = function (userId: string) {
+  return this.findOne({ userId, isActive: true });
 };
 
-bankConnectionSchema.statics.findByPlaidItemId = function (
-  plaidItemId: string
-) {
-  return this.findOne({ plaidItemId: plaidItemId });
+BankConnectionSchema.statics.findActiveByAccountIds = function (accountIds: string[]) {
+  return this.find({ accountId: { $in: accountIds }, isActive: true });
 };
 
-bankConnectionSchema.statics.findActiveConnections = function () {
-  return this.find({ consentStatus: 'active', isActive: true });
-};
-
-// Instance methods
-bankConnectionSchema.methods.updateStatus = function (
-  status: TBankConnectionStatus,
-  errorCode?: string,
-  errorMessage?: string
-) {
-  this.consentStatus = status;
-  if (errorCode) this.errorCode = errorCode;
-  if (errorMessage) this.errorMessage = errorMessage;
-  this.lastSuccessfulUpdate = new Date();
-  return this.save();
-};
-
-// Pre-save validation
-bankConnectionSchema.pre('save', function (next) {
-  // Validate account type is a valid Plaid type
-  const validAccountTypes: TAccountType[] = [
-    'depository',
-    'credit',
-    'loan',
-    'investment',
-    'other',
-  ];
-  if (
-    this.accountType &&
-    !validAccountTypes.includes(this.accountType as TAccountType)
-  ) {
-    next(new Error('Invalid account type'));
-    return;
-  }
-
-  // Validate consent status
-  const validStatuses: TBankConnectionStatus[] = [
-    'active',
-    'expired',
-    'revoked',
-    'error',
-  ];
-  if (
-    this.consentStatus &&
-    !validStatuses.includes(this.consentStatus as TBankConnectionStatus)
-  ) {
-    next(new Error('Invalid consent status'));
-    return;
-  }
-
-  next();
-});
-
-// Methods to include in queries for sensitive data
-bankConnectionSchema.methods.getSensitiveData = function () {
-  return this.select('+plaidAccessToken');
-};
-
-const BankConnection = model<BankConnectionDocument>(
+export const BankConnectionModel = mongoose.model<IBankConnectionDocument>(
   'BankConnection',
-  bankConnectionSchema
+  BankConnectionSchema
 );
-
-export default BankConnection;

@@ -1,66 +1,64 @@
 import { Router } from 'express';
-import { auth, validateWebhookSignature } from '../../middlewares';
-import { BankConnectionController } from './bankConnection.controller';
-import { BANK_CONNECTION_VALIDATION } from './bankConnection.validation';
+import { validateRequest } from '../../middlewares/validateRequest';
+import {
+  createBankConnectionValidation,
+  linkTokenRequestValidation,
+  syncTransactionsValidation,
+  updateBankConnectionValidation,
+} from './bankConnection.validation';
+import { bankConnectionController } from './bankConnection.controller';
+import { auth } from '../../middlewares';
 import { ROLE } from '../Auth/auth.constant';
 
 const router = Router();
 
-// Create Link token
+// Apply authentication middleware
+router.use(auth(ROLE.CLIENT));
+
+// Generate Plaid Link token
 router.post(
   '/link-token',
-  auth(ROLE.CLIENT),
-  BankConnectionController.createLinkToken
+  // validateRequest(linkTokenRequestValidation),
+  bankConnectionController.generateLinkToken
 );
 
-// Exchange public token and create bank connection
+// Create bank connection (exchange public token)
 router.post(
-  '/connect',
-  auth(ROLE.CLIENT),
-  BANK_CONNECTION_VALIDATION.connectBank,
-  BankConnectionController.connectBank
-);
-
-// Get all user bank connections
-router.get(
   '/',
-  auth(ROLE.CLIENT),
-  BankConnectionController.getUserConnections
+  // validateRequest(createBankConnectionValidation),
+  bankConnectionController.createBankConnection
 );
 
-// Get connection status
-router.get(
-  '/:id/status',
-  auth(ROLE.CLIENT),
-  BankConnectionController.getConnectionStatus
-);
+// Get user's bank connection
+router.get('/me', bankConnectionController.getUserBankConnection);
 
-// Get specific bank connection
-router.get(
-  '/:id',
-  auth(ROLE.CLIENT),
-  BankConnectionController.getConnectionById
-);
-
-// Sync transactions for a connection
+// Sync transactions
 router.post(
-  '/:id/sync',
-  auth(ROLE.CLIENT),
-  BankConnectionController.syncTransactions
+  '/:bankConnectionId/sync',
+  // validateRequest(syncTransactionsValidation),
+  bankConnectionController.syncTransactions
 );
 
-// Handle Plaid webhooks (no auth required - Plaid authenticates via signature)
+// Get transactions for date range
+router.get(
+  '/:bankConnectionId/transactions',
+  bankConnectionController.getTransactions
+);
+
+// Update bank connection
+router.patch(
+  '/:bankConnectionId',
+  validateRequest(updateBankConnectionValidation),
+  bankConnectionController.updateBankConnection
+);
+
+// Revoke consent and disconnect
 router.post(
-  '/webhook',
-  validateWebhookSignature('plaid'),
-  BankConnectionController.handleWebhook
+  '/:bankConnectionId/revoke',
+  bankConnectionController.revokeConsent
 );
 
-// Delete bank connection
-router.delete(
-  '/:id',
-  auth(ROLE.CLIENT),
-  BankConnectionController.deleteConnection
-);
+// Plaid webhook (no auth required)
+router.post('/webhook', bankConnectionController.handleWebhook);
 
-export { router as BankConnectionRoutes };
+export const BankConnectionRoutes = router;
