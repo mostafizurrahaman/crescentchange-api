@@ -1,14 +1,17 @@
 // src/app/modules/Causes/causes.validation.ts
 import { z } from 'zod';
-import { causeNameTypeValues } from './causes.constant';
+import { causeCategoryTypeValues, causeStatusTypeValues } from './causes.constant';
 
 // Create cause schema
 const createCauseSchema = z.object({
   body: z.object({
-    name: z.enum(causeNameTypeValues as [string, ...string[]], {
-      message: 'Invalid cause name!',
+    name: z.string({
+      message: 'Cause name is required!',
+    }).min(1).max(100),
+    description: z.string().max(500).optional(),
+    category: z.enum(causeCategoryTypeValues as [string, ...string[]], {
+      message: 'Invalid cause category!',
     }),
-    notes: z.string().max(500).optional(),
     organization: z
       .string({
         message: 'Organization ID is required!',
@@ -21,12 +24,11 @@ const createCauseSchema = z.object({
 const updateCauseSchema = z.object({
   body: z
     .object({
-      name: z
-        .enum(causeNameTypeValues as [string, ...string[]], {
-          error: 'Invalid cause name!',
-        })
-        .optional(),
-      notes: z.string().max(500).optional(),
+      name: z.string().min(1).max(100).optional(),
+      description: z.string().max(500).optional(),
+      category: z.enum(causeCategoryTypeValues as [string, ...string[]], {
+        error: 'Invalid cause category!',
+      }).optional(),
     })
     .strict(),
   params: z.object({
@@ -57,9 +59,14 @@ const getCausesByOrganizationSchema = z.object({
 // Get causes query schema
 const getCausesQuerySchema = z.object({
   query: z.object({
-    name: z
-      .enum(causeNameTypeValues as [string, ...string[]], {
-        error: 'Invalid cause name!',
+    category: z
+      .enum(causeCategoryTypeValues as [string, ...string[]], {
+        error: 'Invalid cause category!',
+      })
+      .optional(),
+    status: z
+      .enum(causeStatusTypeValues as [string, ...string[]], {
+        error: 'Invalid cause status!',
       })
       .optional(),
     organization: z.string().optional(),
@@ -70,19 +77,16 @@ const getCausesQuerySchema = z.object({
   }),
 });
 
-// Bulk assign causes schema
-const bulkAssignCausesSchema = z.object({
-  body: z.object({
-    causeNames: z
-      .array(z.enum(causeNameTypeValues as [string, ...string[]]), {
-        error: 'Invalid caues name!',
-      })
-      .min(1, 'At least one cause must be selected!')
-      .max(20, 'Maximum 20 causes can be assigned!'),
-  }),
+// Update cause status schema
+const updateCauseStatusSchema = z.object({
   params: z.object({
-    organizationId: z.string({
-      message: 'Organization ID is required!',
+    id: z.string({
+      message: 'Cause ID is required!',
+    }),
+  }),
+  body: z.object({
+    status: z.enum(causeStatusTypeValues as [string, ...string[]], {
+      message: 'Invalid cause status!',
     }),
   }),
 });
@@ -93,5 +97,5 @@ export const CauseValidation = {
   getCauseByIdSchema,
   getCausesByOrganizationSchema,
   getCausesQuerySchema,
-  bulkAssignCausesSchema,
+  updateCauseStatusSchema,
 };

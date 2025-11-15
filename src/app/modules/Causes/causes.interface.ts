@@ -1,25 +1,33 @@
 import { Document, Types } from 'mongoose';
 
-export type CauseNameType =
-  | 'backpacks_and_books'
-  | 'digital_dreams'
-  | 'empowerment'
-  | 'family_care'
-  | 'health_and_wellness'
-  | 'homelessness'
-  | 'innovation'
-  | 'learning'
-  | 'mental_health'
-  | 'money_management'
-  | 'nutrition'
-  | 'other'
-  | 'recovery'
-  | 'safety'
-  | 'social_care';
+export type CauseCategoryType =
+  | 'water'
+  | 'education'
+  | 'food'
+  | 'youth'
+  | 'orphans'
+  | 'quran_education'
+  | 'health_medical'
+  | 'emergency_relief'
+  | 'shelter_housing'
+  | 'mosque_utilities'
+  | 'zakat'
+  | 'sadaqah'
+  | 'ramadan'
+  | 'qurban'
+  | 'fitrah'
+  | 'admin_operational'
+  | 'refugees'
+  | 'digital_dawah'
+  | 'women_families';
+
+export type CauseStatusType = 'pending' | 'suspended' | 'verified';
 
 export interface ICause extends Document {
   _id: Types.ObjectId;
-  name: CauseNameType;
-  notes: string;
+  name: string; // Dynamic text - no enum restriction
+  description?: string; // Optional text field
+  category: CauseCategoryType; // Enum for category
+  status: CauseStatusType; // Enum for status with Pending, suspended, Verified
   organization: Types.ObjectId;
 }

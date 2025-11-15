@@ -1,20 +1,31 @@
 import { model, Schema } from 'mongoose';
 import { ICause } from './causes.interface';
-import { causeNameTypeValues } from './causes.constant';
+import { causeCategoryTypeValues, causeStatusTypeValues } from './causes.constant';
 
 const causeSchema = new Schema<ICause>(
   {
     name: {
       type: String,
       required: true,
-      enum: causeNameTypeValues,
       trim: true,
+      maxlength: 100,
     },
-    notes: {
+    description: {
       type: String,
       required: false,
       trim: true,
-      maxlength: 500, // optional: set a reasonable max length
+      maxlength: 500,
+    },
+    category: {
+      type: String,
+      required: true,
+      enum: causeCategoryTypeValues,
+    },
+    status: {
+      type: String,
+      required: true,
+      enum: causeStatusTypeValues,
+      default: 'pending',
     },
     organization: {
       type: Schema.Types.ObjectId,

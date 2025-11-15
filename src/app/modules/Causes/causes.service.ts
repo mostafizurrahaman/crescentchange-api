@@ -4,14 +4,15 @@ import {  startSession } from 'mongoose';
 import { AppError } from '../../utils';
 import QueryBuilder from '../../builders/QueryBuilder';
 import Cause from './causes.model';
-import { ICause, CauseNameType } from './causes.interface';
+import { ICause, CauseCategoryType, CauseStatusType } from './causes.interface';
 import Organization from '../Organization/organization.model';
-import { CAUSE_NAME_TYPE } from './causes.constant';
+import { CAUSE_CATEGORY_TYPE, CAUSE_STATUS_TYPE } from './causes.constant';
 
 // Create cause
 const createCauseIntoDB = async (payload: {
-  name: CauseNameType;
-  notes?: string;
+  name: string;
+  description?: string;
+  category: CauseCategoryType;
   organization: string;
 }) => {
   const session = await startSession();
@@ -28,18 +29,7 @@ const createCauseIntoDB = async (payload: {
       throw new AppError(httpStatus.NOT_FOUND, 'Organization not found!');
     }
 
-    // Check if this cause already exists for this organization
-    const existingCause = await Cause.findOne({
-      name: payload.name,
-      organization: payload.organization,
-    }).session(session);
-
-    if (existingCause) {
-      throw new AppError(
-        httpStatus.CONFLICT,
-        'This cause already exists for this organization!'
-      );
-    }
+    // Note: With dynamic names, we don't check for duplicates unless specifically needed
 
     // Create cause
     const [cause] = await Cause.create([payload], { session });
@@ -126,30 +116,15 @@ const getCausesByOrganizationFromDB = async (organizationId: string) => {
 const updateCauseIntoDB = async (
   causeId: string,
   payload: {
-    name?: CauseNameType;
-    notes?: string;
+    name?: string;
+    description?: string;
+    category?: CauseCategoryType;
   }
 ) => {
   // Check if cause exists
   const existingCause = await Cause.findById(causeId);
   if (!existingCause) {
     throw new AppError(httpStatus.NOT_FOUND, 'Cause not found!');
-  }
-
-  // If updating name, check for duplicates
-  if (payload.name && payload.name !== existingCause.name) {
-    const duplicateCause = await Cause.findOne({
-      name: payload.name,
-      organization: existingCause.organization,
-      _id: { $ne: causeId },
-    });
-
-    if (duplicateCause) {
-      throw new AppError(
-        httpStatus.CONFLICT,
-        'This cause already exists for this organization!'
-      );
-    }
   }
 
   const cause = await Cause.findByIdAndUpdate(causeId, payload, {
@@ -175,17 +150,42 @@ const deleteCauseFromDB = async (causeId: string) => {
   return { message: 'Cause deleted successfully!' };
 };
 
-// Get unique cause names (for dropdown/filter purposes)
-const getUniqueCauseNamesFromDB = async () => {
-  const causeNames = Object.entries(CAUSE_NAME_TYPE).map(([key, value]) => ({
+// Get cause categories (for dropdown/filter purposes)
+const getCauseCategoriesFromDB = async () => {
+  const causeCategories = Object.entries(CAUSE_CATEGORY_TYPE).map(([key, value]) => ({
     label: key
       .replace(/_/g, ' ')
-      .toLowerCase()
-      .replace(/\b\w/g, (l) => l.toUpperCase()),
+      .split('/')
+      .map(word => 
+        word.split(' ')
+          .map(subword => 
+            subword.charAt(0).toUpperCase() + subword.slice(1).toLowerCase()
+          )
+          .join(' ')
+      )
+      .join(' / '),
     value: value,
   }));
 
-  return causeNames;
+  return causeCategories;
+};
+
+// Update cause status
+const updateCauseStatusIntoDB = async (
+  causeId: string,
+  status: CauseStatusType
+) => {
+  const cause = await Cause.findByIdAndUpdate(
+    causeId,
+    { status },
+    { new: true, runValidators: true }
+  ).populate('organization', 'name serviceType coverImage');
+
+  if (!cause) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Cause not found!');
+  }
+
+  return cause;
 };
 
 export const CauseService = {
@@ -195,5 +195,6 @@ export const CauseService = {
   getCausesByOrganizationFromDB,
   updateCauseIntoDB,
   deleteCauseFromDB,
-  getUniqueCauseNamesFromDB,
+  getCauseCategoriesFromDB,
+  updateCauseStatusIntoDB,
 };

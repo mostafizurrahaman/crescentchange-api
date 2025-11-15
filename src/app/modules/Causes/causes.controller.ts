@@ -5,7 +5,6 @@ import { CauseService } from './causes.service';
 import { AppError } from '../../utils';
 import { IAuth } from '../Auth/auth.interface';
 import Organization from '../Organization/organization.model';
-import { CauseNameType } from './causes.interface';
 import { ROLE } from '../Auth/auth.constant';
 
 // Create cause
@@ -27,7 +26,8 @@ const createCause = asyncHandler(async (req, res) => {
 
   const result = await CauseService.createCauseIntoDB({
     name: req.body.name,
-    notes: req.body.notes,
+    description: req.body.description,
+    category: req.body.category,
     organization: organizationId,
   });
 
@@ -140,13 +140,36 @@ const deleteCause = asyncHandler(async (req, res) => {
   });
 });
 
-// Get unique cause names
-const getCauseNames = asyncHandler(async (req, res) => {
-  const result = await CauseService.getUniqueCauseNamesFromDB();
+// Get cause categories
+const getCauseCategories = asyncHandler(async (req, res) => {
+  const result = await CauseService.getCauseCategoriesFromDB();
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
-    message: 'Cause names retrieved successfully!',
+    message: 'Cause categories retrieved successfully!',
+    data: result,
+  });
+});
+
+// Update cause status
+const updateCauseStatus = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  const user = req.user as IAuth;
+
+  // Check if user is authorized to update status (admin only)
+  if (user.role !== ROLE.ADMIN) {
+    throw new AppError(
+      httpStatus.FORBIDDEN,
+      'Only admin can update cause status!'
+    );
+  }
+
+  const result = await CauseService.updateCauseStatusIntoDB(id, status);
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    message: 'Cause status updated successfully!',
     data: result,
   });
 });
@@ -158,5 +181,6 @@ export const CauseController = {
   getCausesByOrganization,
   updateCause,
   deleteCause,
-  getCauseNames,
+  getCauseCategories,
+  updateCauseStatus,
 };

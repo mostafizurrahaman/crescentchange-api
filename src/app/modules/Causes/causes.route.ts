@@ -7,8 +7,8 @@ import { ROLE } from '../Auth/auth.constant';
 
 const router = Router();
 
-// Get cause names (public route for dropdowns)
-router.route('/names').get(CauseController.getCauseNames);
+// Get cause categories (public route for dropdowns)
+router.route('/categories').get(CauseController.getCauseCategories);
 
 // Create cause and get all causes
 router
@@ -47,6 +47,15 @@ router
     auth(ROLE.ORGANIZATION, ROLE.ADMIN),
     validateRequest(CauseValidation.getCauseByIdSchema),
     CauseController.deleteCause
+  );
+
+// Update cause status (admin only)
+router
+  .route('/:id/status')
+  .patch(
+    auth(ROLE.ADMIN),
+    validateRequest(CauseValidation.updateCauseStatusSchema),
+    CauseController.updateCauseStatus
   );
 
 export const CauseRoutes = router;
