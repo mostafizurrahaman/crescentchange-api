@@ -4,11 +4,15 @@ import { OrganizationModel } from '../Organization/organization.model';
 import { IPlaidTransaction } from '../BankConnection/bankConnection.interface';
 import { StripeService } from '../Stripe/stripe.service';
 import bankConnectionService from '../BankConnection/bankConnection.service';
-import roundUpTransactionService from '../RoundUpTransaction/roundUpTransaction.service';
+import { roundUpTransactionService } from '../RoundUpTransaction/roundUpTransaction.service';
+import { RoundUpTransactionModel } from '../RoundUpTransaction/roundUpTransaction.model';
 import { StatusCodes } from 'http-status-codes';
 import { IRoundUpDocument } from './roundUp.model';
 import Cause from '../Causes/causes.model';
-
+import Client from '../Client/client.model';
+import { AppError } from '../../utils';
+import httpStatus from 'http-status';
+import Auth from '../Auth/auth.model';
 // Individual service functions
 const savePlaidConsent = async (userId: string, payload: any) => {
   const {
@@ -19,10 +23,20 @@ const savePlaidConsent = async (userId: string, payload: any) => {
     specialMessage,
   } = payload;
 
+  //  check user :
+  const client = await Auth.findById(userId);
+
+  if (!client) {
+    throw new AppError(httpStatus.NOT_FOUND, 'User not found!');
+  }
+
+  console.log({ client });
+
   // Validate bank connection belongs to user
   const bankConnection = await bankConnectionService.getBankConnectionById(
     bankConnectionId
   );
+  console.log({ bankConnection });
   if (!bankConnection || String(bankConnection.user) !== String(userId)) {
     return {
       success: false,
@@ -33,9 +47,11 @@ const savePlaidConsent = async (userId: string, payload: any) => {
   }
 
   // Validate organization exists and is eligible
+  console.log({ organizationId });
   const organization = await OrganizationModel.findById(organizationId);
+  console.log(organization);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  if (!organization || (organization as any).type !== 'charity') {
+  if (!organization) {
     return {
       success: false,
       message: 'Invalid organization selected',
@@ -162,7 +178,7 @@ const syncTransactions = async (
   bankConnectionId: string,
   payload: any
 ) => {
-  const { cursor } = payload;
+  const { cursor } = payload || {};
 
   // Validate bank connection belongs to user
   const bankConnection = await bankConnectionService.getBankConnectionById(
@@ -177,28 +193,26 @@ const syncTransactions = async (
     };
   }
 
-  // Sync transactions from Plaid
+  // Sync transactions from Plaid (JUST SYNC - NO ROUNDUP PROCESSING)
   const plaidSyncResponse = await bankConnectionService.syncTransactions(
     bankConnectionId,
     cursor
   );
 
-  // Process new transactions for round-ups
-  const processingResult =
-    await roundUpTransactionService.processTransactionsFromPlaid(
-      userId,
-      bankConnectionId,
-      plaidSyncResponse.added as IPlaidTransaction[]
-    );
+  console.log({ plaidSyncResponse });
+
+  // Note: RoundUp processing is now handled automatically by cron job
+  // This endpoint now only handles transaction synchronization
 
   return {
     success: true,
-    message: 'Transactions synced and round-ups processed',
+    message:
+      'Transactions synced successfully (RoundUp processing is automatic)',
     data: {
       plaidSync: plaidSyncResponse,
-      roundUpProcessing: processingResult,
       hasMore: plaidSyncResponse.hasMore,
       nextCursor: plaidSyncResponse.nextCursor,
+      note: 'RoundUp processing is handled automatically by background cron job every 4 hours',
     },
     statusCode: StatusCodes.OK,
   };
@@ -285,14 +299,14 @@ const processMonthlyDonation = async (userId: string, payload: any) => {
 
   // Calculate total donation amount
   const totalAmount = processedTransactions.reduce(
-    (sum, transaction) => sum + transaction.roundUpAmount,
+    (sum: number, transaction: any) => sum + transaction.roundUpAmount,
     0
   );
 
-  // Process donation with specialMessage
-  let donationResult;
+  // Process donation with specialMessage using webhook approach
+  let paymentResult;
   try {
-    donationResult = await StripeService.processRoundUpDonation({
+    paymentResult = await StripeService.createRoundUpPaymentIntent({
       roundUpId: String(roundUpConfig._id),
       userId,
       charityId: roundUpConfig.organization,
@@ -300,15 +314,37 @@ const processMonthlyDonation = async (userId: string, payload: any) => {
       amount: totalAmount,
       month: currentMonth,
       year: now.getFullYear(),
-      specialMessage: specialMessage || undefined,
+      specialMessage:
+        specialMessage || `Manual round-up donation - ${currentMonth}`,
     });
 
-    // Complete donation cycle and handle status changes
-    await roundUpConfig.completeDonationCycle();
-
-    // Also pause round-up after successful donation
-    roundUpConfig.enabled = false;
+    // Update round-up configuration status to processing
+    roundUpConfig.status = 'processing';
+    roundUpConfig.lastDonationAttempt = new Date();
     await roundUpConfig.save();
+
+    // Mark transactions as processing (payment initiated)
+    await RoundUpTransactionModel.updateMany(
+      {
+        user: userId,
+        bankConnection: roundUpConfig.bankConnection,
+        status: 'processed',
+        transactionDate: {
+          $gte: new Date(now.getFullYear(), now.getMonth(), 1),
+          $lt: new Date(now.getFullYear(), now.getMonth() + 1, 1),
+        },
+      },
+      {
+        status: 'processing',
+        stripePaymentIntentId: paymentResult.payment_intent_id,
+        donationAttemptedAt: new Date(),
+      }
+    );
+
+    console.log(`🔄 Manual RoundUp donation initiated for user ${userId}`);
+    console.log(`   Payment Intent ID: ${paymentResult.payment_intent_id}`);
+    console.log(`   Amount: $${totalAmount}`);
+    console.log(`   Charity: ${roundUpConfig.organization}`);
   } catch (error) {
     // Mark round-up as failed if donation processing fails
     await roundUpConfig.markAsFailed(
@@ -331,15 +367,16 @@ const processMonthlyDonation = async (userId: string, payload: any) => {
   return {
     success: true,
     message:
-      'Monthly donation processed successfully. Round-up has been paused.',
+      'Manual RoundUp donation initiated successfully. Payment processing in progress.',
     data: {
-      donationId: donationResult.donationId,
+      paymentIntentId: paymentResult.payment_intent_id,
       amount: totalAmount,
       organizationId: roundUpConfig.organization,
       causeId: roundUpConfig.cause,
       month: currentMonth,
       transactionCount: processedTransactions.length,
-      roundUpPaused: true,
+      status: 'processing',
+      note: 'Donation will be completed via webhook confirmation',
     },
     statusCode: StatusCodes.OK,
   };
@@ -436,7 +473,7 @@ const switchCharity = async (userId: string, payload: any) => {
   }
 
   // Validate new cause
-  const Cause = (await import('../Causes/causes.model')).default;
+
   const newCause = await Cause.findById(newCauseId);
   if (!newCause) {
     return {

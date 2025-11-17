@@ -1,7 +1,7 @@
 import httpStatus from 'http-status';
 import { JwtPayload } from 'jsonwebtoken';
 import { AppError, asyncHandler } from '../utils';
-import { TRole } from '../modules/Auth/auth.constant';
+import { ROLE, TRole } from '../modules/Auth/auth.constant';
 import Auth from '../modules/Auth/auth.model';
 import { verifyToken } from '../lib';
 import config from '../config';
@@ -43,25 +43,34 @@ const auth = (...requiredRoles: TRole[]) => {
       throw new AppError(httpStatus.UNAUTHORIZED, 'You are not authorized!');
     }
 
-    if (!user.isProfile && !user.isActive) {
-      throw new AppError(httpStatus.BAD_REQUEST, 'You are not authorized!');
+    // Role-specific activation checks
+    if (user.role === ROLE.CLIENT) {
+      // CLIENT can proceed without admin approval, just need to be verified
+      if (!user.isVerifiedByOTP) {
+        throw new AppError(
+          httpStatus.UNAUTHORIZED,
+          'Your account is not verified!'
+        );
+      }
+    } else if (user.role === ROLE.ORGANIZATION || user.role === ROLE.BUSINESS) {
+      // ORGANIZATION and BUSINESS need admin activation
+      if (!user.isProfile || !user.isActive) {
+        throw new AppError(
+          httpStatus.BAD_REQUEST,
+          'Your profile is not activated by admin yet!'
+        );
+      }
+    } else if (user.role === ROLE.ADMIN) {
+      // ADMIN also needs to be verified and active
+      if (!user.isActive) {
+        throw new AppError(
+          httpStatus.UNAUTHORIZED,
+          'Your admin account is not active!'
+        );
+      }
     }
 
-    if (
-      // (user.role === ROLE.ARTIST || user.role === ROLE.BUSINESS) &&
-      user.isProfile &&
-      !user.isActive
-    ) {
-      throw new AppError(
-        httpStatus.BAD_REQUEST,
-        'Your profile is not activated by admin yet!'
-      );
-    }
-
-    // else if (user.role === ROLE.CLIENT && user.isProfile && !user.isActive) {
-    //   throw new AppError(httpStatus.UNAUTHORIZED, 'Your profile is not activated by admin yet!');
-    // }
-
+    // Final role authorization check
     if (requiredRoles.length && !requiredRoles.includes(user.role)) {
       throw new AppError(
         httpStatus.UNAUTHORIZED,
@@ -74,4 +83,10 @@ const auth = (...requiredRoles: TRole[]) => {
   });
 };
 
+// Helper function to allow multiple roles for endpoints
+const authMultiple = (roles: TRole[]) => {
+  return auth(...roles);
+};
+
 export default auth;
+export { authMultiple };

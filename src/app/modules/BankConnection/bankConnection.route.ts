@@ -12,12 +12,13 @@ import { ROLE } from '../Auth/auth.constant';
 
 const router = Router();
 
-// Apply authentication middleware
-router.use(auth(ROLE.CLIENT));
+// Plaid webhook (no auth required) - MUST be defined BEFORE auth middleware
+router.post('/webhook', bankConnectionController.handleWebhook);
 
 // Generate Plaid Link token
 router.post(
   '/link-token',
+  auth(ROLE.CLIENT),
   // validateRequest(linkTokenRequestValidation),
   bankConnectionController.generateLinkToken
 );
@@ -25,6 +26,7 @@ router.post(
 // Create bank connection (exchange public token)
 router.post(
   '/',
+  auth(ROLE.CLIENT),
   // validateRequest(createBankConnectionValidation),
   bankConnectionController.createBankConnection
 );
@@ -35,6 +37,7 @@ router.get('/me', bankConnectionController.getUserBankConnection);
 // Sync transactions
 router.post(
   '/:bankConnectionId/sync',
+  auth(ROLE.CLIENT),
   // validateRequest(syncTransactionsValidation),
   bankConnectionController.syncTransactions
 );
@@ -42,6 +45,7 @@ router.post(
 // Get transactions for date range
 router.get(
   '/:bankConnectionId/transactions',
+  auth(ROLE.CLIENT),
   bankConnectionController.getTransactions
 );
 
@@ -55,10 +59,8 @@ router.patch(
 // Revoke consent and disconnect
 router.post(
   '/:bankConnectionId/revoke',
+  auth(ROLE.CLIENT),
   bankConnectionController.revokeConsent
 );
-
-// Plaid webhook (no auth required)
-router.post('/webhook', bankConnectionController.handleWebhook);
 
 export const BankConnectionRoutes = router;

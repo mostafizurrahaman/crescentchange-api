@@ -9,7 +9,7 @@ const BankConnectionSchema = new Schema(
     user: {
       type: Schema.Types.ObjectId,
       required: true,
-      ref: 'Client',
+      ref: 'Auth',
     },
     itemId: {
       type: String,
@@ -59,6 +59,10 @@ const BankConnectionSchema = new Schema(
     lastSyncAt: {
       type: Date,
     },
+    lastSyncCursor: {
+      // ADDED THIS FIELD
+      type: String,
+    },
   },
   {
     timestamps: true,
@@ -75,7 +79,7 @@ const BankConnectionSchema = new Schema(
 );
 
 // Indexes for optimal performance
-BankConnectionSchema.index({ userId: 1, isActive: 1 });
+BankConnectionSchema.index({ user: 1, isActive: 1 });
 BankConnectionSchema.index({ itemId: 1 });
 BankConnectionSchema.index({ isActive: 1, lastSyncAt: 1 });
 
@@ -89,7 +93,7 @@ BankConnectionSchema.methods.revokeConsent = async function (): Promise<void> {
   try {
     // Remove from Plaid
     await plaidService.removeItem(this.itemId);
-    
+
     // Mark as inactive in our database
     this.isActive = false;
     await this.save();
@@ -103,10 +107,12 @@ BankConnectionSchema.methods.revokeConsent = async function (): Promise<void> {
 
 // Static methods
 BankConnectionSchema.statics.findActiveByUserId = function (userId: string) {
-  return this.findOne({ userId, isActive: true });
+  return this.findOne({ user: userId, isActive: true });
 };
 
-BankConnectionSchema.statics.findActiveByAccountIds = function (accountIds: string[]) {
+BankConnectionSchema.statics.findActiveByAccountIds = function (
+  accountIds: string[]
+) {
   return this.find({ accountId: { $in: accountIds }, isActive: true });
 };
 

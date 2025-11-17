@@ -672,7 +672,71 @@ const createAccountLink = async (
   }
 };
 
-// 18. Process round-up donation transfer to charity
+// 18. Create payment intent for round-up donation (webhook-based approach)
+const createRoundUpPaymentIntent = async (payload: {
+  roundUpId: string;
+  userId: string;
+  charityId: string;
+  causeId?: string;
+  amount: number;
+  month: string;
+  year: number;
+  specialMessage?: string;
+}): Promise<{ client_secret: string; payment_intent_id: string }> => {
+  try {
+    // Get charity's Stripe Connect account
+    const charity = await OrganizationModel.findById(payload.charityId);
+    if (!charity || !charity.stripeConnectAccountId) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'Charity does not have a connected Stripe account'
+      );
+    }
+
+    // Create Stripe Payment Intent for round-up donation
+    const paymentIntentParams: Stripe.PaymentIntentCreateParams = {
+      amount: Math.round(payload.amount * 100), // Convert to cents
+      currency: 'usd',
+      metadata: {
+        roundUpId: payload.roundUpId,
+        userId: payload.userId,
+        organizationId: payload.charityId,
+        causeId: payload.causeId || '',
+        month: payload.month,
+        year: payload.year.toString(),
+        type: 'roundup_donation',
+        donationType: 'roundup', // For webhook handling
+        specialMessage: payload.specialMessage || `Round-up donation for ${payload.month} ${payload.year}`,
+      },
+      automatic_payment_methods: {
+        enabled: true,
+      },
+      // Add transfer data for connected accounts
+      transfer_data: {
+        destination: charity.stripeConnectAccountId,
+      },
+    };
+
+    const paymentIntent = await stripe.paymentIntents.create(paymentIntentParams);
+
+    console.log(`✅ RoundUp payment intent created: ${paymentIntent.id}`);
+    console.log(`   RoundUp ID: ${payload.roundUpId}`);
+    console.log(`   Amount: $${payload.amount}`);
+    console.log(`   Charity: ${payload.charityId}`);
+
+    return {
+      client_secret: paymentIntent.client_secret || '',
+      payment_intent_id: paymentIntent.id,
+    };
+  } catch (error) {
+    throw new AppError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      `Failed to create RoundUp payment intent: ${(error as Error).message}`
+    );
+  }
+};
+
+// 19. Process round-up donation transfer to charity (legacy - for webhook completion)
 const processRoundUpDonation = async (payload: {
   roundUpId: string;
   userId: string;
@@ -780,6 +844,8 @@ export const StripeService = {
   createPaymentIntentWithMethod,
   getPaymentIntent,
   cancelPaymentIntent,
+  createRoundUpPaymentIntent,
+  processRoundUpDonation,
 
   // Payment method methods
   createSetupIntent,
@@ -802,5 +868,4 @@ export const StripeService = {
   createConnectAccount,
   getConnectAccount,
   createAccountLink,
-  processRoundUpDonation,
 };

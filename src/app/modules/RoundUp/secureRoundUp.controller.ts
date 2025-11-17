@@ -2,14 +2,15 @@ import { Request, Response } from 'express';
 import { sendResponse } from '../../utils/ResponseHandler';
 import { catchAsync } from '../../errors';
 import { roundUpService } from './roundUp.service';
+import { manualTriggerRoundUpProcessing } from '../../jobs/roundUpTransactions.job';
 
 // Controller functions that handle HTTP requests/responses and call service functions
 const savePlaidConsent = catchAsync(async (req: Request, res: Response) => {
   const userId = req.user.id;
   const payload = req.body;
-  
+
   const result = await roundUpService.savePlaidConsent(userId, payload);
-  
+
   return sendResponse(res, result.statusCode, {
     success: result.success,
     message: result.message,
@@ -20,9 +21,9 @@ const savePlaidConsent = catchAsync(async (req: Request, res: Response) => {
 const revokeConsent = catchAsync(async (req: Request, res: Response) => {
   const userId = req.user.id;
   const { bankConnectionId } = req.params;
-  
+
   const result = await roundUpService.revokeConsent(userId, bankConnectionId);
-  
+
   return sendResponse(res, result.statusCode, {
     success: result.success,
     message: result.message,
@@ -34,9 +35,13 @@ const syncTransactions = catchAsync(async (req: Request, res: Response) => {
   const userId = req.user.id;
   const { bankConnectionId } = req.params;
   const payload = req.body;
-  
-  const result = await roundUpService.syncTransactions(userId, bankConnectionId, payload);
-  
+
+  const result = await roundUpService.syncTransactions(
+    userId,
+    bankConnectionId,
+    payload
+  );
+
   return sendResponse(res, result.statusCode, {
     success: result.success,
     message: result.message,
@@ -44,25 +49,52 @@ const syncTransactions = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-const processMonthlyDonation = catchAsync(async (req: Request, res: Response) => {
-  const userId = req.user.id;
-  const payload = req.body;
-  
-  const result = await roundUpService.processMonthlyDonation(userId, payload);
-  
-  return sendResponse(res, result.statusCode, {
-    success: result.success,
-    message: result.message,
-    data: result.data,
-  });
-});
+const processMonthlyDonation = catchAsync(
+  async (req: Request, res: Response) => {
+    const userId = req.user.id;
+    const payload = req.body;
+
+    const result = await roundUpService.processMonthlyDonation(userId, payload);
+
+    return sendResponse(res, result.statusCode, {
+      success: result.success,
+      message: result.message,
+      data: result.data,
+    });
+  }
+);
+
+// Manual cron test endpoint for testing RoundUp processing
+const testRoundUpProcessingCron = catchAsync(
+  async (req: Request, res: Response) => {
+    const { userId } = req.body;
+
+    try {
+      const result = await manualTriggerRoundUpProcessing(userId);
+
+      return sendResponse(res, 200, {
+        success: result.success,
+        message: result.success
+          ? 'RoundUp processing completed successfully'
+          : 'RoundUp processing failed',
+        data: result.data || result,
+      });
+    } catch (error) {
+      return sendResponse(res, 500, {
+        success: false,
+        message: 'Manual RoundUp processing failed',
+        data: { error: error.message },
+      });
+    }
+  }
+);
 
 const resumeRoundUp = catchAsync(async (req: Request, res: Response) => {
   const userId = req.user.id;
   const payload = req.body;
-  
+
   const result = await roundUpService.resumeRoundUp(userId, payload);
-  
+
   return sendResponse(res, result.statusCode, {
     success: result.success,
     message: result.message,
@@ -73,9 +105,9 @@ const resumeRoundUp = catchAsync(async (req: Request, res: Response) => {
 const switchCharity = catchAsync(async (req: Request, res: Response) => {
   const userId = req.user.id;
   const payload = req.body;
-  
+
   const result = await roundUpService.switchCharity(userId, payload);
-  
+
   return sendResponse(res, result.statusCode, {
     success: result.success,
     message: result.message,
@@ -85,9 +117,9 @@ const switchCharity = catchAsync(async (req: Request, res: Response) => {
 
 const getUserDashboard = catchAsync(async (req: Request, res: Response) => {
   const userId = req.user.id;
-  
+
   const result = await roundUpService.getUserDashboard(userId);
-  
+
   return sendResponse(res, result.statusCode, {
     success: result.success,
     message: result.message,
@@ -95,24 +127,29 @@ const getUserDashboard = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-const getTransactionDetails = catchAsync(async (req: Request, res: Response) => {
-  const userId = req.user.id;
-  const { transactionId } = req.params;
-  
-  const result = await roundUpService.getTransactionDetails(userId, transactionId);
-  
-  return sendResponse(res, result.statusCode, {
-    success: result.success,
-    message: result.message,
-    data: result.data,
-  });
-});
+const getTransactionDetails = catchAsync(
+  async (req: Request, res: Response) => {
+    const userId = req.user.id;
+    const { transactionId } = req.params;
+
+    const result = await roundUpService.getTransactionDetails(
+      userId,
+      transactionId
+    );
+
+    return sendResponse(res, result.statusCode, {
+      success: result.success,
+      message: result.message,
+      data: result.data,
+    });
+  }
+);
 
 const getAdminDashboard = catchAsync(async (req: Request, res: Response) => {
   const userRole = req.user?.role ? [req.user.role] : [];
-  
+
   const result = await roundUpService.getAdminDashboard(userRole);
-  
+
   return sendResponse(res, result.statusCode, {
     success: result.success,
     message: result.message,
@@ -125,6 +162,7 @@ export const roundUpController = {
   revokeConsent,
   syncTransactions,
   processMonthlyDonation,
+  testRoundUpProcessingCron,
   resumeRoundUp,
   switchCharity,
   getUserDashboard,

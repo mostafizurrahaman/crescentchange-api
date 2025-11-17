@@ -6,6 +6,7 @@ import morgan from 'morgan';
 import routes from './app/routes';
 import webhookRoutes from './app/routes/webhook.routes';
 import { globalErrorHandler, notFoundHandler } from './app/utils';
+import { mostafizTriggerRoundUpDonation } from './app/jobs';
 
 // app
 const app: Application = express();
@@ -32,16 +33,14 @@ app.use(morgan('dev'));
 // static files
 app.use('/public', express.static('public'));
 
-
-
 // Apply raw body middleware BEFORE body parsing for webhooks
 app.use('/api/v1/webhook/donation', (req, res, next) => {
   let rawBody = '';
-  
+
   req.on('data', (chunk) => {
     rawBody += chunk;
   });
-  
+
   req.on('end', () => {
     req.rawBody = rawBody;
     // Parse JSON for processing but keep raw for signature verification
@@ -52,9 +51,20 @@ app.use('/api/v1/webhook/donation', (req, res, next) => {
     }
     next();
   });
-  
+
   req.on('error', (err) => {
     next(err);
+  });
+});
+
+app.post('/api/v1/test-my-corn', async (req, res) => {
+  await mostafizTriggerRoundUpDonation();
+
+  console.log('============ENDED====================');
+  res.json({
+    success: true,
+    message: 'Manual Trigger completed',
+    data: null,
   });
 });
 

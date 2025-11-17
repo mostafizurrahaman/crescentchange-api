@@ -14,6 +14,13 @@ export interface IRoundUp {
   currentMonthTotal: number; // Current month total
   lastMonthReset: Date; // Track when we last reset the monthly total
   lastCharitySwitch?: Date; // Track last charity switch for 30-day rule
+  
+  // Webhook-based donation tracking fields
+  lastDonationAttempt?: Date; // When payment was last attempted
+  lastSuccessfulDonation?: Date; // When last donation was successful
+  lastDonationFailure?: Date; // When last donation failed
+  lastDonationFailureReason?: string; // Reason for last donation failure
+  
   createdAt?: Date;
   updatedAt?: Date;
 }

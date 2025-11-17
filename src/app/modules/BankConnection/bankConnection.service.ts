@@ -7,6 +7,9 @@ import {
   CountryCode,
   Products,
   DepositoryAccountSubtype,
+  SandboxItemFireWebhookRequest,
+  SandboxItemFireWebhookRequestWebhookCodeEnum,
+  WebhookType,
 } from 'plaid';
 import { BankConnectionModel } from './bankConnection.model';
 import {
@@ -163,9 +166,10 @@ async function exchangePublicTokenForAccessToken(
 }
 
 // Sync transactions using Plaid's recommended incremental sync
+// UPDATED FUNCTION
 async function syncTransactions(
   bankConnectionId: string,
-  cursor?: string,
+  cursor?: string, // No longer required from frontend; used as a fallback for the first sync
   count: number = 100
 ): Promise<ISyncResponse> {
   try {
@@ -177,37 +181,58 @@ async function syncTransactions(
 
     const accessToken = decryptData(bankConnection.accessToken);
 
+    // Use the cursor stored in the database from the previous sync.
+    // If no cursor exists, use undefined for first-time sync (not empty string)
+    const cursorToUse =
+      bankConnection.lastSyncCursor ||
+      (cursor && cursor.trim() !== '' ? cursor : undefined);
+
     const request: TransactionsSyncRequest = {
       access_token: accessToken,
-      cursor: cursor || undefined,
+      cursor: cursorToUse,
       count: count,
     };
 
     const response = await plaidApi.transactionsSync(request);
 
-    // Update last sync timestamp
+    // IMPORTANT: Update the last sync timestamp AND save the new cursor for the next sync.
     bankConnection.lastSyncAt = new Date();
+    // Only update cursor if it's valid (not null/undefined)
+    if (response.data.next_cursor) {
+      bankConnection.lastSyncCursor = response.data.next_cursor;
+    }
     await bankConnection.save();
 
     return {
       hasMore: response.data.has_more,
-      nextCursor: response.data.next_cursor,
+      nextCursor: response.data.next_cursor || undefined,
       added: response.data.added as IPlaidTransaction[],
       modified: response.data.modified as IPlaidTransaction[],
       removed: response.data.removed
         .map((item) => item.transaction_id)
         .filter((id): id is string => id !== undefined),
     };
-  } catch (error: unknown) {
+  } catch (error: any) {
     console.error('Error syncing transactions:', error);
 
     // Handle specific Plaid errors
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if ((error as any).response?.data?.error_code === 'ITEM_LOGIN_REQUIRED') {
-      // Mark connection as inactive
-      await BankConnectionModel.findByIdAndUpdate(bankConnectionId, {
-        isActive: false,
+    const plaidError = error?.response?.data;
+    if (plaidError) {
+      const errorMessage = `Plaid Error: ${
+        plaidError.error_message || 'Unknown error during transaction sync'
+      }`;
+      console.error('Plaid error details:', {
+        code: plaidError.error_code,
+        type: plaidError.error_type,
+        message: plaidError.error_message,
       });
+
+      if (plaidError.error_code === 'ITEM_LOGIN_REQUIRED') {
+        await BankConnectionModel.findByIdAndUpdate(bankConnectionId, {
+          isActive: false,
+        });
+      }
+      throw new Error(errorMessage);
     }
 
     throw new Error('Failed to sync transactions');
@@ -397,7 +422,6 @@ async function hasActiveBankConnection(userId: string): Promise<boolean> {
   return !!connection;
 }
 
-// Export all functions as a single object
 export const bankConnectionServices = {
   generateLinkToken,
   exchangePublicTokenForAccessToken,

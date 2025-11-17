@@ -55,6 +55,12 @@ export const resumeRoundUpValidation = z.object({
   }),
 });
 
+export const testRoundUpProcessingCronValidation = z.object({
+  body: z.object({
+    userId: z.string().optional(), // Optional: If provided, process only this user; if not, process all users
+  }),
+});
+
 export type SavePlaidConsentInput = z.infer<typeof savePlaidConsentValidation>['body'];
 export type ProcessMonthlyDonationInput = z.infer<typeof processMonthlyDonationValidation>['body'];
 export type SwitchCharityInput = z.infer<typeof switchCharityValidation>['body'];
@@ -62,3 +68,4 @@ export type SyncTransactionsInput = z.infer<typeof syncTransactionsValidation>['
 export type BankConnectionIdParamInput = z.infer<typeof bankConnectionIdParamValidation>['params'];
 export type TransactionIdParamInput = z.infer<typeof transactionIdParamValidation>['params'];
 export type ResumeRoundUpInput = z.infer<typeof resumeRoundUpValidation>['body'];
+export type TestRoundUpProcessingCronInput = z.infer<typeof testRoundUpProcessingCronValidation>['body'];

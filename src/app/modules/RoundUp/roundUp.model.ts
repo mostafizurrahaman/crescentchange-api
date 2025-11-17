@@ -18,7 +18,7 @@ const RoundUpSchema = new Schema(
   {
     user: {
       type: Schema.Types.ObjectId,
-      ref: 'Client',
+      ref: 'Auth',
       required: true,
       index: true,
     },
@@ -92,6 +92,20 @@ const RoundUpSchema = new Schema(
     },
     lastCharitySwitch: {
       type: Date,
+    },
+    // Webhook-based donation tracking fields
+    lastDonationAttempt: {
+      type: Date,
+    },
+    lastSuccessfulDonation: {
+      type: Date,
+    },
+    lastDonationFailure: {
+      type: Date,
+    },
+    lastDonationFailureReason: {
+      type: String,
+      maxlength: [500, 'Failure reason must not exceed 500 characters'],
     },
   },
   {
@@ -184,6 +198,7 @@ RoundUpSchema.methods.completeDonationCycle = async function (
   this.status = 'completed';
   this.currentMonthTotal = 0;
   this.lastMonthReset = new Date();
+  this.lastSuccessfulDonation = new Date();
   await this.save();
   
   // Reset to pending for next cycle after a short delay
@@ -209,6 +224,8 @@ RoundUpSchema.methods.markAsFailed = async function (
   failureReason?: string
 ): Promise<void> {
   this.status = 'failed';
+  this.lastDonationFailure = new Date();
+  this.lastDonationFailureReason = failureReason;
   await this.save();
 };
 

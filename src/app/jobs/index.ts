@@ -1,4 +1,5 @@
 import { startScheduledDonationsCron } from './scheduledDonations.job';
+import { startRoundUpProcessingCron } from './roundUpTransactions.job';
 
 /**
  * Initialize all cron jobs
@@ -15,9 +16,11 @@ export const initializeJobs = () => {
     // Start scheduled donations cron job
     startScheduledDonationsCron();
 
+    // Start RoundUp transactions processing cron job
+    // startRoundUpProcessingCron();
+
     // Add more cron jobs here as needed
     // Example:
-    // startRoundUpProcessingCron();
     // startReceiptGenerationCron();
     // startPaymentRetrysCron();
 
@@ -32,3 +35,4 @@ export const initializeJobs = () => {
 };
 
 export * from './scheduledDonations.job';
+export * from './roundUpTransactions.job';

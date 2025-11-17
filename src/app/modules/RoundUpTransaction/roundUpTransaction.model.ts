@@ -42,7 +42,7 @@ const RoundUpTransactionSchema = new Schema(
     user: {
       type: Schema.Types.ObjectId,
       required: true,
-      ref: 'Client',
+      ref: 'Auth',
       index: true,
     },
     bankConnection: {
@@ -98,13 +98,33 @@ const RoundUpTransactionSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ['pending', 'processed', 'donated', 'failed'],
+      enum: ['pending', 'processed', 'processing', 'donated', 'failed'],
       default: 'processed',
       index: true,
     },
     donation: {
       type: Schema.Types.ObjectId,
       ref: 'Donation',
+    },
+    // Webhook-based payment fields
+    stripePaymentIntentId: {
+      type: String,
+      index: true,
+    },
+    stripeChargeId: {
+      type: String,
+    },
+    donationAttemptedAt: {
+      type: Date,
+    },
+    donatedAt: {
+      type: Date,
+    },
+    lastPaymentFailure: {
+      type: Date,
+    },
+    lastPaymentFailureReason: {
+      type: String,
     },
   },
   {

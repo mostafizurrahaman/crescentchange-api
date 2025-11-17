@@ -14,6 +14,7 @@ export interface IBankConnection {
   isActive: boolean;
   plaidWebhookId?: string;
   lastSyncAt?: Date;
+  lastSyncCursor?: string; // ADDED THIS LINE
   createdAt?: Date;
   updatedAt?: Date;
 }

@@ -124,7 +124,10 @@ class CronJobTracker {
     execution.endTime = new Date();
     execution.duration = execution.endTime.getTime() - execution.startTime.getTime();
     execution.status = 'failed';
-    execution.errors = [{ id: 'critical', error }];
+    execution.totalProcessed = 0; // No items processed due to failure
+    execution.successCount = 0;
+    execution.failureCount = 1; // Count as 1 failure for the entire job
+    execution.errors = [{ id: 'job-execution', error: error }];
 
     // Add to executions history
     job.executions.unshift(execution);

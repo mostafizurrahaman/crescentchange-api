@@ -15,6 +15,7 @@ import ScheduledDonationRoutes from '../modules/ScheduledDonation/scheduledDonat
 import { CronJobsRoutes } from '../modules/CronJobs/cronJobs.route';
 import { BankConnectionRoutes } from '../modules/BankConnection/bankConnection.route';
 import { SecureRoundUpRoutes } from '../modules/RoundUp/secureRoundUp.route';
+import { roundUpTransactionRoutes } from '../modules/RoundUpTransaction/roundUpTransaction.route';
 
 const router = Router();
 
@@ -81,6 +82,10 @@ const moduleRoutes = [
   {
     path: '/secure-roundup',
     route: SecureRoundUpRoutes,
+  },
+  {
+    path: '/roundup-transactions',
+    route: roundUpTransactionRoutes,
   },
 ];
 

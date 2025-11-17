@@ -10,8 +10,17 @@ export interface IRoundUpTransaction {
   transactionDate: Date;
   transactionName: string;
   transactionCategory: string[];
-  status: 'pending' | 'processed' | 'donated' | 'failed';
+  status: 'pending' | 'processed' | 'processing' | 'donated' | 'failed';
   donation?: string; // Reference to main Donation record
+  
+  // Webhook-based payment fields
+  stripePaymentIntentId?: string;
+  stripeChargeId?: string;
+  donationAttemptedAt?: Date;
+  donatedAt?: Date;
+  lastPaymentFailure?: Date;
+  lastPaymentFailureReason?: string;
+  
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -60,6 +69,7 @@ export interface ITransactionSummary {
   statusCounts: {
     pending: number;
     processed: number;
+    processing: number;
     donated: number;
     failed: number;
   };
