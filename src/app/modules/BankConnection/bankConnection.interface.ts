@@ -66,6 +66,10 @@ export interface IPlaidTransaction {
   category: string[];
   account_id: string;
   account_owner: string;
+  personal_finance_category?: {
+    primary: string;
+    detailed: string;
+  };
 }
 
 export interface ITransactionFilter {

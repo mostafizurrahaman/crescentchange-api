@@ -32,7 +32,11 @@ router.post(
 );
 
 // Get user's bank connection
-router.get('/me', bankConnectionController.getUserBankConnection);
+router.get(
+  '/me',
+  auth(ROLE.CLIENT),
+  bankConnectionController.getUserBankConnection
+);
 
 // Sync transactions
 router.post(

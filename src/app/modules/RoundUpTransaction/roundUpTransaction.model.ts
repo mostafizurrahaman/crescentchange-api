@@ -16,23 +16,18 @@ export interface IRoundUpTransactionModel
 }
 
 // Categories to exclude from round-up calculations
+// These match Plaid's personal_finance_category.primary values
+// Based on spec: "Exclude non-roundable transactions (e.g., transfers, ATM, BPAY)"
 const EXCLUDED_CATEGORIES = [
-  'TRANSFER',
-  'DEBIT',
-  'CREDIT',
-  'ATM',
-  'CASH',
-  'WITHDRAWAL',
-  'PAYMENT',
-  'REFUND',
-  'DEPOSIT',
-  'INTEREST',
-  'DIVIDEND',
-  'SERVICE FEE',
-  'OVERDRAFT',
-  'LOAN',
-  'LOAN PAYMENTS',
-  'CREDIT CARD PAYMENT',
+  'TRANSFER_IN', // Incoming transfers
+  'TRANSFER_OUT', // Outgoing transfers
+  'LOAN_PAYMENTS', // Loan payments (including credit card payments)
+  'BANK_FEES', // ATM fees, service fees, overdraft fees
+  'INCOME', // Income deposits (not purchases)
+  'INCOME_DIVIDEND', // Dividend income
+  'INCOME_INTEREST_EARNED', // Interest earned
+  'REFUND', // Refunds (not purchases)
+  'DEPOSIT', // Deposits
 ];
 
 const RoundUpTransactionSchema = new Schema(
@@ -59,7 +54,17 @@ const RoundUpTransactionSchema = new Schema(
       type: String,
       required: true,
       unique: true,
+      sparse: true, // Allow null values without duplicate key errors
       index: true, // Critical for deduplication
+    },
+    // Legacy field name - kept for database index compatibility
+    // Maps to the same value as transactionId
+    plaidTransactionId: {
+      type: String,
+      required: true,
+      unique: true,
+      sparse: true,
+      index: true,
     },
     originalAmount: {
       type: Number,
@@ -154,7 +159,8 @@ RoundUpTransactionSchema.virtual('isEligible').get(function (
 RoundUpTransactionSchema.statics.existsTransaction = function (
   transactionId: string
 ) {
-  return this.findOne({ transactionId });
+  // Use lean() for better performance and ensure we're querying the correct field
+  return this.findOne({ transactionId }).lean();
 };
 
 // Static method to calculate round-up amount

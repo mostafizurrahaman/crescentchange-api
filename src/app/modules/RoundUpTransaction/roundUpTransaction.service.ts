@@ -149,12 +149,33 @@ const processTransactionsFromPlaid = async (
     // Process each transaction
     for (const plaidTransaction of plaidTransactions) {
       try {
+        // Skip transactions without a valid transaction_id
+        // This prevents duplicate key errors when transaction_id is null/undefined
+        if (
+          !plaidTransaction.transaction_id ||
+          plaidTransaction.transaction_id.trim() === ''
+        ) {
+          console.warn(
+            `Skipping transaction without transaction_id: ${
+              plaidTransaction.name || 'Unknown'
+            } (Date: ${plaidTransaction.date})`
+          );
+          result.skipped++;
+          continue;
+        }
+
         // Check if transaction already processed
-        const existingRoundUp = await RoundUpTransactionModel.existsTransaction(
-          plaidTransaction.transaction_id
-        );
+        // Use direct query for more reliable duplicate detection
+        const existingRoundUp = await RoundUpTransactionModel.findOne({
+          transactionId: plaidTransaction.transaction_id,
+        }).lean();
 
         if (existingRoundUp) {
+          console.log(
+            `⏭️ Skipping duplicate transaction (found in DB): ${
+              plaidTransaction.transaction_id
+            } - ${plaidTransaction.name || 'Unknown'}`
+          );
           result.skipped++;
           continue;
         }
@@ -164,6 +185,10 @@ const processTransactionsFromPlaid = async (
           result.skipped++;
           continue;
         }
+
+        console.log(`========== Eligible Transaction 1 ==========`);
+        console.log(plaidTransaction, { depth: Infinity });
+        console.log(`========== Eligible Transaction ==========`);
 
         // Calculate round-up amount
         const roundUpAmount = RoundUpTransactionModel.calculateRoundUpAmount(
@@ -203,6 +228,7 @@ const processTransactionsFromPlaid = async (
           bankConnection: bankConnectionId,
           roundUp: roundUpConfig._id,
           transactionId: plaidTransaction.transaction_id,
+          plaidTransactionId: plaidTransaction.transaction_id, // Legacy field for database index compatibility
           originalAmount: plaidTransaction.amount,
           roundUpAmount,
           currency: plaidTransaction.iso_currency_code,
@@ -214,7 +240,6 @@ const processTransactionsFromPlaid = async (
             categories.length > 0 ? categories : ['Uncategorized'],
           status: 'processed',
         });
-        // *** FIX ENDS HERE ***
 
         await roundUpTransaction.save();
 
@@ -239,9 +264,20 @@ const processTransactionsFromPlaid = async (
           await triggerDonation(roundUpConfig);
           break; // Stop processing further transactions
         }
-      } catch (error) {
-        console.error('Error processing transaction:', error);
-        result.failed++;
+      } catch (error: any) {
+        console.log({ error });
+        // Handle duplicate key errors specifically
+        if (error?.code === 11000 || error?.codeName === 'DuplicateKey') {
+          console.warn(
+            `Duplicate transaction detected (skipping): ${
+              plaidTransaction.transaction_id || 'N/A'
+            } - ${plaidTransaction.name || 'Unknown'}`
+          );
+          result.skipped++;
+        } else {
+          console.error('Error processing transaction:', error);
+          result.failed++;
+        }
       }
     }
 

@@ -200,7 +200,14 @@ const syncTransactions = async (
     cursor
   );
 
-  console.log({ added: plaidSyncResponse.added }, { depth: Infinity });
+  console.log('========plaidSyncResponse ADDED =========');
+  console.log(plaidSyncResponse.added, { depth: Infinity });
+
+  // plaidSyncResponse.added.forEach((transaction: IPlaidTransaction) => {
+  //   console.log('transaction', transaction, {
+  //     depth: Infinity,
+  //   });
+  // });
 
   // Note: RoundUp processing is now handled automatically by cron job
   // This endpoint now only handles transaction synchronization

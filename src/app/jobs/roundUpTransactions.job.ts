@@ -108,6 +108,7 @@ const processEndOfMonthDonations = async () => {
   };
 };
 
+// corn
 export const startRoundUpProcessingCron = () => {
   const schedule = '0 */4 * * *'; // Every 4 hours
 
@@ -273,6 +274,7 @@ export const startRoundUpProcessingCron = () => {
   return job;
 };
 
+// test corn inside function
 export const mostafizTriggerRoundUpDonation = async () => {
   if (isProcessing) {
     console.log(
