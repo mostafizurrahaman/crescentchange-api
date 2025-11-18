@@ -1,5 +1,6 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 import { IRoundUpTransaction } from './roundUpTransaction.interface';
+import { IPlaidTransaction } from '../BankConnection/bankConnection.interface';
 
 export interface IRoundUpTransactionDocument
   extends IRoundUpTransaction,
@@ -7,34 +8,31 @@ export interface IRoundUpTransactionDocument
 
 export interface IRoundUpTransactionModel
   extends Model<IRoundUpTransactionDocument> {
-  existsTransaction(transactionId: string): Promise<IRoundUpTransactionDocument | null>;
+  existsTransaction(
+    transactionId: string
+  ): Promise<IRoundUpTransactionDocument | null>;
   calculateRoundUpAmount(amount: number): number;
-  isTransactionEligible(transaction: {
-    amount: number;
-    category?: string[];
-    name?: string;
-  }): boolean;
+  isTransactionEligible(transaction: IPlaidTransaction): boolean;
 }
 
 // Categories to exclude from round-up calculations
 const EXCLUDED_CATEGORIES = [
-  'Transfer',
-  'Transfer, Debit',
-  'Transfer, Credit',
+  'TRANSFER',
+  'DEBIT',
+  'CREDIT',
   'ATM',
-  'ATM, Cash',
-  'Withdrawal',
-  'Cash Withdrawal',
-  'Payment',
-  'Bill Payment',
-  'Refund',
-  'Deposit',
-  'Interest',
-  'Dividend',
-  'Service Fee',
-  'Overdraft',
-  'Loan',
-  'Credit Card Payment',
+  'CASH',
+  'WITHDRAWAL',
+  'PAYMENT',
+  'REFUND',
+  'DEPOSIT',
+  'INTEREST',
+  'DIVIDEND',
+  'SERVICE FEE',
+  'OVERDRAFT',
+  'LOAN',
+  'LOAN PAYMENTS',
+  'CREDIT CARD PAYMENT',
 ];
 
 const RoundUpTransactionSchema = new Schema(
@@ -135,7 +133,9 @@ const RoundUpTransactionSchema = new Schema(
 );
 
 // Virtual to check if transaction is eligible for round-up
-RoundUpTransactionSchema.virtual('isEligible').get(function (this: IRoundUpTransactionDocument) {
+RoundUpTransactionSchema.virtual('isEligible').get(function (
+  this: IRoundUpTransactionDocument
+) {
   // Transaction must be a purchase (negative amount for outgoing money)
   if (this.originalAmount >= 0) return false;
 
@@ -143,8 +143,8 @@ RoundUpTransactionSchema.virtual('isEligible').get(function (this: IRoundUpTrans
   if (this.roundUpAmount <= 0) return false;
 
   // Must not be in excluded categories
-  const hasExcludedCategory = this.transactionCategory.some((category: string) =>
-    EXCLUDED_CATEGORIES.includes(category.toLowerCase())
+  const hasExcludedCategory = this.transactionCategory.some(
+    (category: string) => EXCLUDED_CATEGORIES.includes(category.toUpperCase())
   );
 
   return !hasExcludedCategory;
@@ -167,43 +167,25 @@ RoundUpTransactionSchema.statics.calculateRoundUpAmount = function (
   const roundedUp = Math.ceil(absAmount);
   const roundUpAmount = roundedUp - absAmount;
 
-  // Return 0 if exact dollar amount (no round-up needed)
-  return roundUpAmount === 0 ? 0 : roundUpAmount;
+  // Return the rounded amount to two decimal places to avoid floating point issues
+  return parseFloat(roundUpAmount.toFixed(2));
 };
 
 // Static method to check if transaction is eligible
 RoundUpTransactionSchema.statics.isTransactionEligible = function (
-  transaction: {
-    amount: number;
-    category?: string[];
-    name?: string;
-  }
+  transaction: IPlaidTransaction
 ): boolean {
-  // Must be a debit (negative for outgoing)
-  if (transaction.amount >= 0) return false;
+  // Must be a debit (positive for outgoing in Plaid's default schema)
+  if (transaction.amount < 0) return false;
 
-  // Exclude specific transaction categories
-  const excludedCategories = [
-    'Transfer',
-    'Withdrawal',
-    'ATM',
-    'Payment',
-    'Refund',
-    'Deposit',
-    'Interest',
-    'Service Fee',
-    'Overdraft',
-  ];
-
-  if (transaction.category) {
-    const hasExcludedCategory = transaction.category.some((cat: string) =>
-      excludedCategories.some((excluded) =>
-        cat.toLowerCase().includes(excluded.toLowerCase())
-      )
-    );
-
-    if (hasExcludedCategory) return false;
+  // *** FIX STARTS HERE ***
+  // Check the modern personal_finance_category field
+  const primaryCategory =
+    transaction.personal_finance_category?.primary?.toUpperCase() || '';
+  if (primaryCategory && EXCLUDED_CATEGORIES.includes(primaryCategory)) {
+    return false;
   }
+  // *** FIX ENDS HERE ***
 
   // Check for specific transaction names to exclude
   const excludedNames = ['ATM', 'WITHDRAWAL', 'TRANSFER', 'PAYMENT', 'REFUND'];
@@ -224,8 +206,7 @@ RoundUpTransactionSchema.index({ roundUp: 1, status: 1 });
 RoundUpTransactionSchema.index({ transactionDate: 1, status: 1 });
 RoundUpTransactionSchema.index({ user: 1, createdAt: -1 });
 
-export const RoundUpTransactionModel =
-  mongoose.model<IRoundUpTransactionDocument, IRoundUpTransactionModel>(
-    'RoundUpTransaction',
-    RoundUpTransactionSchema
-  );
+export const RoundUpTransactionModel = mongoose.model<
+  IRoundUpTransactionDocument,
+  IRoundUpTransactionModel
+>('RoundUpTransaction', RoundUpTransactionSchema);

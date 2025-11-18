@@ -187,6 +187,16 @@ const processTransactionsFromPlaid = async (
           continue;
         }
 
+        // *** FIX STARTS HERE ***
+        // Correctly extract categories from the personal_finance_category object
+        const categories: string[] = [];
+        if (plaidTransaction.personal_finance_category?.primary) {
+          categories.push(plaidTransaction.personal_finance_category.primary);
+        }
+        if (plaidTransaction.personal_finance_category?.detailed) {
+          categories.push(plaidTransaction.personal_finance_category.detailed);
+        }
+
         // Create round-up transaction
         const roundUpTransaction = new RoundUpTransactionModel({
           user: userId,
@@ -199,9 +209,12 @@ const processTransactionsFromPlaid = async (
           organization: roundUpConfig.organization,
           transactionDate: new Date(plaidTransaction.date),
           transactionName: plaidTransaction.name,
-          transactionCategory: plaidTransaction.category,
+          // Use the correctly extracted categories, with a fallback
+          transactionCategory:
+            categories.length > 0 ? categories : ['Uncategorized'],
           status: 'processed',
         });
+        // *** FIX ENDS HERE ***
 
         await roundUpTransaction.save();
 
@@ -413,7 +426,6 @@ const getTransactionById = async (
     throw error;
   }
 };
-
 
 export const roundUpTransactionService = {
   processTransactionsFromPlaid,

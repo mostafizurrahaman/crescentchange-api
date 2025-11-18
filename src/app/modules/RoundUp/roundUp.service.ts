@@ -13,6 +13,7 @@ import Client from '../Client/client.model';
 import { AppError } from '../../utils';
 import httpStatus from 'http-status';
 import Auth from '../Auth/auth.model';
+import { inflate } from 'zlib';
 // Individual service functions
 const savePlaidConsent = async (userId: string, payload: any) => {
   const {
@@ -199,7 +200,7 @@ const syncTransactions = async (
     cursor
   );
 
-  console.log({ plaidSyncResponse });
+  console.log({ added: plaidSyncResponse.added }, { depth: Infinity });
 
   // Note: RoundUp processing is now handled automatically by cron job
   // This endpoint now only handles transaction synchronization
