@@ -311,10 +311,66 @@ const processMonthlyDonation = async (userId: string, payload: any) => {
     0
   );
 
+  const session = await mongoose.startSession();
+
   // Process donation with specialMessage using webhook approach
-  let paymentResult;
   try {
-    paymentResult = await StripeService.createRoundUpPaymentIntent({
+    await session.startTransaction();
+
+    // ✅ NEW: Get organization's Stripe Connect account
+    const organization = await OrganizationModel.findById(
+      roundUpConfig.organization
+    ).session(session);
+    if (!organization) {
+      await session.abortTransaction();
+      return {
+        success: false,
+        message: 'Organization not found',
+        data: null,
+        statusCode: StatusCodes.NOT_FOUND,
+      };
+    }
+
+    const connectedAccountId = organization.stripeConnectAccountId;
+    if (!connectedAccountId) {
+      await session.abortTransaction();
+      return {
+        success: false,
+        message: 'Organization has not set up payment receiving',
+        data: null,
+        statusCode: StatusCodes.BAD_REQUEST,
+      };
+    }
+
+    // ✅ NEW: Generate unique donation ID
+    const donationUniqueId = new Types.ObjectId();
+
+    // ✅ NEW: Create Donation record FIRST with status 'pending'
+    const donation = new Donation({
+      _id: donationUniqueId,
+      donor: userId,
+      organization: roundUpConfig.organization,
+      cause: roundUpConfig.cause,
+      donationType: 'round-up',
+      amount: totalAmount,
+      currency: 'USD',
+      status: 'pending', // Will be updated by webhook
+      specialMessage:
+        specialMessage || `Manual round-up donation - ${currentMonth}`,
+      pointsEarned: Math.round(totalAmount * 10), // 10 points per dollar
+      connectedAccountId: connectedAccountId,
+      roundUpId: roundUpConfig._id,
+      roundUpTransactionIds: processedTransactions.map((t: any) => t._id),
+      receiptGenerated: false,
+      createdAt: new Date(),
+    });
+
+    const savedDonation = await donation.save({ session });
+
+    console.log(`📝 Created Donation record: ${savedDonation._id}`);
+
+    // ✅ MODIFIED: Create payment intent with donationId
+    const paymentResult = await StripeService.createRoundUpPaymentIntent({
       roundUpId: String(roundUpConfig._id),
       userId,
       charityId: roundUpConfig.organization,
@@ -324,12 +380,18 @@ const processMonthlyDonation = async (userId: string, payload: any) => {
       year: now.getFullYear(),
       specialMessage:
         specialMessage || `Manual round-up donation - ${currentMonth}`,
+      donationId: String(donationUniqueId), // ✅ NEW: Pass donationId
     });
+
+    // ✅ NEW: Update Donation with payment intent ID
+    savedDonation.stripePaymentIntentId = paymentResult.payment_intent_id;
+    savedDonation.status = 'processing'; // Update to processing
+    await savedDonation.save({ session });
 
     // Update round-up configuration status to processing
     roundUpConfig.status = 'processing';
     roundUpConfig.lastDonationAttempt = new Date();
-    await roundUpConfig.save();
+    await roundUpConfig.save({ session });
 
     // Mark transactions as processing (payment initiated)
     await RoundUpTransactionModel.updateMany(
@@ -346,14 +408,41 @@ const processMonthlyDonation = async (userId: string, payload: any) => {
         status: 'processing',
         stripePaymentIntentId: paymentResult.payment_intent_id,
         donationAttemptedAt: new Date(),
-      }
+        donation: donationUniqueId, // ✅ NEW: Link to donation record
+      },
+      { session }
     );
 
+    // Commit transaction
+    await session.commitTransaction();
+
     console.log(`🔄 Manual RoundUp donation initiated for user ${userId}`);
+    console.log(`   Donation ID: ${donationUniqueId}`);
     console.log(`   Payment Intent ID: ${paymentResult.payment_intent_id}`);
     console.log(`   Amount: $${totalAmount}`);
     console.log(`   Charity: ${roundUpConfig.organization}`);
+    console.log(`   Status: processing (awaiting webhook confirmation)`);
+
+    return {
+      success: true,
+      message:
+        'Manual RoundUp donation initiated successfully. Payment processing in progress.',
+      data: {
+        donationId: String(donationUniqueId), // ✅ NEW: Return donationId
+        paymentIntentId: paymentResult.payment_intent_id,
+        amount: totalAmount,
+        organizationId: roundUpConfig.organization,
+        causeId: roundUpConfig.cause,
+        month: currentMonth,
+        transactionCount: processedTransactions.length,
+        status: 'processing',
+        note: 'Donation will be completed via webhook confirmation',
+      },
+      statusCode: StatusCodes.OK,
+    };
   } catch (error) {
+    await session.abortTransaction();
+
     // Mark round-up as failed if donation processing fails
     await roundUpConfig.markAsFailed(
       error instanceof Error ? error.message : 'Unknown payment error'
@@ -370,24 +459,9 @@ const processMonthlyDonation = async (userId: string, payload: any) => {
       },
       statusCode: StatusCodes.BAD_GATEWAY,
     };
+  } finally {
+    await session.endSession();
   }
-
-  return {
-    success: true,
-    message:
-      'Manual RoundUp donation initiated successfully. Payment processing in progress.',
-    data: {
-      paymentIntentId: paymentResult.payment_intent_id,
-      amount: totalAmount,
-      organizationId: roundUpConfig.organization,
-      causeId: roundUpConfig.cause,
-      month: currentMonth,
-      transactionCount: processedTransactions.length,
-      status: 'processing',
-      note: 'Donation will be completed via webhook confirmation',
-    },
-    statusCode: StatusCodes.OK,
-  };
 };
 
 const resumeRoundUp = async (userId: string, payload: any) => {

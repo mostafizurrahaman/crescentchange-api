@@ -13,7 +13,12 @@ import { IPlaidTransaction } from '../BankConnection/bankConnection.interface';
 import { IRoundUpDocument } from '../RoundUp/roundUp.model';
 import { IBankConnectionDocument } from '../BankConnection/bankConnection.model';
 import { StripeService } from '../Stripe/stripe.service';
-import { pl } from 'zod/v4/locales';
+import { Donation } from '../donation/donation.model';
+import { Types } from 'mongoose';
+import mongoose from 'mongoose';
+import { OrganizationModel } from '../Organization/organization.model';
+import { AppError } from '../../utils';
+import httpStatus from 'http-status';
 
 // Check and reset monthly total at the beginning of each month
 const checkAndResetMonthlyTotal = async (
@@ -33,10 +38,15 @@ const checkAndResetMonthlyTotal = async (
 };
 
 // Trigger donation when threshold is met (webhook-based approach)
+// ✅ MODIFIED: Now creates Donation record BEFORE payment intent
 const triggerDonation = async (
   roundUpConfig: IRoundUpDocument
-): Promise<{ paymentIntentId: string }> => {
+): Promise<{ paymentIntentId: string; donationId: string }> => {
+  const session = await mongoose.startSession();
+
   try {
+    await session.startTransaction();
+
     // Get all pending round-up transactions for this user/month
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${String(
@@ -51,9 +61,10 @@ const triggerDonation = async (
         $gte: new Date(now.getFullYear(), now.getMonth(), 1),
         $lt: new Date(now.getFullYear(), now.getMonth() + 1, 1),
       },
-    });
+    }).session(session);
 
     if (pendingTransactions.length === 0) {
+      await session.abortTransaction();
       throw new Error('No pending transactions found for donation');
     }
 
@@ -64,25 +75,80 @@ const triggerDonation = async (
     );
 
     if (totalAmount <= 0) {
+      await session.abortTransaction();
       throw new Error('Invalid donation amount');
     }
 
-    // Create Stripe Payment Intent for round-up donation
+    // ✅ NEW: Get organization's Stripe Connect account
+    const organization = await OrganizationModel.findById(
+      roundUpConfig.organization
+    ).session(session);
+    if (!organization) {
+      await session.abortTransaction();
+      throw new AppError(httpStatus.NOT_FOUND, 'Organization not found!');
+    }
+
+    const connectedAccountId = organization.stripeConnectAccountId;
+    if (!connectedAccountId) {
+      await session.abortTransaction();
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'Organization has not set up payment receiving. Please contact the organization.'
+      );
+    }
+
+    // ✅ NEW: Generate unique donation ID
+    const donationUniqueId = new Types.ObjectId();
+
+    // ✅ NEW: Create Donation record FIRST with status 'pending'
+    const donation = new Donation({
+      _id: donationUniqueId,
+      donor: roundUpConfig.user,
+      organization: roundUpConfig.organization,
+      cause: roundUpConfig.cause,
+      donationType: 'round-up',
+      amount: totalAmount,
+      currency: 'USD',
+      status: 'pending', // Will be updated by webhook
+      specialMessage:
+        roundUpConfig.specialMessage || `Round-up donation for ${currentMonth}`,
+      pointsEarned: Math.round(totalAmount * 10), // 10 points per dollar
+      connectedAccountId: connectedAccountId,
+      roundUpId: roundUpConfig._id,
+      roundUpTransactionIds: pendingTransactions.map((t) => t._id),
+      receiptGenerated: false,
+      createdAt: new Date(),
+    });
+
+    const savedDonation = await donation.save({ session });
+
+    console.log(`📝 Created Donation record: ${savedDonation._id}`);
+    console.log(`   Amount: $${totalAmount}`);
+    console.log(`   Type: round-up`);
+    console.log(`   Status: pending`);
+
+    // ✅ MODIFIED: Create Stripe Payment Intent with donationId in metadata
     const paymentIntentResult = await StripeService.createRoundUpPaymentIntent({
       roundUpId: String(roundUpConfig._id),
-      userId: roundUpConfig.user,
-      charityId: roundUpConfig.organization,
-      causeId: roundUpConfig.cause,
+      userId: String(roundUpConfig.user),
+      charityId: String(roundUpConfig.organization),
+      causeId: String(roundUpConfig.cause),
       amount: totalAmount,
       month: currentMonth,
       year: now.getFullYear(),
       specialMessage: roundUpConfig.specialMessage,
+      donationId: String(donationUniqueId), // ✅ NEW: Pass donationId
     });
+
+    // ✅ NEW: Update Donation with payment intent ID
+    savedDonation.stripePaymentIntentId = paymentIntentResult.payment_intent_id;
+    savedDonation.status = 'processing'; // Update to processing
+    await savedDonation.save({ session });
 
     // Update round-up configuration status to processing
     roundUpConfig.status = 'processing';
     roundUpConfig.lastDonationAttempt = new Date();
-    await roundUpConfig.save();
+    await roundUpConfig.save({ session });
 
     // Mark transactions as processing (payment initiated)
     await RoundUpTransactionModel.updateMany(
@@ -91,20 +157,33 @@ const triggerDonation = async (
         status: 'processing',
         stripePaymentIntentId: paymentIntentResult.payment_intent_id,
         donationAttemptedAt: new Date(),
-      }
+        donation: donationUniqueId, // ✅ NEW: Link to donation record
+      },
+      { session }
     );
 
+    // Commit transaction
+    await session.commitTransaction();
+
     console.log(`🔄 RoundUp donation initiated for user ${roundUpConfig.user}`);
+    console.log(`   Donation ID: ${donationUniqueId}`);
     console.log(
       `   Payment Intent ID: ${paymentIntentResult.payment_intent_id}`
     );
     console.log(`   Amount: $${totalAmount}`);
     console.log(`   Charity: ${roundUpConfig.organization}`);
+    console.log(`   Status: processing (awaiting webhook confirmation)`);
 
-    return { paymentIntentId: paymentIntentResult.payment_intent_id };
+    return {
+      paymentIntentId: paymentIntentResult.payment_intent_id,
+      donationId: String(donationUniqueId),
+    };
   } catch (error) {
+    await session.abortTransaction();
     console.error('Error triggering RoundUp donation:', error);
     throw error;
+  } finally {
+    await session.endSession();
   }
 };
 
@@ -206,12 +285,12 @@ const processTransactionsFromPlaid = async (
 
         // Check if adding this would exceed monthly threshold
         const newMonthlyTotal = roundUpConfig.currentMonthTotal + roundUpAmount;
-        // isEligibleBeforeThresoldCheck.push({
-        //   plaidTransactionId: plaidTransaction.transaction_id,
-        //   newMonthlyTotal,
-        //   roundUpAmount,
-        //   amount: plaidTransaction.amount,
-        // });
+        isEligibleBeforeThresoldCheck.push({
+          plaidTransactionId: plaidTransaction.transaction_id,
+          newMonthlyTotal,
+          roundUpAmount,
+          amount: plaidTransaction.amount,
+        });
         if (
           roundUpConfig.monthlyThreshold !== 'no-limit' &&
           typeof roundUpConfig.monthlyThreshold === 'number' &&
@@ -269,7 +348,13 @@ const processTransactionsFromPlaid = async (
           };
 
           // Trigger immediate donation processing
-          await triggerDonation(roundUpConfig);
+          const donationResult = await triggerDonation(roundUpConfig);
+
+          // ✅ NEW: Add donation info to result
+          result.thresholdReached.donationId = donationResult.donationId;
+          result.thresholdReached.paymentIntentId =
+            donationResult.paymentIntentId;
+
           break; // Stop processing further transactions
         }
       } catch (error: any) {
@@ -289,10 +374,10 @@ const processTransactionsFromPlaid = async (
       }
     }
 
-    // console.log(
-    //   '✅ Finished processing Plaid transactions for RoundUp',
-    //   isEligibleBeforeThresoldCheck
-    // );
+    console.log(
+      '✅ Finished processing Plaid transactions for RoundUp',
+      isEligibleBeforeThresoldCheck
+    );
 
     return result;
   } catch (error) {

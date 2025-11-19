@@ -101,6 +101,7 @@ const updateScheduledDonationAfterSuccess = async (
 };
 
 // Handle RoundUp donation success
+// ✅ MODIFIED: Now UPDATES existing Donation record instead of creating it
 const handleRoundUpDonationSuccess = async (
   roundUpId: string,
   paymentIntentId: string
@@ -113,78 +114,79 @@ const handleRoundUpDonationSuccess = async (
       return;
     }
 
-    // Get all processing transactions for this round-up
-    const processingTransactions = await RoundUpTransactionModel.find({
-      user: roundUpConfig.user,
-      bankConnection: roundUpConfig.bankConnection,
-      status: 'processing',
+    // ✅ NEW: Find existing Donation record by payment intent ID
+    const donation = await Donation.findOne({
       stripePaymentIntentId: paymentIntentId,
+      donationType: 'round-up',
+    });
+
+    if (!donation) {
+      console.error(
+        `❌ Donation record not found for payment intent: ${paymentIntentId}`
+      );
+      return;
+    }
+
+    console.log(`📝 Found existing Donation record: ${donation._id}`);
+
+    // Get all processing transactions for this payment intent
+    const processingTransactions = await RoundUpTransactionModel.find({
+      stripePaymentIntentId: paymentIntentId,
+      status: 'processing',
     });
 
     if (processingTransactions.length === 0) {
-      console.error(`❌ No processing transactions found for RoundUp: ${roundUpId}`);
+      console.error(
+        `❌ No processing transactions found for payment intent: ${paymentIntentId}`
+      );
       return;
     }
+
+    console.log(
+      `📦 Found ${processingTransactions.length} processing transactions`
+    );
 
     // Mark transactions as donated
     await RoundUpTransactionModel.updateMany(
       {
-        user: roundUpConfig.user,
-        bankConnection: roundUpConfig.bankConnection,
-        status: 'processing',
         stripePaymentIntentId: paymentIntentId,
+        status: 'processing',
       },
       {
         status: 'donated',
         donatedAt: new Date(),
-        stripeChargeId: paymentIntentId, // We can get this from paymentIntent if needed
+        stripeChargeId: paymentIntentId, // We can get actual chargeId from paymentIntent if needed
       }
     );
 
-    // Create main donation record in Donation model
-    const totalAmount = processingTransactions.reduce(
-      (sum, transaction) => sum + (transaction as any).roundUpAmount,
-      0
+    console.log(
+      `✅ Updated ${processingTransactions.length} transactions to 'donated' status`
     );
 
-    const donationRecord = await Donation.create({
-      donor: roundUpConfig.user,
-      organization: roundUpConfig.organization,
-      cause: roundUpConfig.cause,
-      donationType: 'round-up',
-      amount: totalAmount,
-      currency: 'USD',
-      status: 'completed',
-      donationDate: new Date(),
-      stripePaymentIntentId: paymentIntentId,
-      specialMessage: roundUpConfig.specialMessage || `Round-up donation - ${new Date().toLocaleDateString()}`,
-      pointsEarned: Math.round(totalAmount * 10), // Example: 10 points per dollar
-      connectedAccountId: roundUpConfig.organization, // Will need to populate actual connected account ID
-      roundUpId: roundUpConfig._id,
-      receiptGenerated: false,
-    });
+    // ✅ MODIFIED: UPDATE existing Donation record (don't create new one)
+    donation.status = 'completed';
+    donation.donationDate = new Date();
+    donation.roundUpTransactionIds = processingTransactions.map((t) => t._id);
+    await donation.save();
 
-    // Reset and pause round-up configuration
-    roundUpConfig.currentMonthTotal = 0;
-    roundUpConfig.lastMonthReset = new Date();
-    roundUpConfig.enabled = false; // Pause after successful donation
-    roundUpConfig.status = 'completed';
-    roundUpConfig.lastSuccessfulDonation = new Date();
-    await roundUpConfig.save();
+    console.log(`✅ Updated Donation record to 'completed' status`);
+
+    // ✅ MODIFIED: Use completeDonationCycle() method for proper state management
+    await roundUpConfig.completeDonationCycle();
 
     console.log(`✅ RoundUp donation completed successfully`);
     console.log(`   RoundUp ID: ${roundUpId}`);
+    console.log(`   Donation ID: ${donation._id}`);
     console.log(`   Payment Intent ID: ${paymentIntentId}`);
     console.log(`   User: ${roundUpConfig.user}`);
-    console.log(`   Amount: $${totalAmount}`);
+    console.log(`   Amount: $${donation.amount}`);
     console.log(`   Transactions processed: ${processingTransactions.length}`);
-    console.log(`   Donation record: ${donationRecord._id}`);
 
     return {
       success: true,
       roundUpId,
-      donationId: donationRecord._id,
-      amount: totalAmount,
+      donationId: donation._id,
+      amount: donation.amount,
       transactionsCount: processingTransactions.length,
     };
   } catch (error: unknown) {
@@ -370,7 +372,9 @@ const handlePaymentIntentSucceeded = async (
 
     // ✅ Handle RoundUp donations - update RoundUp transactions and configuration
     if (metadata?.donationType === 'roundup' && metadata?.roundUpId) {
-      console.log(`🔄 Processing RoundUp donation success: ${metadata.roundUpId}`);
+      console.log(
+        `🔄 Processing RoundUp donation success: ${metadata.roundUpId}`
+      );
       await handleRoundUpDonationSuccess(metadata.roundUpId, paymentIntent.id);
     }
 
@@ -450,7 +454,9 @@ const handlePaymentIntentFailed = async (
 
       // ✅ Handle RoundUp donations - mark as failed and enable retry
       if (metadata?.donationType === 'roundup' && metadata?.roundUpId) {
-        console.log(`❌ Processing RoundUp donation failure: ${metadata.roundUpId}`);
+        console.log(
+          `❌ Processing RoundUp donation failure: ${metadata.roundUpId}`
+        );
         await handleRoundUpDonationFailure(
           metadata.roundUpId,
           paymentIntent.id,
@@ -484,11 +490,10 @@ const handlePaymentIntentFailed = async (
     console.log(`❌ Payment failed for donation: ${donation._id}`);
 
     // ✅ Handle RoundUp donations - mark as failed and enable retry
-    if (
-      metadata?.donationType === 'roundup' &&
-      metadata?.roundUpId
-    ) {
-      console.log(`❌ Processing RoundUp donation failure: ${metadata.roundUpId}`);
+    if (metadata?.donationType === 'roundup' && metadata?.roundUpId) {
+      console.log(
+        `❌ Processing RoundUp donation failure: ${metadata.roundUpId}`
+      );
       await handleRoundUpDonationFailure(
         metadata.roundUpId,
         paymentIntent.id,

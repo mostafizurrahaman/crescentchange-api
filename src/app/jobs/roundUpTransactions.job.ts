@@ -23,6 +23,8 @@ const JOB_NAME = 'roundup-transactions-main';
  * Triggers end-of-month donations for users who have an accumulated balance
  * but haven't met their threshold, or have "no-limit" set.
  * This should only run on the first day of a new month.
+ *
+ * ✅ MODIFIED: Now creates Donation record BEFORE payment intent (matches threshold flow)
  */
 const processEndOfMonthDonations = async () => {
   console.log('\n🎯 Checking for end-of-month donations to process...');
@@ -58,8 +60,12 @@ const processEndOfMonthDonations = async () => {
       continue;
     }
 
+    const session = await mongoose.startSession();
+
     try {
-      const totalAmount = config.currentMonthTotal; // Securely capture the amount before it's reset
+      await session.startTransaction();
+
+      const totalAmount = config.currentMonthTotal; // Securely capture the amount before operations
       const now = new Date();
       // The donation is for the month that just ended
       const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -70,8 +76,72 @@ const processEndOfMonthDonations = async () => {
         `   Initiating month-end donation of $${totalAmount} for user ${userId}...`
       );
 
-      // Use the Stripe service to create a webhook-based payment intent
-      await StripeService.createRoundUpPaymentIntent({
+      // ✅ NEW: Get organization's Stripe Connect account
+      const organization = await OrganizationModel.findById(
+        config.organization
+      ).session(session);
+      if (!organization) {
+        await session.abortTransaction();
+        failureCount++;
+        console.error(`   ❌ Organization not found for config ${config._id}`);
+        continue;
+      }
+
+      const connectedAccountId = organization.stripeConnectAccountId;
+      if (!connectedAccountId) {
+        await session.abortTransaction();
+        failureCount++;
+        console.error(
+          `   ❌ Organization has no Stripe Connect account: ${config._id}`
+        );
+        continue;
+      }
+
+      // ✅ NEW: Get all processed transactions for the previous month
+      const pendingTransactions = await RoundUpTransactionModel.find({
+        user: userId,
+        bankConnection: config.bankConnection,
+        status: 'processed',
+        transactionDate: {
+          $gte: new Date(lastMonth.getFullYear(), lastMonth.getMonth(), 1),
+          $lt: new Date(now.getFullYear(), now.getMonth(), 1),
+        },
+      }).session(session);
+
+      if (pendingTransactions.length === 0) {
+        await session.abortTransaction();
+        console.log(`   ⚠️ No processed transactions found for user ${userId}`);
+        continue;
+      }
+
+      // ✅ NEW: Generate unique donation ID
+      const donationUniqueId = new Types.ObjectId();
+
+      // ✅ NEW: Create Donation record FIRST with status 'pending'
+      const donation = new Donation({
+        _id: donationUniqueId,
+        donor: userId,
+        organization: config.organization,
+        cause: config.cause,
+        donationType: 'round-up',
+        amount: totalAmount,
+        currency: 'USD',
+        status: 'pending', // Will be updated by webhook
+        specialMessage: `Automatic monthly round-up for ${monthStr}/${year}`,
+        pointsEarned: Math.round(totalAmount * 10), // 10 points per dollar
+        connectedAccountId: connectedAccountId,
+        roundUpId: config._id,
+        roundUpTransactionIds: pendingTransactions.map((t) => t._id),
+        receiptGenerated: false,
+        createdAt: new Date(),
+      });
+
+      const savedDonation = await donation.save({ session });
+
+      console.log(`   📝 Created Donation record: ${savedDonation._id}`);
+
+      // ✅ MODIFIED: Use the Stripe service to create a webhook-based payment intent with donationId
+      const paymentIntent = await StripeService.createRoundUpPaymentIntent({
         roundUpId: String(config._id),
         userId: String(userId),
         charityId: String(config.organization),
@@ -80,24 +150,54 @@ const processEndOfMonthDonations = async () => {
         month: `${year}-${monthStr}`,
         year: year,
         specialMessage: `Automatic monthly round-up for ${monthStr}/${year}`,
+        donationId: String(donationUniqueId), // ✅ NEW: Pass donationId
       });
 
-      // **IMPROVEMENT**: Atomically update the status and reset the monthly total.
-      // This prevents a race condition where the sync process might reset the total before donation.
+      // ✅ NEW: Update Donation with payment intent ID
+      savedDonation.stripePaymentIntentId = paymentIntent.payment_intent_id;
+      savedDonation.status = 'processing'; // Update to processing
+      await savedDonation.save({ session });
+
+      // ✅ MODIFIED: Update the status and timestamps (don't reset currentMonthTotal yet!)
       config.status = 'processing';
       config.lastDonationAttempt = new Date();
-      config.currentMonthTotal = 0; // Reset balance for the new month
-      config.lastMonthReset = new Date(); // Update the reset timestamp
-      await config.save();
+      // ❌ REMOVED: config.currentMonthTotal = 0; // Will be reset by webhook on success
+      // ❌ REMOVED: config.lastMonthReset = new Date();
+      await config.save({ session });
+
+      // ✅ NEW: Link transactions to payment intent
+      await RoundUpTransactionModel.updateMany(
+        { _id: { $in: pendingTransactions.map((t) => t._id) } },
+        {
+          status: 'processing',
+          stripePaymentIntentId: paymentIntent.payment_intent_id,
+          donationAttemptedAt: new Date(),
+          donation: donationUniqueId, // ✅ Link to donation record
+        },
+        { session }
+      );
+
+      // Commit transaction
+      await session.commitTransaction();
+
+      console.log(`   ✅ Month-end donation initiated successfully`);
+      console.log(`      Donation ID: ${donationUniqueId}`);
+      console.log(
+        `      Payment Intent ID: ${paymentIntent.payment_intent_id}`
+      );
+      console.log(`      Status: processing (awaiting webhook confirmation)`);
 
       successCount++;
     } catch (error) {
+      await session.abortTransaction();
       failureCount++;
       console.error(
         `❌ Error processing month-end donation for user ${userId}:`,
         error
       );
       await config.markAsFailed('Month-end donation trigger failed');
+    } finally {
+      await session.endSession();
     }
   }
 
