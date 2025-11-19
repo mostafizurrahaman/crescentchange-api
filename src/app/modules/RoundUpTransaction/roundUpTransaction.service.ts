@@ -13,6 +13,7 @@ import { IPlaidTransaction } from '../BankConnection/bankConnection.interface';
 import { IRoundUpDocument } from '../RoundUp/roundUp.model';
 import { IBankConnectionDocument } from '../BankConnection/bankConnection.model';
 import { StripeService } from '../Stripe/stripe.service';
+import { pl } from 'zod/v4/locales';
 
 // Check and reset monthly total at the beginning of each month
 const checkAndResetMonthlyTotal = async (
@@ -146,6 +147,8 @@ const processTransactionsFromPlaid = async (
       return result;
     }
 
+    const isEligibleBeforeThresoldCheck = [];
+
     // Process each transaction
     for (const plaidTransaction of plaidTransactions) {
       try {
@@ -203,6 +206,12 @@ const processTransactionsFromPlaid = async (
 
         // Check if adding this would exceed monthly threshold
         const newMonthlyTotal = roundUpConfig.currentMonthTotal + roundUpAmount;
+        // isEligibleBeforeThresoldCheck.push({
+        //   plaidTransactionId: plaidTransaction.transaction_id,
+        //   newMonthlyTotal,
+        //   roundUpAmount,
+        //   amount: plaidTransaction.amount,
+        // });
         if (
           roundUpConfig.monthlyThreshold !== 'no-limit' &&
           typeof roundUpConfig.monthlyThreshold === 'number' &&
@@ -212,8 +221,7 @@ const processTransactionsFromPlaid = async (
           continue;
         }
 
-        // *** FIX STARTS HERE ***
-        // Correctly extract categories from the personal_finance_category object
+        // Extract Categories:
         const categories: string[] = [];
         if (plaidTransaction.personal_finance_category?.primary) {
           categories.push(plaidTransaction.personal_finance_category.primary);
@@ -280,6 +288,11 @@ const processTransactionsFromPlaid = async (
         }
       }
     }
+
+    // console.log(
+    //   '✅ Finished processing Plaid transactions for RoundUp',
+    //   isEligibleBeforeThresoldCheck
+    // );
 
     return result;
   } catch (error) {
