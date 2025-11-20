@@ -1,26 +1,29 @@
-export type TRoundUpStatus = 'pending' | 'processing' | 'completed' | 'cancelled' | 'failed';
+export type TRoundUpStatus =
+  | 'pending'
+  | 'processing'
+  | 'completed'
+  | 'cancelled'
+  | 'failed';
 
 export interface IRoundUp {
-  user: string; // Reference to Client
-  organization: string; // Reference to Organization
-  cause: string; // Reference to Cause (required)
-  bankConnection: string; // Reference to BankConnection
-  monthlyThreshold?: number | "no-limit"; // Monthly cap amount (min $3, "no-limit", or undefined)
-  specialMessage?: string; // Optional special message for donations (max 250 chars)
-  status: TRoundUpStatus; // Backend-only managed status: pending, processing, completed
+  user: string;
+  organization: string;
+  cause: string;
+  bankConnection: string;
+  paymentMethod?: string;
+  monthlyThreshold?: number | 'no-limit';
+  specialMessage?: string;
+  status: TRoundUpStatus;
   isActive: boolean;
   enabled: boolean;
-  totalAccumulated: number; // Total accumulated across all time
-  currentMonthTotal: number; // Current month total
-  lastMonthReset: Date; // Track when we last reset the monthly total
-  lastCharitySwitch?: Date; // Track last charity switch for 30-day rule
-  
-  // Webhook-based donation tracking fields
-  lastDonationAttempt?: Date; // When payment was last attempted
-  lastSuccessfulDonation?: Date; // When last donation was successful
-  lastDonationFailure?: Date; // When last donation failed
-  lastDonationFailureReason?: string; // Reason for last donation failure
-  
+  totalAccumulated: number;
+  currentMonthTotal: number;
+  lastMonthReset: Date;
+  lastCharitySwitch?: Date;
+  lastDonationAttempt?: Date;
+  lastSuccessfulDonation?: Date;
+  lastDonationFailure?: Date;
+  lastDonationFailureReason?: string;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -31,7 +34,7 @@ export interface IRoundUpSummary {
   charityName: string;
   currentMonthTotal: number;
   totalAccumulated: number;
-  monthlyThreshold?: number | "no-limit";
+  monthlyThreshold?: number | 'no-limit';
   isActive: boolean;
   enabled: boolean;
   nextDonationDate: Date;
@@ -53,11 +56,9 @@ export interface ICharitySwitchResponse {
   lastSwitchDate?: Date;
 }
 
-
-
 export interface IRoundUpSettings {
   enabled: boolean;
-  monthlyThreshold?: number | "no-limit";
+  monthlyThreshold?: number | 'no-limit';
   organizationId: string;
   causeId: string;
   autoDonate: boolean; // Whether to donate when threshold is met or wait for month end

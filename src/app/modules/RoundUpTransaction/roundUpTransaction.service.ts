@@ -44,6 +44,8 @@ const triggerDonation = async (
   ).padStart(2, '0')}`;
   const previousMonthTotal = roundUpConfig.currentMonthTotal || 0;
 
+  console.log({ roundUpConfig });
+
   try {
     // Get all pending round-up transactions for this user/month AND specific roundUp config
     const pendingTransactions = await RoundUpTransactionModel.find({
@@ -125,6 +127,7 @@ const triggerDonation = async (
         year: now.getFullYear(),
         specialMessage: roundUpConfig.specialMessage,
         donationId: String(donation._id),
+        paymentMethodId: roundUpConfig.paymentMethod,
       });
 
       console.log(

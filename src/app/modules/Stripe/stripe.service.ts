@@ -686,6 +686,7 @@ const createRoundUpPaymentIntent = async (payload: {
   month: string;
   year: number;
   specialMessage?: string;
+  paymentMethodId?: string;
   donationId?: string; // ⭐ Add this parameter
 }): Promise<{ client_secret: string; payment_intent_id: string }> => {
   try {
@@ -698,30 +699,64 @@ const createRoundUpPaymentIntent = async (payload: {
       );
     }
 
-    //
+    // Check is payment method exists for user:
 
-    // Create Stripe Payment Intent for round-up donation
+    if (!payload.paymentMethodId) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'Payment method ID is required for round-up donation'
+      );
+    }
+
+    const paymentMethod = await PaymentMethod.findById(payload.paymentMethodId);
+
+    if (!paymentMethod) {
+      throw new AppError(httpStatus.BAD_REQUEST, 'Payment method not found');
+    }
+
+    if (String(paymentMethod.user) !== payload.userId) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'Payment method does not belong to the specified user'
+      );
+    }
+
+    if (!paymentMethod.isActive) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        "Payment methoed isn't active "
+      );
+    }
+
+    // Create Stripe Payment Intent for off-session round-up donation
     const paymentIntentParams: Stripe.PaymentIntentCreateParams = {
-      amount: Math.round(payload.amount * 100), // Convert to cents
+      amount: Math.round(payload.amount * 100),
       currency: 'usd',
+
+      // Off-session settings
+      confirm: true,
+      off_session: true,
+
+      // Must specify customer + saved PM for off-session
+      customer: paymentMethod.stripeCustomerId,
+      payment_method: paymentMethod.stripePaymentMethodId,
+
       metadata: {
-        donationId: payload.donationId || '', // ⭐ Include donationId in metadata
-        roundUpId: payload.roundUpId,
-        userId: payload.userId,
-        organizationId: payload.charityId,
-        causeId: payload.causeId || '',
-        month: payload.month,
-        year: payload.year.toString(),
+        donationId: String(payload.donationId || ''),
+        roundUpId: String(payload.roundUpId),
+        userId: String(payload.userId),
+        organizationId: String(payload.charityId),
+        causeId: String(payload.causeId || ''),
+        month: String(payload.month),
+        year: String(payload.year),
         type: 'roundup_donation',
-        donationType: 'roundup', // For webhook handling
+        donationType: 'roundup',
         specialMessage:
           payload.specialMessage ||
           `Round-up donation for ${payload.month} ${payload.year}`,
       },
-      automatic_payment_methods: {
-        enabled: true,
-      },
-      // Add transfer data for connected accounts
+
+      // For connected accounts
       transfer_data: {
         destination: charity.stripeConnectAccountId,
       },

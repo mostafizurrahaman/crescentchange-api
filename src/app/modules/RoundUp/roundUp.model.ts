@@ -40,6 +40,13 @@ const RoundUpSchema = new Schema(
       ref: 'BankConnection',
       index: true,
     },
+    // ⭐ NEW FIELD
+    paymentMethod: {
+      type: Schema.Types.ObjectId,
+      ref: 'PaymentMethod',
+      required: [true, 'Payment method is required for RoundUp donations'],
+      index: true,
+    },
     monthlyThreshold: {
       type: Schema.Types.Mixed, // Can be Number or "no-limit" string
       validate: {
@@ -63,10 +70,6 @@ const RoundUpSchema = new Schema(
       enum: ['pending', 'processing', 'completed', 'cancelled', 'failed'],
       default: 'pending',
       required: true,
-      // Note: This field should only be modified by backend processes
-      // It gets updated automatically when threshold is reached or donations are processed
-      // pending: accumulating roundups, processing: threshold met, completed: donation processed
-      // cancelled: user cancelled or bank connection lost, failed: payment processing failed
     },
     isActive: {
       type: Boolean,
@@ -114,7 +117,6 @@ const RoundUpSchema = new Schema(
     toObject: { virtuals: true },
   }
 );
-
 // Virtual for checking if monthly threshold is met
 RoundUpSchema.virtual('isThresholdMet').get(function (this: IRoundUpDocument) {
   return (
@@ -186,7 +188,7 @@ RoundUpSchema.methods.checkAndUpdateThresholdStatus = function (
   if (thresholdMet && this.status === 'pending') {
     this.status = 'processing';
   }
-  
+
   this.save();
   return this.status;
 };
@@ -200,7 +202,7 @@ RoundUpSchema.methods.completeDonationCycle = async function (
   this.lastMonthReset = new Date();
   this.lastSuccessfulDonation = new Date();
   await this.save();
-  
+
   // Reset to pending for next cycle after a short delay
   setTimeout(async () => {
     this.status = 'pending';

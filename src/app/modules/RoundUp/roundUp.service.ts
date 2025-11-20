@@ -14,6 +14,7 @@ import { AppError } from '../../utils';
 import httpStatus from 'http-status';
 import Auth from '../Auth/auth.model';
 import { inflate } from 'zlib';
+import PaymentMethod from '../PaymentMethod/paymentMethod.model';
 // Individual service functions
 const savePlaidConsent = async (userId: string, payload: any) => {
   const {
@@ -22,6 +23,7 @@ const savePlaidConsent = async (userId: string, payload: any) => {
     causeId,
     monthlyThreshold,
     specialMessage,
+    paymentMethodId,
   } = payload;
 
   //  check user :
@@ -29,6 +31,12 @@ const savePlaidConsent = async (userId: string, payload: any) => {
 
   if (!client) {
     throw new AppError(httpStatus.NOT_FOUND, 'User not found!');
+  }
+
+  const paymentMethod = await PaymentMethod.findById(paymentMethodId);
+
+  if (!paymentMethod || paymentMethod.user.toString() !== userId) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Payment Method not found!');
   }
 
   console.log({ client });
@@ -119,6 +127,7 @@ const savePlaidConsent = async (userId: string, payload: any) => {
     organization: organizationId,
     cause: causeId,
     bankConnection: bankConnectionId,
+    paymentMethod: String(paymentMethod._id), // Use default payment method from bank connection
     monthlyThreshold: monthlyThreshold || undefined,
     specialMessage: specialMessage || undefined,
     status: 'pending', // Set initial status to pending
