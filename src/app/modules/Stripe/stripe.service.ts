@@ -333,7 +333,10 @@ const createPaymentIntent = async (
 };
 
 // 8. Verify webhook signature
-const verifyWebhookSignature = (body: string, signature: string): Stripe.Event => {
+const verifyWebhookSignature = (
+  body: string,
+  signature: string
+): Stripe.Event => {
   try {
     const webhookSecret = config.stripe.webhookSecret;
 
@@ -682,6 +685,7 @@ const createRoundUpPaymentIntent = async (payload: {
   month: string;
   year: number;
   specialMessage?: string;
+  donationId?: string; // ⭐ Add this parameter
 }): Promise<{ client_secret: string; payment_intent_id: string }> => {
   try {
     // Get charity's Stripe Connect account
@@ -698,6 +702,7 @@ const createRoundUpPaymentIntent = async (payload: {
       amount: Math.round(payload.amount * 100), // Convert to cents
       currency: 'usd',
       metadata: {
+        donationId: payload.donationId || '', // ⭐ Include donationId in metadata
         roundUpId: payload.roundUpId,
         userId: payload.userId,
         organizationId: payload.charityId,
@@ -706,7 +711,9 @@ const createRoundUpPaymentIntent = async (payload: {
         year: payload.year.toString(),
         type: 'roundup_donation',
         donationType: 'roundup', // For webhook handling
-        specialMessage: payload.specialMessage || `Round-up donation for ${payload.month} ${payload.year}`,
+        specialMessage:
+          payload.specialMessage ||
+          `Round-up donation for ${payload.month} ${payload.year}`,
       },
       automatic_payment_methods: {
         enabled: true,
@@ -717,9 +724,12 @@ const createRoundUpPaymentIntent = async (payload: {
       },
     };
 
-    const paymentIntent = await stripe.paymentIntents.create(paymentIntentParams);
+    const paymentIntent = await stripe.paymentIntents.create(
+      paymentIntentParams
+    );
 
     console.log(`✅ RoundUp payment intent created: ${paymentIntent.id}`);
+    console.log(`   Donation ID: ${payload.donationId}`);
     console.log(`   RoundUp ID: ${payload.roundUpId}`);
     console.log(`   Amount: $${payload.amount}`);
     console.log(`   Charity: ${payload.charityId}`);
@@ -786,7 +796,9 @@ const processRoundUpDonation = async (payload: {
       status: 'completed',
       donationDate: new Date(),
       stripePaymentIntentId: transfer.id,
-      specialMessage: payload.specialMessage || `Round-up donation for ${payload.month} ${payload.year}`,
+      specialMessage:
+        payload.specialMessage ||
+        `Round-up donation for ${payload.month} ${payload.year}`,
       pointsEarned: Math.round(payload.amount * 10), // Example: 10 points per dollar
       connectedAccountId: charity.stripeConnectAccountId,
       roundUpId: payload.roundUpId,
