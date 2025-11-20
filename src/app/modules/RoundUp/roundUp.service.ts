@@ -296,7 +296,11 @@ const processMonthlyDonation = async (userId: string, payload: any) => {
     }
   );
 
-  if (processedTransactions.length === 0) {
+  const eligibleTransactions = processedTransactions.filter(
+    (transaction: any) => !transaction.stripePaymentIntentId
+  );
+
+  if (eligibleTransactions.length === 0) {
     return {
       success: false,
       message: 'No processed transactions found for this month',
@@ -306,7 +310,7 @@ const processMonthlyDonation = async (userId: string, payload: any) => {
   }
 
   // Calculate total donation amount
-  const totalAmount = processedTransactions.reduce(
+  const totalAmount = eligibleTransactions.reduce(
     (sum: number, transaction: any) => sum + transaction.roundUpAmount,
     0
   );
@@ -360,7 +364,7 @@ const processMonthlyDonation = async (userId: string, payload: any) => {
       pointsEarned: Math.round(totalAmount * 10), // 10 points per dollar
       connectedAccountId: connectedAccountId,
       roundUpId: roundUpConfig._id,
-      roundUpTransactionIds: processedTransactions.map((t: any) => t._id),
+      roundUpTransactionIds: eligibleTransactions.map((t: any) => t._id),
       receiptGenerated: false,
       createdAt: new Date(),
     });
@@ -391,6 +395,10 @@ const processMonthlyDonation = async (userId: string, payload: any) => {
     // Update round-up configuration status to processing
     roundUpConfig.status = 'processing';
     roundUpConfig.lastDonationAttempt = new Date();
+    roundUpConfig.currentMonthTotal = Math.max(
+      (roundUpConfig.currentMonthTotal || 0) - totalAmount,
+      0
+    );
     await roundUpConfig.save({ session });
 
     // Mark transactions as processing (payment initiated)
@@ -398,17 +406,13 @@ const processMonthlyDonation = async (userId: string, payload: any) => {
       {
         user: userId,
         bankConnection: roundUpConfig.bankConnection,
+        _id: { $in: eligibleTransactions.map((t: any) => t._id) },
         status: 'processed',
-        transactionDate: {
-          $gte: new Date(now.getFullYear(), now.getMonth(), 1),
-          $lt: new Date(now.getFullYear(), now.getMonth() + 1, 1),
-        },
       },
       {
-        status: 'processing',
         stripePaymentIntentId: paymentResult.payment_intent_id,
         donationAttemptedAt: new Date(),
-        donation: donationUniqueId, // ✅ NEW: Link to donation record
+        donation: donationUniqueId,
       },
       { session }
     );
@@ -434,7 +438,7 @@ const processMonthlyDonation = async (userId: string, payload: any) => {
         organizationId: roundUpConfig.organization,
         causeId: roundUpConfig.cause,
         month: currentMonth,
-        transactionCount: processedTransactions.length,
+        transactionCount: eligibleTransactions.length,
         status: 'processing',
         note: 'Donation will be completed via webhook confirmation',
       },

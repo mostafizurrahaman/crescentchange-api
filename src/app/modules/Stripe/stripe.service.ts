@@ -685,7 +685,7 @@ const createRoundUpPaymentIntent = async (payload: {
   month: string;
   year: number;
   specialMessage?: string;
-  donationId?: string; // ✅ NEW: Optional donationId
+  donationId?: string; // ⭐ Add this parameter
 }): Promise<{ client_secret: string; payment_intent_id: string }> => {
   try {
     // Get charity's Stripe Connect account
@@ -702,6 +702,7 @@ const createRoundUpPaymentIntent = async (payload: {
       amount: Math.round(payload.amount * 100), // Convert to cents
       currency: 'usd',
       metadata: {
+        donationId: payload.donationId || '', // ⭐ Include donationId in metadata
         roundUpId: payload.roundUpId,
         userId: payload.userId,
         organizationId: payload.charityId,
@@ -713,7 +714,6 @@ const createRoundUpPaymentIntent = async (payload: {
         specialMessage:
           payload.specialMessage ||
           `Round-up donation for ${payload.month} ${payload.year}`,
-        ...(payload.donationId && { donationId: payload.donationId }), // ✅ NEW: Include donationId if provided
       },
       automatic_payment_methods: {
         enabled: true,
@@ -729,6 +729,7 @@ const createRoundUpPaymentIntent = async (payload: {
     );
 
     console.log(`✅ RoundUp payment intent created: ${paymentIntent.id}`);
+    console.log(`   Donation ID: ${payload.donationId}`);
     console.log(`   RoundUp ID: ${payload.roundUpId}`);
     console.log(`   Amount: $${payload.amount}`);
     console.log(`   Charity: ${payload.charityId}`);

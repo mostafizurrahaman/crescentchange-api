@@ -132,7 +132,7 @@ const handleRoundUpDonationSuccess = async (
     // Get all processing transactions for this payment intent
     const processingTransactions = await RoundUpTransactionModel.find({
       stripePaymentIntentId: paymentIntentId,
-      status: 'processing',
+      status: 'processed',
     });
 
     if (processingTransactions.length === 0) {
@@ -150,7 +150,7 @@ const handleRoundUpDonationSuccess = async (
     await RoundUpTransactionModel.updateMany(
       {
         stripePaymentIntentId: paymentIntentId,
-        status: 'processing',
+        status: 'processed',
       },
       {
         status: 'donated',
@@ -210,12 +210,24 @@ const handleRoundUpDonationFailure = async (
       return;
     }
 
+    // Capture the transactions tied to this failed attempt so we can restore the running total
+    const processingTransactions = await RoundUpTransactionModel.find({
+      user: roundUpConfig.user,
+      bankConnection: roundUpConfig.bankConnection,
+      status: 'processed',
+      stripePaymentIntentId: paymentIntentId,
+    });
+    const restoredAmount = processingTransactions.reduce(
+      (sum, transaction) => sum + transaction.roundUpAmount,
+      0
+    );
+
     // Mark failed transactions back to processed (can retry later)
     await RoundUpTransactionModel.updateMany(
       {
         user: roundUpConfig.user,
         bankConnection: roundUpConfig.bankConnection,
-        status: 'processing',
+        status: 'processed',
         stripePaymentIntentId: paymentIntentId,
       },
       {
@@ -227,11 +239,13 @@ const handleRoundUpDonationFailure = async (
       }
     );
 
-    // Reset round-up configuration status to active (can retry)
-    roundUpConfig.status = 'active';
+    // Reset round-up configuration status to pending (can retry) and restore the month total
+    roundUpConfig.status = 'pending';
     roundUpConfig.lastDonationAttempt = new Date();
     roundUpConfig.lastDonationFailure = new Date();
     roundUpConfig.lastDonationFailureReason = errorMessage || 'Unknown error';
+    roundUpConfig.currentMonthTotal =
+      (roundUpConfig.currentMonthTotal || 0) + restoredAmount;
     await roundUpConfig.save();
 
     console.log(`❌ RoundUp donation failed, rollback completed`);
