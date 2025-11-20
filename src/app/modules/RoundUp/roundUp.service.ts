@@ -5,18 +5,15 @@ import { OrganizationModel } from '../Organization/organization.model';
 import { StripeService } from '../Stripe/stripe.service';
 import bankConnectionService from '../BankConnection/bankConnection.service';
 import { roundUpTransactionService } from '../RoundUpTransaction/roundUpTransaction.service';
-import {
-  RoundUpTransactionModel,
-  IRoundUpTransactionDocument,
-} from '../RoundUpTransaction/roundUpTransaction.model';
+import { RoundUpTransactionModel } from '../RoundUpTransaction/roundUpTransaction.model';
 import { IRoundUpTransaction } from '../RoundUpTransaction/roundUpTransaction.interface';
 import { StatusCodes } from 'http-status-codes';
-import { IRoundUpDocument } from './roundUp.model';
 import Cause from '../Causes/causes.model';
 import { AppError } from '../../utils';
 import httpStatus from 'http-status';
 import Auth from '../Auth/auth.model';
 import PaymentMethod from '../PaymentMethod/paymentMethod.model';
+
 // Individual service functions
 const savePlaidConsent = async (
   userId: string,
@@ -583,7 +580,7 @@ const switchCharity = async (
     reason?: string;
   }
 ) => {
-  const { roundUpId, newOrganizationId, newCauseId, reason } = payload;
+  const { roundUpId, newOrganizationId, newCauseId } = payload;
 
   // Get round-up configuration
   const roundUpConfig = await RoundUpModel.findOne({
@@ -603,7 +600,7 @@ const switchCharity = async (
   // Validate new organization
   const newOrganization = await OrganizationModel.findById(newOrganizationId);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  if (!newOrganization || (newOrganization as any).type !== 'charity') {
+  if (!newOrganization) {
     return {
       success: false,
       message: 'Invalid organization selected',
@@ -661,7 +658,7 @@ const switchCharity = async (
 
   // Switch organization and cause
   roundUpConfig.organization = newOrganizationId;
-  roundUpConfig.cause = newCauseId;
+  roundUpConfig.cause = newCauseId || roundUpConfig.cause;
   roundUpConfig.lastCharitySwitch = new Date();
   await roundUpConfig.save();
 

@@ -127,36 +127,6 @@ const getUserDashboard = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-const getTransactionDetails = catchAsync(
-  async (req: Request, res: Response) => {
-    const userId = req.user.id;
-    const { transactionId } = req.params;
-
-    const result = await roundUpService.getTransactionDetails(
-      userId,
-      transactionId
-    );
-
-    return sendResponse(res, result.statusCode, {
-      success: result.success,
-      message: result.message,
-      data: result.data,
-    });
-  }
-);
-
-const getAdminDashboard = catchAsync(async (req: Request, res: Response) => {
-  const userRole = req.user?.role ? [req.user.role] : [];
-
-  const result = await roundUpService.getAdminDashboard(userRole);
-
-  return sendResponse(res, result.statusCode, {
-    success: result.success,
-    message: result.message,
-    data: result.data,
-  });
-});
-
 export const roundUpController = {
   savePlaidConsent,
   revokeConsent,
@@ -166,6 +136,4 @@ export const roundUpController = {
   resumeRoundUp,
   switchCharity,
   getUserDashboard,
-  getTransactionDetails,
-  getAdminDashboard,
 };
