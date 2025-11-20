@@ -16,6 +16,7 @@ import {
   IAttachPaymentMethodRequest,
   ICreatePaymentIntentWithMethodRequest,
 } from './stripe.interface';
+import PaymentMethod from '../PaymentMethod/paymentMethod.model';
 
 // 1. Create checkout session for one-time donation
 const createCheckoutSession = async (
@@ -697,10 +698,18 @@ const createRoundUpPaymentIntent = async (payload: {
       );
     }
 
+    //  const get user Payment method :
+    const paymentMethod = await PaymentMethod.findOne({
+      user: payload.userId,
+      isDefault: true,
+    });
+
     // Create Stripe Payment Intent for round-up donation
     const paymentIntentParams: Stripe.PaymentIntentCreateParams = {
       amount: Math.round(payload.amount * 100), // Convert to cents
       currency: 'usd',
+      confirm: true,
+      off_session: true,
       metadata: {
         donationId: payload.donationId || '', // ⭐ Include donationId in metadata
         roundUpId: payload.roundUpId,
