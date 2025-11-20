@@ -148,4 +148,60 @@ export interface IRoundUpModel extends IRoundUp, Document {
   updatedAt: Date;
 }
 
-// Note: IRoundUpTransactionModel is handled by the existing RoundUpTransaction module
+// src/app/modules/Donation/donation.interface.ts (add these)
+
+export interface IAnalyticsPeriod {
+  startDate: Date;
+  endDate: Date;
+}
+
+export interface IPercentageChange {
+  value: number;
+  percentageChange: number;
+  isIncrease: boolean;
+}
+
+export interface IDonationTypeBreakdown {
+  roundUp: IPercentageChange;
+  recurring: IPercentageChange;
+  oneTime: IPercentageChange;
+}
+
+export interface ITopDonor {
+  donor: {
+    _id: string;
+    name: string;
+    email: string;
+    image?: string;
+  };
+  totalAmount: number;
+  donationCount: number;
+  percentageChange: number;
+  isIncrease: boolean;
+  previousAmount: number;
+}
+
+export interface IRecentDonor {
+  donor: {
+    _id: string;
+    name: string;
+    email: string;
+    image?: string;
+  };
+  lastDonationDate: Date;
+  lastDonationAmount: number;
+}
+
+export interface IDonationAnalytics {
+  totalDonatedAmount: IPercentageChange;
+  averageDonationPerUser: IPercentageChange;
+  totalDonors: IPercentageChange;
+  topCause: {
+    _id: string;
+    name: string;
+    totalAmount: number;
+  } | null;
+  donationTypeBreakdown: IDonationTypeBreakdown;
+  topDonors: ITopDonor[];
+  recentDonors: IRecentDonor[];
+}

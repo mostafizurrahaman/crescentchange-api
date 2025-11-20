@@ -28,7 +28,15 @@ const getUserDonationsSchema = z.object({
 
     // Filters
     status: z
-      .enum(['pending', 'processing', 'completed', 'failed', 'refunded', 'canceled', 'all'])
+      .enum([
+        'pending',
+        'processing',
+        'completed',
+        'failed',
+        'refunded',
+        'canceled',
+        'all',
+      ])
       .optional(),
 
     donationType: z
@@ -83,7 +91,15 @@ const getOrganizationDonationsSchema = z.object({
 
     // Filters
     status: z
-      .enum(['pending', 'processing', 'completed', 'failed', 'refunded', 'canceled', 'all'])
+      .enum([
+        'pending',
+        'processing',
+        'completed',
+        'failed',
+        'refunded',
+        'canceled',
+        'all',
+      ])
       .optional(),
 
     donationType: z
@@ -266,8 +282,6 @@ const createDonationRecordSchema = z.object({
   }),
 });
 
-
-
 // 9. Retry failed payment schema
 const retryFailedPaymentSchema = z.object({
   params: z.object({
@@ -355,12 +369,9 @@ const createOneTimeDonationSchema = z.object({
       })
       .min(1, { message: 'Cause ID is required!' }),
 
-    paymentMethodId: z
-      .string({
-        error: 'Payment method ID is required!',
-      })
-      ,
-
+    paymentMethodId: z.string({
+      error: 'Payment method ID is required!',
+    }),
     specialMessage: z
       .string()
       .max(500, { message: 'Message must be less than 500 characters!' })
@@ -368,6 +379,42 @@ const createOneTimeDonationSchema = z.object({
       .optional(),
   }),
 });
+
+const getDonationAnalyticsSchema = z.object({
+  query: z.object({
+    filter: z.enum(['today', 'this_week', 'this_month'], {
+      message: 'Invalid time period',
+    }),
+    year: z
+      .string()
+      .regex(/^\d{4}$/, 'Year must be a 4-digit number')
+      .transform((val) => parseInt(val, 10))
+      .refine((val) => val >= 2000 && val <= 2100, {
+        message: 'Year must be between 2000 and 2100',
+      })
+      .optional(),
+    topDonorsLimit: z
+      .string()
+      .regex(/^\d+$/, 'Limit must be a number')
+      .transform((val) => parseInt(val, 10))
+      .refine((val) => val >= 1 && val <= 100, {
+        message: 'Top donors limit must be between 1 and 100',
+      })
+      .default(10),
+    recentDonorsLimit: z
+      .string()
+      .regex(/^\d+$/, 'Limit must be a number')
+      .transform((val) => parseInt(val, 10))
+      .refine((val) => val >= 1 && val <= 100, {
+        message: 'Recent donors limit must be between 1 and 100',
+      })
+      .default(10),
+  }),
+});
+
+export const DonationAnalyticsValidation = {
+  getDonationAnalyticsSchema,
+};
 
 // Export all schemas as a single object like auth module
 export const DonationValidation = {
@@ -383,6 +430,7 @@ export const DonationValidation = {
   updatePaymentStatusSchema,
   cancelDonationSchema,
   refundDonationSchema,
+  getDonationAnalyticsSchema,
 };
 
 // Export types for TypeScript inference
@@ -437,4 +485,8 @@ export const checkoutSessionResponseSchema = z.object({
 
 export type CheckoutSessionResponse = z.infer<
   typeof checkoutSessionResponseSchema
+>;
+
+export type TGetDonationAnalyticsQuery = z.infer<
+  typeof getDonationAnalyticsSchema.shape.query
 >;

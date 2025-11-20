@@ -73,9 +73,10 @@ router.post(
 
 // 9. Get donation stats for user
 router.get(
-  '/stats/user',
-  auth(ROLE.CLIENT, ROLE.ADMIN),
-  DonationController.getDonationStatistics
+  '/analytics/stats',
+  auth(ROLE.ADMIN, ROLE.ORGANIZATION), // Only admin can access
+  validateRequest(DonationValidation.getDonationAnalyticsSchema),
+  DonationController.getDonationAnalyticsController
 );
 
 export default router;

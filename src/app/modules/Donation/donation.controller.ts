@@ -6,6 +6,8 @@ import { ExtendedRequest } from '../../types';
 import { DonationService } from './donation.service';
 import { TRetryFailedPaymentParams } from './donation.validation';
 import Client from '../Client/client.model';
+import { isValidFilter } from '../../lib/filter-helper';
+import { ROLE } from '../Auth/auth.constant';
 
 // 1. Create one-time donation with Payment Intent
 const createOneTimeDonation = asyncHandler(
@@ -135,7 +137,7 @@ const getOrganizationDonations = asyncHandler(
     if (organization.auth.toString() !== userId) {
       throw new AppError(
         httpStatus.FORBIDDEN,
-        'You do not have permission to access this organization\'s donations'
+        "You do not have permission to access this organization's donations"
       );
     }
 
@@ -309,6 +311,60 @@ const getDonationStatistics = asyncHandler(
   }
 );
 
+// 12. Get donation Analytics controller :
+const getDonationAnalyticsController = asyncHandler(
+  async (req: ExtendedRequest, res: Response) => {
+    // Get user from request
+    const userId = req.user?._id.toString();
+    const userRole = req.user?.role;
+
+    if (!userId) {
+      throw new AppError(httpStatus.UNAUTHORIZED, 'User not authenticated');
+    }
+
+    // Get filter and year from validated query
+    const { filter, year } = (req as any).validatedQuery;
+
+    let organizationId: string | undefined;
+
+    // If user is an ORGANIZATION, get their organization ID
+    if (userRole === ROLE.ORGANIZATION) {
+      // Find the organization associated with this auth user
+      const Organization = (await import('../Organization/organization.model'))
+        .default;
+      const organization = await Organization.findOne({ auth: userId });
+
+      if (!organization) {
+        throw new AppError(
+          httpStatus.NOT_FOUND,
+          'Organization profile not found'
+        );
+      }
+
+      organizationId = organization._id.toString();
+    } else if (userRole === ROLE.ADMIN) {
+      // Admin can see all donations (no organizationId filter)
+      // Or optionally, admin could specify an organizationId in query if needed
+      organizationId = undefined; // Admin sees all by default
+    } else {
+      throw new AppError(httpStatus.FORBIDDEN, 'Access denied');
+    }
+
+    const analytics = await DonationService.getDonationAnalytics(
+      filter as 'today' | 'this_week' | 'this_month',
+      organizationId,
+      year
+    );
+
+    sendResponse(res, {
+      success: true,
+      statusCode: httpStatus.OK,
+      message: 'Donation analytics retrieved successfully',
+      data: analytics,
+    });
+  }
+);
+
 export const DonationController = {
   createOneTimeDonation,
 
@@ -322,4 +378,7 @@ export const DonationController = {
   getUserDonations,
   getDonationById,
   getOrganizationDonations,
+
+  // Analytics endpoint
+  getDonationAnalyticsController,
 };

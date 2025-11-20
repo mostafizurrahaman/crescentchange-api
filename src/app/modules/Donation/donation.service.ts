@@ -1,7 +1,15 @@
 import { Types } from 'mongoose';
 import mongoose from 'mongoose';
 import { Donation } from './donation.model';
-import { IDonation, IDonationModel } from './donation.interface';
+import {
+  IAnalyticsPeriod,
+  IDonation,
+  IDonationAnalytics,
+  IDonationModel,
+  IPercentageChange,
+  IRecentDonor,
+  ITopDonor,
+} from './donation.interface';
 import { TCreateOneTimeDonationPayload } from './donation.validation';
 import { AppError } from '../../utils';
 import httpStatus from 'http-status';
@@ -12,6 +20,12 @@ import Organization from '../Organization/organization.model';
 import { PaymentMethodService } from '../PaymentMethod/paymentMethod.service';
 import Client from '../Client/client.model';
 import QueryBuilder from '../../builders/QueryBuilder';
+import {
+  buildBaseQuery,
+  calculatePercentageChange,
+  formatCurrency,
+  getDateRanges,
+} from '../../lib/filter-helper';
 
 // Helper function to generate unique idempotency key
 const generateIdempotencyKey = (): string => {
@@ -718,6 +732,454 @@ const refundDonation = async (
   }
 };
 
+/**
+ * Get total donated amount with percentage change
+ */
+const getTotalDonatedAmount = async (
+  current: IAnalyticsPeriod,
+  previous: IAnalyticsPeriod,
+  organizationId?: string
+): Promise<IPercentageChange> => {
+  const baseQuery = buildBaseQuery(organizationId);
+  console.log('Base Query for Total Donated Amount:', baseQuery, {
+    current,
+    previous,
+  });
+
+  const [currentResult, previousResult] = await Promise.all([
+    Donation.aggregate([
+      {
+        $match: {
+          ...baseQuery,
+          donationDate: { $gte: current.startDate, $lte: current.endDate },
+        },
+      },
+      { $group: { _id: null, total: { $sum: '$amount' } } },
+    ]),
+    Donation.aggregate([
+      {
+        $match: {
+          ...baseQuery,
+          donationDate: { $gte: previous.startDate, $lte: previous.endDate },
+        },
+      },
+      { $group: { _id: null, total: { $sum: '$amount' } } },
+    ]),
+  ]);
+
+  const currentTotal = currentResult[0]?.total || 0;
+  const previousTotal = previousResult[0]?.total || 0;
+  const change = calculatePercentageChange(currentTotal, previousTotal);
+
+  return {
+    value: formatCurrency(currentTotal),
+    ...change,
+  };
+};
+
+/**
+ * Get average donation per user with percentage change
+ */
+const getAverageDonationPerUser = async (
+  current: IAnalyticsPeriod,
+  previous: IAnalyticsPeriod,
+  organizationId?: string
+): Promise<IPercentageChange> => {
+  const baseQuery = buildBaseQuery(organizationId);
+
+  const [currentResult, previousResult] = await Promise.all([
+    Donation.aggregate([
+      {
+        $match: {
+          ...baseQuery,
+          donationDate: { $gte: current.startDate, $lte: current.endDate },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalAmount: { $sum: '$amount' },
+          uniqueDonors: { $addToSet: '$donor' },
+        },
+      },
+      {
+        $project: {
+          average: {
+            $cond: [
+              { $gt: [{ $size: '$uniqueDonors' }, 0] },
+              { $divide: ['$totalAmount', { $size: '$uniqueDonors' }] },
+              0,
+            ],
+          },
+        },
+      },
+    ]),
+    Donation.aggregate([
+      {
+        $match: {
+          ...baseQuery,
+          donationDate: { $gte: previous.startDate, $lte: previous.endDate },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalAmount: { $sum: '$amount' },
+          uniqueDonors: { $addToSet: '$donor' },
+        },
+      },
+      {
+        $project: {
+          average: {
+            $cond: [
+              { $gt: [{ $size: '$uniqueDonors' }, 0] },
+              { $divide: ['$totalAmount', { $size: '$uniqueDonors' }] },
+              0,
+            ],
+          },
+        },
+      },
+    ]),
+  ]);
+
+  const currentAvg = currentResult[0]?.average || 0;
+  const previousAvg = previousResult[0]?.average || 0;
+  const change = calculatePercentageChange(currentAvg, previousAvg);
+
+  return {
+    value: formatCurrency(currentAvg),
+    ...change,
+  };
+};
+
+/**
+ * Get total unique donors with percentage change
+ */
+const getTotalDonors = async (
+  current: IAnalyticsPeriod,
+  previous: IAnalyticsPeriod,
+  organizationId?: string
+): Promise<IPercentageChange> => {
+  const baseQuery = buildBaseQuery(organizationId);
+
+  const [currentResult, previousResult] = await Promise.all([
+    Donation.aggregate([
+      {
+        $match: {
+          ...baseQuery,
+          donationDate: { $gte: current.startDate, $lte: current.endDate },
+        },
+      },
+      { $group: { _id: '$donor' } },
+      { $count: 'count' },
+    ]),
+    Donation.aggregate([
+      {
+        $match: {
+          ...baseQuery,
+          donationDate: { $gte: previous.startDate, $lte: previous.endDate },
+        },
+      },
+      { $group: { _id: '$donor' } },
+      { $count: 'count' },
+    ]),
+  ]);
+
+  const currentCount = currentResult[0]?.count || 0;
+  const previousCount = previousResult[0]?.count || 0;
+  const change = calculatePercentageChange(currentCount, previousCount);
+
+  return {
+    value: currentCount,
+    ...change,
+  };
+};
+
+/**
+ * Get top cause by total donation amount
+ */
+const getTopCause = async (
+  current: IAnalyticsPeriod,
+  organizationId?: string
+) => {
+  const baseQuery = buildBaseQuery(organizationId);
+
+  const result = await Donation.aggregate([
+    {
+      $match: {
+        ...baseQuery,
+        donationDate: { $gte: current.startDate, $lte: current.endDate },
+        cause: { $exists: true, $ne: null },
+      },
+    },
+    {
+      $group: {
+        _id: '$cause',
+        totalAmount: { $sum: '$amount' },
+      },
+    },
+    { $sort: { totalAmount: -1 } },
+    { $limit: 1 },
+    {
+      $lookup: {
+        from: 'causes',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'causeDetails',
+      },
+    },
+    { $unwind: '$causeDetails' },
+    {
+      $project: {
+        _id: 1,
+        name: '$causeDetails.name',
+        totalAmount: { $round: ['$totalAmount', 2] },
+      },
+    },
+  ]);
+
+  return result[0] || null;
+};
+
+/**
+ * Get donation type breakdown with percentage changes
+ */
+const getDonationTypeBreakdown = async (
+  current: IAnalyticsPeriod,
+  previous: IAnalyticsPeriod,
+  organizationId?: string
+) => {
+  const baseQuery = buildBaseQuery(organizationId);
+
+  const [currentData, previousData] = await Promise.all([
+    Donation.aggregate([
+      {
+        $match: {
+          ...baseQuery,
+          donationDate: { $gte: current.startDate, $lte: current.endDate },
+        },
+      },
+      {
+        $group: {
+          _id: '$donationType',
+          total: { $sum: '$amount' },
+        },
+      },
+    ]),
+    Donation.aggregate([
+      {
+        $match: {
+          ...baseQuery,
+          donationDate: { $gte: previous.startDate, $lte: previous.endDate },
+        },
+      },
+      {
+        $group: {
+          _id: '$donationType',
+          total: { $sum: '$amount' },
+        },
+      },
+    ]),
+  ]);
+  console.log({
+    currentData,
+    previousData,
+  });
+
+  const currentMap = new Map(currentData.map((d) => [d._id, d.total]));
+  const previousMap = new Map(previousData.map((d) => [d._id, d.total]));
+
+  const types = ['round-up', 'recurring', 'one-time'];
+  const breakdown: any = {};
+
+  types.forEach((type) => {
+    const currentAmount = currentMap.get(type) || 0;
+    const previousAmount = previousMap.get(type) || 0;
+
+    const change = calculatePercentageChange(currentAmount, previousAmount);
+
+    breakdown[type] = {
+      value: formatCurrency(currentAmount),
+      ...change,
+    };
+  });
+
+  return breakdown;
+};
+
+/**
+ * Get top donors ranked by total donation amount
+ */
+const getTopDonors = async (
+  current: IAnalyticsPeriod,
+  previous: IAnalyticsPeriod,
+  organizationId?: string,
+  limit: number = 10
+): Promise<ITopDonor[]> => {
+  const baseQuery = buildBaseQuery(organizationId);
+
+  const [currentDonors, previousDonors] = await Promise.all([
+    Donation.aggregate([
+      {
+        $match: {
+          ...baseQuery,
+          donationDate: { $gte: current.startDate, $lte: current.endDate },
+        },
+      },
+      {
+        $group: {
+          _id: '$donor',
+          totalAmount: { $sum: '$amount' },
+          donationCount: { $sum: 1 },
+        },
+      },
+      { $sort: { totalAmount: -1 } },
+      { $limit: limit },
+    ]),
+    Donation.aggregate([
+      {
+        $match: {
+          ...baseQuery,
+          donationDate: { $gte: previous.startDate, $lte: previous.endDate },
+        },
+      },
+      {
+        $group: {
+          _id: '$donor',
+          totalAmount: { $sum: '$amount' },
+        },
+      },
+    ]),
+  ]);
+
+  const previousMap = new Map(
+    previousDonors.map((d) => [d._id.toString(), d.totalAmount])
+  );
+
+  // Get donor details
+  const donorIds = currentDonors.map((d) => d._id);
+  const clients = await Client.find({ _id: { $in: donorIds } }).populate(
+    'auth',
+    'email'
+  );
+
+  const clientMap = new Map(clients.map((c) => [c._id.toString(), c]));
+
+  return currentDonors.map((donor) => {
+    const donorId = donor._id.toString();
+    const client = clientMap.get(donorId);
+    const previousAmount = previousMap.get(donorId) || 0;
+    const change = calculatePercentageChange(donor.totalAmount, previousAmount);
+
+    return {
+      donor: {
+        _id: donorId,
+        name: client?.name || 'Unknown',
+        email: (client?.auth as any)?.email || '',
+        image: client?.image,
+      },
+      totalAmount: formatCurrency(donor.totalAmount),
+      donationCount: donor.donationCount,
+      previousAmount: formatCurrency(previousAmount),
+      ...change,
+    };
+  });
+};
+
+/**
+ * Get recent donors with their last donation details
+ */
+const getRecentDonors = async (
+  current: IAnalyticsPeriod,
+  organizationId?: string,
+  limit: number = 10
+): Promise<IRecentDonor[]> => {
+  const baseQuery = buildBaseQuery(organizationId);
+
+  const recentDonations = await Donation.aggregate([
+    {
+      $match: {
+        ...baseQuery,
+        donationDate: { $gte: current.startDate, $lte: current.endDate },
+      },
+    },
+    { $sort: { donationDate: -1 } },
+    {
+      $group: {
+        _id: '$donor',
+        lastDonationDate: { $first: '$donationDate' },
+        lastDonationAmount: { $first: '$amount' },
+      },
+    },
+    { $sort: { lastDonationDate: -1 } },
+    { $limit: limit },
+  ]);
+
+  // Get donor details
+  const donorIds = recentDonations.map((d) => d._id);
+  const clients = await Client.find({ _id: { $in: donorIds } }).populate(
+    'auth',
+    'email'
+  );
+
+  const clientMap = new Map(clients.map((c) => [c._id.toString(), c]));
+
+  return recentDonations.map((donation) => {
+    const donorId = donation._id.toString();
+    const client = clientMap.get(donorId);
+
+    return {
+      donor: {
+        _id: donorId,
+        name: client?.name || 'Unknown',
+        email: (client?.auth as any)?.email || '',
+        image: client?.image,
+      },
+      lastDonationDate: donation.lastDonationDate,
+      lastDonationAmount: formatCurrency(donation.lastDonationAmount),
+    };
+  });
+};
+
+/**
+ * Get complete donation analytics dashboard data
+ */
+const getDonationAnalytics = async (
+  filter: 'today' | 'this_week' | 'this_month',
+  organizationId?: string,
+  year?: number
+): Promise<IDonationAnalytics> => {
+  const { current, previous } = getDateRanges(filter, year);
+
+  const [
+    totalDonatedAmount,
+    averageDonationPerUser,
+    totalDonors,
+    topCause,
+    donationTypeBreakdown,
+    topDonors,
+    recentDonors,
+  ] = await Promise.all([
+    getTotalDonatedAmount(current, previous, organizationId),
+    getAverageDonationPerUser(current, previous, organizationId),
+    getTotalDonors(current, previous, organizationId),
+    getTopCause(current, organizationId),
+    getDonationTypeBreakdown(current, previous, organizationId),
+    getTopDonors(current, previous, organizationId),
+    getRecentDonors(current, organizationId),
+  ]);
+
+  return {
+    totalDonatedAmount,
+    averageDonationPerUser,
+    totalDonors,
+    topCause,
+    donationTypeBreakdown,
+    topDonors,
+    recentDonors,
+  };
+};
+
 export const DonationService = {
   // Core donation functions
   createOneTimeDonation, // Single consolidated function
@@ -738,4 +1200,14 @@ export const DonationService = {
   getDonationsByUser,
   getDonationsByOrganization,
   getDonationStatistics,
+
+  // Analytics functions
+  getDonationAnalytics,
+  getTotalDonatedAmount,
+  getAverageDonationPerUser,
+  getTotalDonors,
+  getTopCause,
+  getDonationTypeBreakdown,
+  getTopDonors,
+  getRecentDonors,
 };
