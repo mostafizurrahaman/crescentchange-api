@@ -1,6 +1,6 @@
 import { Response } from 'express';
 
-interface IApiResponse<T = any> {
+interface IApiResponse<T = unknown> {
   success: boolean;
   message: string;
   data: T | null;

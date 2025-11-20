@@ -1,5 +1,4 @@
 import { startScheduledDonationsCron } from './scheduledDonations.job';
-import { startRoundUpProcessingCron } from './roundUpTransactions.job';
 
 /**
  * Initialize all cron jobs

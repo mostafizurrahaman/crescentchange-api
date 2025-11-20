@@ -2,22 +2,26 @@ import mongoose, { Types } from 'mongoose';
 import { RoundUpModel } from './roundUp.model';
 import { Donation } from '../Donation/donation.model';
 import { OrganizationModel } from '../Organization/organization.model';
-import { IPlaidTransaction } from '../BankConnection/bankConnection.interface';
 import { StripeService } from '../Stripe/stripe.service';
 import bankConnectionService from '../BankConnection/bankConnection.service';
 import { roundUpTransactionService } from '../RoundUpTransaction/roundUpTransaction.service';
-import { RoundUpTransactionModel } from '../RoundUpTransaction/roundUpTransaction.model';
+import {
+  RoundUpTransactionModel,
+  IRoundUpTransactionDocument,
+} from '../RoundUpTransaction/roundUpTransaction.model';
+import { IRoundUpTransaction } from '../RoundUpTransaction/roundUpTransaction.interface';
 import { StatusCodes } from 'http-status-codes';
 import { IRoundUpDocument } from './roundUp.model';
 import Cause from '../Causes/causes.model';
-import Client from '../Client/client.model';
 import { AppError } from '../../utils';
 import httpStatus from 'http-status';
 import Auth from '../Auth/auth.model';
-import { inflate } from 'zlib';
 import PaymentMethod from '../PaymentMethod/paymentMethod.model';
 // Individual service functions
-const savePlaidConsent = async (userId: string, payload: any) => {
+const savePlaidConsent = async (
+  userId: string,
+  payload: Record<string, unknown>
+) => {
   const {
     bankConnectionId,
     organizationId,
@@ -25,7 +29,14 @@ const savePlaidConsent = async (userId: string, payload: any) => {
     monthlyThreshold,
     specialMessage,
     paymentMethodId,
-  } = payload;
+  } = payload as {
+    bankConnectionId?: string;
+    organizationId?: string;
+    causeId?: string;
+    monthlyThreshold?: number | 'no-limit';
+    specialMessage?: string;
+    paymentMethodId?: string;
+  };
 
   //  check user :
   const client = await Auth.findById(userId);
@@ -42,12 +53,24 @@ const savePlaidConsent = async (userId: string, payload: any) => {
 
   console.log({ client });
 
+  if (!bankConnectionId) {
+    return {
+      success: false,
+      message: 'Bank connection ID is required',
+      data: null,
+      statusCode: StatusCodes.BAD_REQUEST,
+    };
+  }
+
   // Validate bank connection belongs to user
   const bankConnection = await bankConnectionService.getBankConnectionById(
     bankConnectionId
   );
   console.log({ bankConnection });
-  if (!bankConnection || String(bankConnection.user) !== String(userId)) {
+  if (
+    !bankConnection ||
+    String(bankConnection.user as string) !== String(userId)
+  ) {
     return {
       success: false,
       message: 'Bank connection not found',
@@ -187,7 +210,7 @@ const revokeConsent = async (userId: string, bankConnectionId: string) => {
 const syncTransactions = async (
   userId: string,
   bankConnectionId: string,
-  payload: any
+  payload: { cursor?: string }
 ) => {
   const { cursor } = payload || {};
 
@@ -236,7 +259,10 @@ const syncTransactions = async (
   };
 };
 
-const processMonthlyDonation = async (userId: string, payload: any) => {
+const processMonthlyDonation = async (
+  userId: string,
+  payload: { roundUpId?: string; specialMessage?: string }
+) => {
   const { roundUpId, specialMessage } = payload;
 
   // Get round-up configuration
@@ -307,7 +333,7 @@ const processMonthlyDonation = async (userId: string, payload: any) => {
   );
 
   const eligibleTransactions = processedTransactions.filter(
-    (transaction: any) => !transaction.stripePaymentIntentId
+    (transaction: IRoundUpTransaction) => !transaction.stripePaymentIntentId
   );
 
   if (eligibleTransactions.length === 0) {
@@ -321,7 +347,8 @@ const processMonthlyDonation = async (userId: string, payload: any) => {
 
   // Calculate total donation amount
   const totalAmount = eligibleTransactions.reduce(
-    (sum: number, transaction: any) => sum + transaction.roundUpAmount,
+    (sum: number, transaction: IRoundUpTransaction) =>
+      sum + transaction.roundUpAmount,
     0
   );
 
@@ -374,7 +401,9 @@ const processMonthlyDonation = async (userId: string, payload: any) => {
       pointsEarned: Math.round(totalAmount * 10), // 10 points per dollar
       connectedAccountId: connectedAccountId,
       roundUpId: roundUpConfig._id,
-      roundUpTransactionIds: eligibleTransactions.map((t: any) => t._id),
+      roundUpTransactionIds: eligibleTransactions.map(
+        (t: IRoundUpTransaction) => t.transactionId
+      ),
       receiptGenerated: false,
       createdAt: new Date(),
     });
@@ -416,7 +445,11 @@ const processMonthlyDonation = async (userId: string, payload: any) => {
       {
         user: userId,
         bankConnection: roundUpConfig.bankConnection,
-        _id: { $in: eligibleTransactions.map((t: any) => t._id) },
+        transactionId: {
+          $in: eligibleTransactions.map(
+            (t: IRoundUpTransaction) => t.transactionId
+          ),
+        },
         status: 'processed',
       },
       {
@@ -478,7 +511,10 @@ const processMonthlyDonation = async (userId: string, payload: any) => {
   }
 };
 
-const resumeRoundUp = async (userId: string, payload: any) => {
+const resumeRoundUp = async (
+  userId: string,
+  payload: { roundUpId?: string }
+) => {
   const { roundUpId } = payload;
 
   // Get round-up configuration
@@ -538,7 +574,15 @@ const resumeRoundUp = async (userId: string, payload: any) => {
   };
 };
 
-const switchCharity = async (userId: string, payload: any) => {
+const switchCharity = async (
+  userId: string,
+  payload: {
+    roundUpId?: string;
+    newOrganizationId?: string;
+    newCauseId?: string;
+    reason?: string;
+  }
+) => {
   const { roundUpId, newOrganizationId, newCauseId, reason } = payload;
 
   // Get round-up configuration
@@ -699,68 +743,6 @@ const getUserDashboard = async (userId: string) => {
   };
 };
 
-const getTransactionDetails = async (userId: string, transactionId: string) => {
-  // Get transaction (must belong to user)
-  const transaction = await roundUpTransactionService.getTransactions({
-    user: userId,
-    // We'll need to modify the service to support transactionId lookup
-  });
-
-  // TODO: Implement transaction lookup by ID in the service
-  // For now, return a sample response
-  return {
-    success: false,
-    message: 'Transaction details endpoint not yet implemented',
-    data: null,
-    statusCode: StatusCodes.NOT_IMPLEMENTED,
-  };
-};
-
-const getAdminDashboard = async (userRole: string[]) => {
-  // Get admin statistics
-  const [
-    totalUsers,
-    activeUsers,
-    totalDonations,
-    activeCharities,
-    monthlyStats,
-    topCharities,
-  ] = await Promise.all([
-    RoundUpModel.distinct('user').then((users) => users.length),
-    RoundUpModel.countDocuments({ isActive: true, enabled: true }),
-    Donation.aggregate([
-      { $match: { donationType: 'round-up', status: 'completed' } },
-      { $group: { _id: null, total: { $sum: '$amount' } } },
-    ]),
-    RoundUpModel.distinct('organization').then((charities) => charities.length),
-    // TODO: Add more detailed monthly stats
-    Promise.resolve([]),
-    // TODO: Add top charities stats
-    Promise.resolve([]),
-  ]);
-
-  const adminStats = {
-    totalUsers,
-    activeUsers,
-    totalDonated: totalDonations?.[0]?.total || 0,
-    totalCharities: activeCharities,
-    monthlyStats: [],
-    topCharities: [],
-    issues: {
-      inactiveConnections: 0, // TODO: Calculate from BankConnectionModel
-      failedTransfers: 0, // TODO: Calculate from MonthlyDonationModel
-      pendingDonations: 0, // TODO: Calculate from MonthlyDonationModel
-    },
-  };
-
-  return {
-    success: true,
-    message: 'Admin dashboard retrieved successfully',
-    data: adminStats,
-    statusCode: StatusCodes.OK,
-  };
-};
-
 // Helper method to check if donation is already processed
 const isDonationAlreadyProcessed = async (
   roundUpId: string,
@@ -787,6 +769,4 @@ export const roundUpService = {
   resumeRoundUp,
   switchCharity,
   getUserDashboard,
-  getTransactionDetails,
-  getAdminDashboard,
 };

@@ -50,7 +50,7 @@ const RoundUpSchema = new Schema(
     monthlyThreshold: {
       type: Schema.Types.Mixed, // Can be Number or "no-limit" string
       validate: {
-        validator: function (value: any) {
+        validator: function (value: unknown) {
           return (
             value === 'no-limit' ||
             (typeof value === 'number' && value >= 3 && value <= 1000)
@@ -213,7 +213,7 @@ RoundUpSchema.methods.completeDonationCycle = async function (
 // Method to cancel round-up (user initiated or bank connection lost)
 RoundUpSchema.methods.cancelRoundUp = async function (
   this: IRoundUpDocument,
-  reason?: string
+  _reason?: string
 ): Promise<void> {
   this.status = 'cancelled';
   this.enabled = false;

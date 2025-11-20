@@ -18,7 +18,7 @@ router.post(
   '/donation/stripe',
   asyncHandler(async (req, res) => {
     // Use raw body from our custom middleware
-    const rawBody = (req as any).rawBody;
+    const rawBody = req.rawBody;
 
     return await WebhookHandler.handleStripeWebhook(req, res, rawBody);
   })

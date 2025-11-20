@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Stripe } from 'stripe';
 import { stripe, STRIPE_EVENTS } from '../lib/stripeHelper';
 import { DonationService } from '../modules/Donation/donation.service';
 import config from '../config';
@@ -18,7 +19,7 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
     return res.status(400).send('Webhook signature missing');
   }
 
-  let event: any; // Stripe.Event
+  let event: Stripe.Event;
 
   try {
     event = stripe.webhooks.constructEvent(
@@ -26,9 +27,10 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
       sig,
       config.stripe.webhookSecret
     );
-  } catch (err: any) {
-    logger.error(`Webhook signature verification failed: ${err.message}`);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+    logger.error(`Webhook signature verification failed: ${errorMessage}`);
+    return res.status(400).send(`Webhook Error: ${errorMessage}`);
   }
 
   logger.info(`Received Stripe event: ${event.type}`);
@@ -36,25 +38,25 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
   try {
     switch (event.type) {
       case STRIPE_EVENTS.CHECKOUT_SESSION_COMPLETED: {
-        const session = event.data.object; // as Stripe.Checkout.Session
+        const session = event.data.object as Stripe.Checkout.Session;
         await handleCheckoutSessionCompleted(session);
         break;
       }
 
       case STRIPE_EVENTS.PAYMENT_INTENT_SUCCEEDED: {
-        const paymentIntent = event.data.object; // as Stripe.PaymentIntent
+        const paymentIntent = event.data.object as Stripe.PaymentIntent;
         await handlePaymentIntentSucceeded(paymentIntent);
         break;
       }
 
       case STRIPE_EVENTS.PAYMENT_INTENT_FAILED: {
-        const paymentIntent = event.data.object; // as Stripe.PaymentIntent
+        const paymentIntent = event.data.object as Stripe.PaymentIntent;
         await handlePaymentIntentFailed(paymentIntent);
         break;
       }
 
       case STRIPE_EVENTS.PAYMENT_INTENT_CANCELED: {
-        const paymentIntent = event.data.object; // as Stripe.PaymentIntent
+        const paymentIntent = event.data.object as Stripe.PaymentIntent;
         await handlePaymentIntentCanceled(paymentIntent);
         break;
       }
@@ -65,13 +67,14 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
     }
 
     res.status(200).json({ received: true });
-  } catch (error: any) {
-    logger.error(`Error processing webhook: ${error.message}`);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error(`Error processing webhook: ${errorMessage}`);
     res.status(500).send('Webhook processing failed');
   }
 };
 
-async function handleCheckoutSessionCompleted(session: any) {
+async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) {
   // Stripe.Checkout.Session
   const donationId = session.metadata?.donationId;
 
@@ -105,7 +108,7 @@ async function handleCheckoutSessionCompleted(session: any) {
   }
 }
 
-async function handlePaymentIntentSucceeded(paymentIntent: any) {
+async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent) {
   // Stripe.PaymentIntent
   const { metadata } = paymentIntent;
 
@@ -151,7 +154,7 @@ async function handlePaymentIntentSucceeded(paymentIntent: any) {
   }
 }
 
-async function handlePaymentIntentFailed(paymentIntent: any) {
+async function handlePaymentIntentFailed(paymentIntent: Stripe.PaymentIntent) {
   // Stripe.PaymentIntent
   const paymentIntentId = paymentIntent.id;
 
@@ -174,7 +177,7 @@ async function handlePaymentIntentFailed(paymentIntent: any) {
   }
 }
 
-async function handlePaymentIntentCanceled(paymentIntent: any) {
+async function handlePaymentIntentCanceled(paymentIntent: Stripe.PaymentIntent) {
   // Stripe.PaymentIntent
   const paymentIntentId = paymentIntent.id;
 

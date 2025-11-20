@@ -37,7 +37,7 @@ export interface IDonationUpdateRequest {
 export interface IStripeWebhookEvent {
   type: string;
   data: {
-    object: any; // Stripe.PaymentIntent | Stripe.Charge
+    object: Record<string, unknown>; // Stripe.PaymentIntent | Stripe.Charge
   };
 }
 
