@@ -83,7 +83,7 @@ const testRoundUpProcessingCron = catchAsync(
       return sendResponse(res, 500, {
         success: false,
         message: 'Manual RoundUp processing failed',
-        data: { error: error.message },
+        data: { error: error instanceof Error ? error.message : String(error) },
       });
     }
   }

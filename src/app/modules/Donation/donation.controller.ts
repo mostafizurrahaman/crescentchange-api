@@ -357,7 +357,6 @@ const getDonationAnalyticsController = asyncHandler(
     );
 
     sendResponse(res, {
-      success: true,
       statusCode: httpStatus.OK,
       message: 'Donation analytics retrieved successfully',
       data: analytics,

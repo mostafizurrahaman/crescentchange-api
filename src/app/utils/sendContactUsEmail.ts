@@ -16,8 +16,8 @@ const sendContactUsEmail = async (payload: IContactMessage) => {
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
-        user: config.nodemailer.email,
-        pass: config.nodemailer.password,
+        user: config.email.nodemailerEmail,
+        pass: config.email.nodemailerPassword,
       },
     });
 
@@ -100,8 +100,8 @@ const sendContactUsEmail = async (payload: IContactMessage) => {
 
     // Email options: from, to, subject, and HTML body
     const mailOptions = {
-      from: config.nodemailer.email, // Sender's email address
-      to: config.contact_us_email, // Admin's email address
+      from: config.email.nodemailerEmail, // Sender's email address
+      to: config.email.contactUsEmail, // Admin's email address
       subject: `New Contact Us Message from ${payload.fullName}`,
       html: htmlTemplate,
     };

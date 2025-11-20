@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
-import { DONATION_STATUS } from '../modules/donation/donation.constant';
-import { IAnalyticsPeriod } from '../modules/donation/donation.interface';
+import { DONATION_STATUS } from '../modules/Donation/donation.constant';
+import { IAnalyticsPeriod } from '../modules/Donation/donation.interface';
 
 /**
  * Calculate percentage change between current and previous values

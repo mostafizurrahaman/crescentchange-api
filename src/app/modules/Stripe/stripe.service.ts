@@ -5,7 +5,7 @@ import { AppError } from '../../utils';
 import httpStatus from 'http-status';
 import { OrganizationModel } from '../Organization/organization.model';
 
-import { Donation } from '../donation/donation.model';
+import { Donation } from '../Donation/donation.model';
 import {
   ICheckoutSessionRequest,
   ICheckoutSessionResponse,

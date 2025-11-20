@@ -6,7 +6,7 @@ import morgan from 'morgan';
 import routes from './app/routes';
 import webhookRoutes from './app/routes/webhook.routes';
 import { globalErrorHandler, notFoundHandler } from './app/utils';
-import { mostafizTriggerRoundUpDonation } from './app/jobs';
+import { manualTriggerRoundUpProcessing } from './app/jobs';
 
 // app
 const app: Application = express();
@@ -58,7 +58,7 @@ app.use('/api/v1/webhook/donation', (req, res, next) => {
 });
 
 app.post('/api/v1/test-my-corn', async (req, res) => {
-  await mostafizTriggerRoundUpDonation();
+  await manualTriggerRoundUpProcessing();
 
   console.log('============ENDED====================');
   res.json({

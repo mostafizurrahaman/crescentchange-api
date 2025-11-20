@@ -14,4 +14,4 @@ export type ValueOf<T> = T[keyof T];
 // Generate enum values dynamically from ROLE
 export const roleValues = Object.values(ROLE) as [string, ...string[]];
 
-export const defaultUserImage: string = config.default_user_image as string;
+export const defaultUserImage: string = config.defaultUserImage as string;

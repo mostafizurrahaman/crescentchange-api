@@ -2,8 +2,8 @@ import { Schema, model } from 'mongoose';
 import {
   RECURRING_FREQUENCY,
   DEFAULT_CURRENCY,
-} from '../donation/donation.constant';
-import { IScheduledDonationModel } from '../donation/donation.interface';
+} from '../Donation/donation.constant';
+import { IScheduledDonationModel } from '../Donation/donation.interface';
 
 /**
  * ScheduledDonation Schema - Minimal Approach

@@ -1,12 +1,12 @@
 import cron from 'node-cron';
+import mongoose from 'mongoose';
 import { RoundUpModel } from '../modules/RoundUp/roundUp.model';
 import { roundUpService } from '../modules/RoundUp/roundUp.service';
 import { roundUpTransactionService } from '../modules/RoundUpTransaction/roundUpTransaction.service';
 import { cronJobTracker } from './cronJobTracker';
-import { IRoundUpDocument } from '../modules/RoundUp/roundUp.model';
 import { StripeService } from '../modules/Stripe/stripe.service';
 import { RoundUpTransactionModel } from '../modules/RoundUpTransaction/roundUpTransaction.model';
-import Donation from '../modules/donation/donation.model';
+import Donation from '../modules/Donation/donation.model';
 
 /**
  * RoundUp Transactions Cron Job
@@ -137,11 +137,12 @@ const processEndOfMonthDonations = async () => {
       });
 
       // STEP 3: Update Donation to PROCESSING
+      const donationDoc = donation.toObject();
       await Donation.findByIdAndUpdate(donation._id, {
         status: 'processing',
         stripePaymentIntentId: paymentResult.payment_intent_id,
         metadata: {
-          ...donation.metadata,
+          ...(donationDoc.metadata || {}),
           paymentInitiatedAt: new Date(),
         },
       });
@@ -356,13 +357,18 @@ export const startRoundUpProcessingCron = () => {
   return job;
 };
 
-// test corn inside function
-export const mostafizTriggerRoundUpDonation = async () => {
+// Manual trigger function for testing
+export const manualTriggerRoundUpProcessing = async (
+  userId?: string
+): Promise<{ success: boolean; data?: any }> => {
   if (isProcessing) {
     console.log(
       '⏭️ Skipping RoundUp processing: previous run still in progress.'
     );
-    return;
+    return {
+      success: false,
+      data: { message: 'Processing already in progress' },
+    };
   }
 
   isProcessing = true;
@@ -402,7 +408,10 @@ export const mostafizTriggerRoundUpDonation = async () => {
         successCount: 0,
         failureCount: 0,
       });
-      return;
+      return {
+        success: true,
+        data: { message: 'No active round-ups to sync' },
+      };
     }
 
     console.log(
@@ -496,9 +505,22 @@ export const mostafizTriggerRoundUpDonation = async () => {
       successCount,
       failureCount,
     });
+
+    return {
+      success: true,
+      data: {
+        totalProcessed: activeRoundUpConfigs.length,
+        successCount,
+        failureCount,
+      },
+    };
   } catch (error: any) {
     console.error('❌ Critical error in RoundUp processing cron job:', error);
     cronJobTracker.failExecution(JOB_NAME, error.message || 'Unknown error');
+    return {
+      success: false,
+      data: { error: error.message || 'Unknown error' },
+    };
   } finally {
     isProcessing = false;
   }

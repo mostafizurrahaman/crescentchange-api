@@ -1,5 +1,6 @@
+import mongoose, { Types } from 'mongoose';
 import { RoundUpModel } from './roundUp.model';
-import { Donation } from '../donation/donation.model';
+import { Donation } from '../Donation/donation.model';
 import { OrganizationModel } from '../Organization/organization.model';
 import { IPlaidTransaction } from '../BankConnection/bankConnection.interface';
 import { StripeService } from '../Stripe/stripe.service';

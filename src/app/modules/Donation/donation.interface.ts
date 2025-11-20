@@ -35,6 +35,7 @@ export interface IDonation {
   idempotencyKey?: string;
   paymentAttempts?: number;
   lastPaymentAttempt?: Date;
+  metadata?: Record<string, unknown>;
 }
 
 // Extended interface for donations with tracking data

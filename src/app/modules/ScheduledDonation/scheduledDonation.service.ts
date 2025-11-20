@@ -1,7 +1,7 @@
 import { Types } from 'mongoose';
 import httpStatus from 'http-status';
 import { ScheduledDonation } from './scheduledDonation.model';
-import { IScheduledDonationModel } from '../donation/donation.interface';
+import { IScheduledDonationModel } from '../Donation/donation.interface';
 import {
   TCreateScheduledDonation,
   TUpdateScheduledDonation,
@@ -12,9 +12,9 @@ import Organization from '../Organization/organization.model';
 import Cause from '../Causes/causes.model';
 import { PaymentMethodService } from '../PaymentMethod/paymentMethod.service';
 import QueryBuilder from '../../builders/QueryBuilder';
-import { Donation } from '../donation/donation.model';
+import { Donation } from '../Donation/donation.model';
 import { stripe } from '../../lib/stripeHelper';
-import { IDonationModel } from '../donation/donation.interface';
+import { IDonationModel } from '../Donation/donation.interface';
 import { IPaymentMethodModel } from '../PaymentMethod/paymentMethod.interface';
 import { IORGANIZATION } from '../Organization/organization.interface';
 
@@ -444,7 +444,8 @@ const executeScheduledDonation = async (
   ).toString();
 
   // ✅ Get payment method details from populated field
-  const paymentMethod = scheduledDonation.paymentMethod as unknown as IPaymentMethodModel;
+  const paymentMethod =
+    scheduledDonation.paymentMethod as unknown as IPaymentMethodModel;
 
   // Validate payment method is active
   if (!paymentMethod.isActive) {
@@ -465,7 +466,8 @@ const executeScheduledDonation = async (
   }
 
   // Get organization's Stripe Connect account (required for receiving payments)
-  const organization = scheduledDonation.organization as unknown as IORGANIZATION;
+  const organization =
+    scheduledDonation.organization as unknown as IORGANIZATION;
   const connectedAccountId = organization.stripeConnectAccountId;
 
   if (!connectedAccountId) {
@@ -587,7 +589,11 @@ const executeScheduledDonation = async (
       console.log(`   Waiting for webhook confirmation...`);
       return donation;
     } catch (error: unknown) {
-      const err = error as Error & { code?: string; type?: string; message: string };
+      const err = error as Error & {
+        code?: string;
+        type?: string;
+        message: string;
+      };
       lastError = err;
       console.error(
         `❌ Attempt ${attempt}/${MAX_RETRIES} failed for donation ${scheduledDonationId}: ${err.message}`

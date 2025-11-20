@@ -1,6 +1,6 @@
 import { Types, Document, startSession } from 'mongoose';
 import Notification from './notification.model';
-import QueryBuilder from 'mongoose-query-builders';
+import QueryBuilder from '../../builders/QueryBuilder';
 import { IAuth } from '../Auth/auth.interface';
 import { AppError } from '../../utils';
 import httpStatus from 'http-status';
@@ -77,7 +77,7 @@ const createNotification = async (
 ) => {
   try {
     const notificationData = {
-      title: type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()),
+      title: type.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
       message,
       receiver: new Types.ObjectId(receiverId),
       type,
@@ -85,7 +85,9 @@ const createNotification = async (
     };
 
     if (session) {
-      const notification = await Notification.create([notificationData], { session });
+      const notification = await Notification.create([notificationData], {
+        session,
+      });
       return notification[0];
     } else {
       const notification = await Notification.create(notificationData);

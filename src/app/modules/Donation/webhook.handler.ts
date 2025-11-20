@@ -166,7 +166,9 @@ const handleRoundUpDonationSuccess = async (
     // ✅ MODIFIED: UPDATE existing Donation record (don't create new one)
     donation.status = 'completed';
     donation.donationDate = new Date();
-    donation.roundUpTransactionIds = processingTransactions.map((t) => t._id);
+    donation.roundUpTransactionIds = processingTransactions.map(
+      (t) => t._id
+    ) as Types.ObjectId[];
     await donation.save();
 
     console.log(`✅ Updated Donation record to 'completed' status`);

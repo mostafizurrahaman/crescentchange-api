@@ -16,8 +16,8 @@ const createTransporter = () => {
   return nodemailer.createTransport({
     service: 'gmail', // Using Gmail service
     auth: {
-      user: config.nodemailer.email,
-      pass: config.nodemailer.password,
+      user: config.email.nodemailerEmail,
+      pass: config.email.nodemailerPassword,
     },
   });
 };
@@ -177,7 +177,7 @@ export const sendReceiptEmail = async (
     `;
 
     const mailOptions = {
-      from: `"Crescent Change" <${config.nodemailer.email}>`,
+      from: `"Crescent Change" <${config.email.nodemailerEmail}>`,
       to: data.to,
       subject: `Your Donation Receipt - ${data.receiptNumber}`,
       html: emailHTML,
@@ -238,7 +238,7 @@ export const sendWelcomeEmail = async (
     `;
 
     const mailOptions = {
-      from: `"Crescent Change" <${config.nodemailer.email}>`,
+      from: `"Crescent Change" <${config.email.nodemailerEmail}>`,
       to,
       subject: 'Welcome to Crescent Change!',
       html: emailHTML,

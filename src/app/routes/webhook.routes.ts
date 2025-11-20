@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-namespace */
 import { Router } from 'express';
 import { asyncHandler } from '../utils';
-import { WebhookHandler } from '../modules/donation/webhook.handler';
+import { WebhookHandler } from '../modules/Donation/webhook.handler';
 
 declare global {
   namespace Express {

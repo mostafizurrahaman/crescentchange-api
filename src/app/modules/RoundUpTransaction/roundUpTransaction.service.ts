@@ -13,7 +13,7 @@ import { IPlaidTransaction } from '../BankConnection/bankConnection.interface';
 import { IRoundUpDocument } from '../RoundUp/roundUp.model';
 import { IBankConnectionDocument } from '../BankConnection/bankConnection.model';
 import { StripeService } from '../Stripe/stripe.service';
-import { Donation } from '../donation/donation.model';
+import { Donation } from '../Donation/donation.model';
 import { pl } from 'zod/v4/locales';
 
 // Check and reset monthly total at the beginning of each month
@@ -135,10 +135,11 @@ const triggerDonation = async (
       );
     } catch (error) {
       // If PaymentIntent creation fails, update donation to failed
+      const donationDoc = donation.toObject();
       await Donation.findByIdAndUpdate(donation._id, {
         status: 'failed',
         metadata: {
-          ...donation.metadata,
+          ...(donationDoc.metadata || {}),
           failureReason:
             error instanceof Error
               ? error.message
@@ -172,11 +173,12 @@ const triggerDonation = async (
     }
 
     // STEP 3: Update Donation status to PROCESSING after PaymentIntent created
+    const donationDoc = donation.toObject();
     await Donation.findByIdAndUpdate(donation._id, {
       status: 'processing',
       stripePaymentIntentId: paymentResult.payment_intent_id,
       metadata: {
-        ...donation.metadata,
+        ...(donationDoc.metadata || {}),
         paymentInitiatedAt: new Date(),
       },
     });

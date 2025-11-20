@@ -6,7 +6,7 @@ import { AuthRoutes } from '../modules/Auth/auth.route';
 // import { BusinessRoutes } from '../modules/Business/business.routes';
 // import { notificationRoutes } from '../modules/Notification/notification.routes';
 
-import DonationRoutes from '../modules/donation/donation.route';
+import DonationRoutes from '../modules/Donation/donation.route';
 import { CauseRoutes } from '../modules/Causes/causes.route';
 import StripeRoutes from '../modules/Stripe/stripe.route';
 import { PaymentMethodRoutes } from '../modules/PaymentMethod/paymentMethod.route';
