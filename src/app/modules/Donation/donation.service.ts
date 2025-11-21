@@ -1277,7 +1277,7 @@ const getDonationAnalytics = async (
     donationTypeBreakdown,
     topDonors,
     recentDonors,
-    causeStats,
+    breakDownByCause,
   ] = await Promise.all([
     getTotalDonatedAmount(current, previous, organizationId),
     getAverageDonationPerUser(current, previous, organizationId),
@@ -1297,7 +1297,7 @@ const getDonationAnalytics = async (
     donationTypeBreakdown,
     topDonors,
     recentDonors,
-    causeStats,
+    breakDownByCause,
   };
 };
 

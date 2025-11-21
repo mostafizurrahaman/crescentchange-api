@@ -220,7 +220,7 @@ export interface IDonationAnalytics {
   donationTypeBreakdown: IDonationTypeBreakdown;
   topDonors: ITopDonor[];
   recentDonors: IRecentDonor[];
-  causeStats: IOrganizationStatsResponse;
+  breakDownByCause: IOrganizationStatsResponse;
 }
 
 export interface MonthlyTrend {
