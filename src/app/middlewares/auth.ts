@@ -5,6 +5,7 @@ import { ROLE, TRole } from '../modules/Auth/auth.constant';
 import Auth from '../modules/Auth/auth.model';
 import { verifyToken } from '../lib';
 import config from '../config';
+import { ORGANIZATION_STATUS } from '../modules/Organization/organization.constants';
 
 const auth = (...requiredRoles: TRole[]) => {
   return asyncHandler(async (req, res, next) => {
@@ -32,6 +33,16 @@ const auth = (...requiredRoles: TRole[]) => {
 
     if (user.isDeleted) {
       throw new AppError(httpStatus.UNAUTHORIZED, 'You are not authorized!');
+    }
+
+    if (user.status === ORGANIZATION_STATUS.PENDING) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'This account is not verified yet!'
+      );
+    }
+    if (user.status === ORGANIZATION_STATUS.SUSPENDED) {
+      throw new AppError(httpStatus.BAD_REQUEST, 'This account is suspended!');
     }
 
     if (!user.isVerifiedByOTP) {

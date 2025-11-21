@@ -2,8 +2,35 @@ import express from 'express';
 import { OrganizationController } from './organization.controller';
 import auth from '../../middlewares/auth';
 import { ROLE } from '../Auth/auth.constant';
+import { validateRequest } from '../../middlewares';
+import { OrganizationValidation } from './organization.validation';
+import { upload } from '../../lib';
 
 const router = express.Router();
+
+// Edit Organization Profile Details (Tab 1 - Text fields)
+router.patch(
+  '/profile-details',
+  auth(ROLE.ORGANIZATION),
+  validateRequest(OrganizationValidation.editProfileOrgDetailsSchema),
+  OrganizationController.editProfileOrgDetails
+);
+
+// Update Organization Logo Image (Separate endpoint)
+router.patch(
+  '/logo-image',
+  auth(ROLE.ORGANIZATION),
+  upload.single('logoImage'),
+  OrganizationController.updateLogoImage
+);
+
+// Edit Organization Tax Details (Tab 2)
+router.patch(
+  '/tax-details',
+  auth(ROLE.ORGANIZATION),
+  validateRequest(OrganizationValidation.editOrgTaxDetailsSchema),
+  OrganizationController.editOrgTaxDetails
+);
 
 // Stripe Connect Routes
 // Start Stripe Connect onboarding (organizations only)

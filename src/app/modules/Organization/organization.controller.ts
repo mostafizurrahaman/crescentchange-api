@@ -71,8 +71,76 @@ const refreshStripeConnectOnboarding = asyncHandler(
   }
 );
 
+/**
+ * Edit Organization Profile Details (Tab 1 - Text fields only)
+ * PATCH /api/v1/organization/profile-details
+ */
+const editProfileOrgDetails = asyncHandler(
+  async (req: ExtendedRequest, res: Response) => {
+    const userId = req.user?._id.toString();
+    if (!userId) {
+      throw new AppError(httpStatus.UNAUTHORIZED, 'User not authenticated');
+    }
+
+    const result = await OrganizationService.editProfileOrgDetailsIntoDB(
+      userId,
+      req.body
+    );
+
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      message: 'Organization profile updated successfully!',
+      data: result,
+    });
+  }
+);
+
+/**
+ * Update Organization Logo Image
+ * PATCH /api/v1/organization/logo-image
+ */
+
+const updateLogoImage = asyncHandler(async (req, res) => {
+  const result = await OrganizationService.updateLogoImageIntoDB(
+    req.user,
+    req.file
+  );
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    message: 'Logo image updated successfully!',
+    data: result,
+  });
+});
+/**
+ * Edit Organization Tax Details (Tab 2)
+ * PATCH /api/v1/organization/tax-details
+ */
+const editOrgTaxDetails = asyncHandler(
+  async (req: ExtendedRequest, res: Response) => {
+    const userId = req.user?._id.toString();
+    if (!userId) {
+      throw new AppError(httpStatus.UNAUTHORIZED, 'User not authenticated');
+    }
+
+    const result = await OrganizationService.editOrgTaxDetailsIntoDB(
+      userId,
+      req.body
+    );
+
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      message: 'Organization tax details updated successfully!',
+      data: result,
+    });
+  }
+);
+
 export const OrganizationController = {
   startStripeConnectOnboarding,
   getStripeConnectStatus,
   refreshStripeConnectOnboarding,
+  editProfileOrgDetails,
+  editOrgTaxDetails,
+  updateLogoImage,
 };

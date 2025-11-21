@@ -5,6 +5,10 @@ import { ROLE } from './auth.constant';
 import { IAuth, IAuthModel } from './auth.interface';
 import { AppError } from '../../utils';
 import httpStatus from 'http-status';
+import {
+  ORGANIZATION_STATUS,
+  organizationStatusValues,
+} from '../Organization/organization.constants';
 
 const authSchema = new Schema<IAuth, IAuthModel>(
   {
@@ -60,6 +64,11 @@ const authSchema = new Schema<IAuth, IAuthModel>(
     },
     deactivatedAt: {
       type: Date,
+    },
+    status: {
+      type: String,
+      required: true,
+      enum: organizationStatusValues,
     },
   },
   { timestamps: true, versionKey: false }

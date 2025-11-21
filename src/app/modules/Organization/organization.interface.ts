@@ -5,14 +5,17 @@ export interface IORGANIZATION extends Document {
   auth: Types.ObjectId;
 
   name: string;
+  aboutUs?: string;
   serviceType: string;
   address: string;
+  country?: string;
   state: string;
   postalCode: string;
   website: string;
 
   phoneNumber: string;
   coverImage: string;
+  logoImage?: string;
 
   boardMemberName: string;
   boardMemberEmail: string;
@@ -22,4 +25,7 @@ export interface IORGANIZATION extends Document {
   tfnOrAbnNumber: string;
   zakatLicenseHolderNumber: string | null;
   stripeConnectAccountId?: string;
+  dateOfEstablishment: Date;
+  registeredCharityName: string;
+  isProfileVisible?: boolean;
 }

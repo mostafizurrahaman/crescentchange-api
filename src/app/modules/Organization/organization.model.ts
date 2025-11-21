@@ -1,5 +1,6 @@
-import { model, Schema } from 'mongoose';
+import { model, now, Schema } from 'mongoose';
 import { IORGANIZATION } from './organization.interface';
+import { optional } from 'zod';
 
 const organizationSchema = new Schema<IORGANIZATION>(
   {
@@ -20,6 +21,7 @@ const organizationSchema = new Schema<IORGANIZATION>(
     address: {
       type: String,
     },
+
     state: {
       type: String,
     },
@@ -36,6 +38,10 @@ const organizationSchema = new Schema<IORGANIZATION>(
 
     coverImage: {
       type: String,
+    },
+    logoImage: {
+      type: String,
+      optional: true,
     },
 
     // Verify Your registration
@@ -65,6 +71,30 @@ const organizationSchema = new Schema<IORGANIZATION>(
     },
     drivingLicenseURL: {
       type: String,
+    },
+
+    //  Extra fields added:
+    country: {
+      type: String,
+      default: '',
+    },
+    aboutUs: {
+      type: String,
+      default: '',
+    },
+    dateOfEstablishment: {
+      type: Date,
+      default: now(),
+    },
+
+    // Extra Access Fields :
+    registeredCharityName: {
+      type: String,
+      default: '',
+    },
+    isProfileVisible: {
+      type: Boolean,
+      default: true,
     },
   },
   { timestamps: true, versionKey: false }

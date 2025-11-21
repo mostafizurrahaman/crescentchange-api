@@ -1,5 +1,5 @@
 import fs from 'fs';
-import httpStatus from 'http-status';
+import httpStatus, { status } from 'http-status';
 import { startSession } from 'mongoose';
 import config from '../../config';
 import {
@@ -13,13 +13,15 @@ import { AppError, sendOtpEmail } from '../../utils';
 import Business from '../Business/business.model';
 import Organization from '../Organization/organization.model';
 import Client from '../Client/client.model';
-import { IAuth } from './auth.interface';
+import { IAuth, OrganizationStatusType } from './auth.interface';
 import { defaultUserImage, ROLE } from './auth.constant';
 import Auth from './auth.model';
 import { AuthValidation, TProfilePayload } from './auth.validation';
 import { updateProfileImage } from './auth.utils';
 import z from 'zod';
 import jwt, { JwtPayload, SignOptions } from 'jsonwebtoken';
+import { ORGANIZATION_STATUS } from '../Organization/organization.constants';
+import { is } from 'zod/v4/locales';
 
 const OTP_EXPIRY_MINUTES =
   Number.parseInt(config.jwt.otpSecretExpiresIn as string, 10) || 5;
@@ -75,6 +77,7 @@ const createAuthIntoDB = async (payload: IAuth) => {
         now.getTime() + (OTP_EXPIRY_MINUTES || 5) * 60 * 1000
       ),
       isVerifiedByOTP: false,
+      status: ORGANIZATION_STATUS.PENDING,
     });
 
     // const token = jwt.sign({ ...payload, otp }, config.jwt.otp_secret!, {
@@ -165,6 +168,7 @@ const verifySignupOtpIntoDB = async (email: string, otp: string) => {
 
   // Mark user as verified
   user.isVerifiedByOTP = true;
+  user.status = ORGANIZATION_STATUS.ACTIVE as OrganizationStatusType;
   await user.save();
 
   // Prepare user data for token generation
@@ -176,6 +180,7 @@ const verifySignupOtpIntoDB = async (email: string, otp: string) => {
     role: user?.role,
     isProfile: user?.isProfile,
     isActive: user?.isActive,
+    status: ORGANIZATION_STATUS.ACTIVE,
   };
 
   const refreshTokenPayload = {
@@ -207,6 +212,16 @@ const signinIntoDB = async (payload: {
 
   if (!user.isActive) {
     throw new AppError(httpStatus.BAD_REQUEST, 'This account is not active!');
+  }
+
+  if (user.status === ORGANIZATION_STATUS.PENDING) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'This account is not verified yet!'
+    );
+  }
+  if (user.status === ORGANIZATION_STATUS.SUSPENDED) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'This account not suspended!');
   }
 
   if (user.isDeleted) {
@@ -244,6 +259,7 @@ const signinIntoDB = async (payload: {
     role: user.role,
     isProfile: user?.isProfile,
     isActive: user?.isActive,
+    status: user.status,
   };
 
   const refreshTokenPayload = {
@@ -272,6 +288,16 @@ const createProfileIntoDB = async (
       httpStatus.BAD_REQUEST,
       'Your profile is already created!'
     );
+  }
+
+  if (user.status === ORGANIZATION_STATUS.PENDING) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'This account is not verified yet!'
+    );
+  }
+  if (user.status === ORGANIZATION_STATUS.SUSPENDED) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'This account is suspended!');
   }
 
   // Destructure relevant fields from the payload
@@ -373,6 +399,7 @@ const createProfileIntoDB = async (
         role: user.role,
         isProfile: true,
         isActive: user?.isActive,
+        status: user.status,
       };
 
       // const refreshTokenPayload = {
@@ -438,6 +465,7 @@ const createProfileIntoDB = async (
         role: user?.role,
         isProfile: true,
         isActive: user?.isActive,
+        status: user.status,
       };
 
       // const refreshTokenPayload = {
@@ -513,6 +541,7 @@ const createProfileIntoDB = async (
         role: user.role,
         isProfile: true,
         isActive: user?.isActive,
+        status: user.status,
       };
 
       // const refreshTokenPayload = {
@@ -606,6 +635,16 @@ const changePasswordIntoDB = async (
     throw new AppError(httpStatus.BAD_REQUEST, 'This account is deleted!');
   }
 
+  if (user.status === ORGANIZATION_STATUS.PENDING) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'This account is not verified yet!'
+    );
+  }
+  if (user.status === ORGANIZATION_STATUS.SUSPENDED) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'This account is suspended!');
+  }
+
   const isCredentialsCorrect = await user.isPasswordMatched(
     payload.oldPassword
   );
@@ -652,6 +691,7 @@ const changePasswordIntoDB = async (
     role: user.role,
     isProfile: user?.isProfile,
     isActive: user?.isActive,
+    status: user.status,
   };
 
   const refreshTokenPayload = {
@@ -682,6 +722,16 @@ const forgotPassword = async (email: string) => {
 
   if (user.isDeleted) {
     throw new AppError(httpStatus.BAD_REQUEST, 'This account is deleted!');
+  }
+
+  if (user.status === ORGANIZATION_STATUS.PENDING) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'This account is not verified yet!'
+    );
+  }
+  if (user.status === ORGANIZATION_STATUS.SUSPENDED) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'This account is suspended!');
   }
 
   const now = new Date();
@@ -767,6 +817,16 @@ const sendForgotPasswordOtpAgain = async (forgotPassToken: string) => {
     throw new AppError(httpStatus.BAD_REQUEST, 'This account is deleted!');
   }
 
+  if (user.status === ORGANIZATION_STATUS.PENDING) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'This account is not verified yet!'
+    );
+  }
+  if (user.status === ORGANIZATION_STATUS.SUSPENDED) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'This account is suspended!');
+  }
+
   const now = new Date();
 
   // If OTP exists and not expired, reuse it
@@ -843,6 +903,16 @@ const verifyOtpForForgotPassword = async (payload: {
 
   if (user.isDeleted) {
     throw new AppError(httpStatus.BAD_REQUEST, 'This account is deleted!');
+  }
+
+  if (user.status === ORGANIZATION_STATUS.PENDING) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'This account is not verified yet!'
+    );
+  }
+  if (user.status === ORGANIZATION_STATUS.SUSPENDED) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'This account is suspended!');
   }
 
   // Check if OTP expired
@@ -929,6 +999,16 @@ const resetPasswordIntoDB = async (
 
   if (user.isDeleted) {
     throw new AppError(httpStatus.BAD_REQUEST, 'This account is deleted!');
+  }
+
+  if (user.status === ORGANIZATION_STATUS.PENDING) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'This account is not verified yet!'
+    );
+  }
+  if (user.status === ORGANIZATION_STATUS.SUSPENDED) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'This account is suspended!');
   }
 
   user.password = newPassword;
@@ -1172,6 +1252,7 @@ const getNewAccessTokenFromServer = async (refreshToken: string) => {
     role: user?.role,
     isProfile: user?.isProfile,
     isActive: user?.isActive,
+    status: user.status,
   };
 
   const accessToken = createAccessToken(accessTokenPayload);
@@ -1206,6 +1287,10 @@ const updateAuthDataIntoDB = async (
     throw new AppError(httpStatus.BAD_REQUEST, 'This account is deleted!');
   }
 
+  if (user?.status !== ORGANIZATION_STATUS.ACTIVE) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'This account is not active!');
+  }
+
   let name: string = 'User';
   let image: string = defaultUserImage;
 
@@ -1236,6 +1321,7 @@ const updateAuthDataIntoDB = async (
     role: user.role,
     isProfile: user?.isProfile,
     isActive: user?.isActive,
+    status: user.status,
   };
 
   const accessToken = createAccessToken(accessTokenPayload);

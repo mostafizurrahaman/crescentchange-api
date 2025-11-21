@@ -1,8 +1,12 @@
 import { Document, Model, ObjectId } from 'mongoose';
 import { TRole } from './auth.constant';
+import { organizationStatusValues } from '../Organization/organization.constants';
+
+export type OrganizationStatusType = 'pending' | 'suspended' | 'verified';
 
 // Instance methods
-export interface IAuth extends Document { // extends Document for using .save() method
+export interface IAuth extends Document {
+  // extends Document for using .save() method
   _id: ObjectId;
 
   email: string;
@@ -18,6 +22,7 @@ export interface IAuth extends Document { // extends Document for using .save() 
   role: TRole;
   isActive: boolean;
   isDeleted: boolean;
+  status: OrganizationStatusType;
 
   deactivationReason: string;
   deactivatedAt: Date;
