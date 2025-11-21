@@ -45,12 +45,11 @@ const savePlaidConsent = async (
   }
 
   const paymentMethod = await PaymentMethod.findById(paymentMethodId);
+  console.log({ paymentMethod, userId });
 
   if (!paymentMethod || paymentMethod.user.toString() !== userId) {
     throw new AppError(httpStatus.NOT_FOUND, 'Payment Method not found!');
   }
-
-  console.log({ client });
 
   if (!bankConnectionId) {
     return {
@@ -111,6 +110,13 @@ const savePlaidConsent = async (
       data: null,
       statusCode: StatusCodes.BAD_REQUEST,
     };
+  }
+
+  if (cause.status !== CAUSE_STATUS_TYPE.VERIFIED) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Cannot create round-up for cause with status: ${cause.status}. Only verified causes can receive donations.`
+    );
   }
 
   // Validate monthlyThreshold if provided

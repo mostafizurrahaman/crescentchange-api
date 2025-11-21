@@ -20,7 +20,7 @@ const JOB_NAME = 'scheduled-donations';
 
 export const startScheduledDonationsCron = () => {
   // Run every hour at the start of the hour
-  const schedule = '0 * * * *'; // Every hour at minute 0
+  const schedule = '*/1 * * * *'; // Every hour at minute 0
 
   // Register job with tracker
   cronJobTracker.registerJob(JOB_NAME, schedule);
@@ -71,35 +71,48 @@ export const startScheduledDonationsCron = () => {
       // BEST PRACTICE: Process donations in batches to prevent memory issues
       const BATCH_SIZE = 50; // Process 50 donations at a time
       const batches = [];
-      
+
       for (let i = 0; i < dueDonations.length; i += BATCH_SIZE) {
         batches.push(dueDonations.slice(i, i + BATCH_SIZE));
       }
 
-      console.log(`📦 Processing in ${batches.length} batch(es) of max ${BATCH_SIZE} donations each`);
+      console.log(
+        `📦 Processing in ${batches.length} batch(es) of max ${BATCH_SIZE} donations each`
+      );
 
       // Process each batch
       for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
         const batch = batches[batchIndex];
-        console.log(`\n📦 Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} donations)`);
+        console.log(
+          `\n📦 Processing batch ${batchIndex + 1}/${batches.length} (${
+            batch.length
+          } donations)`
+        );
 
         // BEST PRACTICE: Use Promise.allSettled for parallel execution
         // This processes multiple donations concurrently instead of sequentially
         const results = await Promise.allSettled(
           batch.map(async (scheduledDonation) => {
-            const donationId = (scheduledDonation._id as unknown as Types.ObjectId).toString();
+            const donationId = (
+              scheduledDonation._id as unknown as Types.ObjectId
+            ).toString();
 
             console.log(`\n📝 Processing scheduled donation: ${donationId}`);
             console.log(`   User: ${scheduledDonation.user._id}`);
             console.log(
-              `   Organization: ${(scheduledDonation.organization as unknown as { name: string }).name}`
+              `   Organization: ${
+                (scheduledDonation.organization as unknown as { name: string })
+                  .name
+              }`
             );
             console.log(`   Amount: $${scheduledDonation.amount}`);
             console.log(`   Frequency: ${scheduledDonation.frequency}`);
 
             // Execute the scheduled donation
             const donation =
-              await ScheduledDonationService.executeScheduledDonation(donationId);
+              await ScheduledDonationService.executeScheduledDonation(
+                donationId
+              );
 
             console.log(`✅ Success! Created donation record: ${donation._id}`);
             console.log(`   Status: ${donation.status}`);
@@ -112,7 +125,9 @@ export const startScheduledDonationsCron = () => {
         // Process results
         results.forEach((result, index) => {
           const scheduledDonation = batch[index];
-          const donationId = (scheduledDonation._id as unknown as Types.ObjectId).toString();
+          const donationId = (
+            scheduledDonation._id as unknown as Types.ObjectId
+          ).toString();
 
           if (result.status === 'fulfilled') {
             successCount++;
@@ -135,7 +150,7 @@ export const startScheduledDonationsCron = () => {
 
         // Add small delay between batches to avoid overwhelming the system
         if (batchIndex < batches.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+          await new Promise((resolve) => setTimeout(resolve, 1000)); // 1 second delay
         }
       }
 
@@ -222,7 +237,10 @@ export const manualTriggerScheduledDonations = async () => {
           await ScheduledDonationService.executeScheduledDonation(
             (sd._id as unknown as Types.ObjectId).toString()
           );
-        return { success: true, donationId: (donation._id as unknown as Types.ObjectId).toString() };
+        return {
+          success: true,
+          donationId: (donation._id as unknown as Types.ObjectId).toString(),
+        };
       })
     );
 
@@ -233,7 +251,9 @@ export const manualTriggerScheduledDonations = async () => {
       } else {
         return {
           success: false,
-          scheduledDonationId: (dueDonations[index]._id as unknown as Types.ObjectId).toString(),
+          scheduledDonationId: (
+            dueDonations[index]._id as unknown as Types.ObjectId
+          ).toString(),
           error: result.reason?.message || 'Unknown error',
         };
       }

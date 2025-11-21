@@ -18,6 +18,7 @@ import { CAUSE_STATUS_TYPE } from '../Causes/causes.constant';
 import { AppError } from '../../utils';
 import Client from '../Client/client.model';
 import httpStatus from 'http-status';
+import { handleDuplicateError } from '../../errors';
 
 // Check and reset monthly total at the beginning of each month
 const checkAndResetMonthlyTotal = async (
@@ -339,9 +340,9 @@ const processTransactionsFromPlaid = async (
           continue;
         }
 
-        console.log(`========== Eligible Transaction ==========`);
-        console.log(plaidTransaction, { depth: Infinity });
-        console.log(`==========================================`);
+        // console.log(`========== Eligible Transaction ==========`);
+        // console.log(plaidTransaction, { depth: Infinity });
+        // console.log(`==========================================`);
 
         // Calculate round-up amount
         const roundUpAmount = RoundUpTransactionModel.calculateRoundUpAmount(
@@ -428,7 +429,18 @@ const processTransactionsFromPlaid = async (
       } catch (error: unknown) {
         console.log({ error });
         // Handle duplicate key errors specifically
-        if (error instanceof Error && (error.code === 11000 || error.codeName === 'DuplicateKey')) {
+        const isMongoDuplicateKeyError = (
+          err: unknown
+        ): err is { code?: number; codeName?: string } => {
+          if (!err || typeof err !== 'object') return false;
+          const e = err as any;
+          return (
+            (typeof e.code === 'number' && e.code === 11000) ||
+            (typeof e.codeName === 'string' && e.codeName === 'DuplicateKey')
+          );
+        };
+
+        if (isMongoDuplicateKeyError(error)) {
           console.warn(
             `Duplicate transaction detected (skipping): ${
               plaidTransaction.transaction_id || 'N/A'

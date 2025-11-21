@@ -1,8 +1,9 @@
+import { startRoundUpProcessingCron } from './roundUpTransactions.job';
 import { startScheduledDonationsCron } from './scheduledDonations.job';
 
 /**
  * Initialize all cron jobs
- * 
+ *
  * This function starts all scheduled background jobs for the application.
  * Should be called once during server startup.
  */
@@ -16,7 +17,7 @@ export const initializeJobs = () => {
     startScheduledDonationsCron();
 
     // Start RoundUp transactions processing cron job
-    // startRoundUpProcessingCron();
+    startRoundUpProcessingCron();
 
     // Add more cron jobs here as needed
     // Example:
