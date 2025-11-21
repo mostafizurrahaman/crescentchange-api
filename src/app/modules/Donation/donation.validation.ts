@@ -412,6 +412,19 @@ const getDonationAnalyticsSchema = z.object({
   }),
 });
 
+const getOrganizationDonationYearlyTrends = z.object({
+  query: z.object({
+    year: z
+      .string()
+      .regex(/^\d{4}$/, 'Year must be a 4-digit number')
+      .transform(Number)
+      .refine((year) => {
+        const currentYear = new Date().getFullYear();
+        return year >= 2020 && year <= currentYear + 1;
+      }, 'Year must be between 2020 and next year'),
+  }),
+});
+
 export const DonationAnalyticsValidation = {
   getDonationAnalyticsSchema,
 };
@@ -430,7 +443,10 @@ export const DonationValidation = {
   updatePaymentStatusSchema,
   cancelDonationSchema,
   refundDonationSchema,
+
+  // stats and analytics
   getDonationAnalyticsSchema,
+  getOrganizationDonationYearlyTrends,
 };
 
 // Export types for TypeScript inference
@@ -489,4 +505,8 @@ export type CheckoutSessionResponse = z.infer<
 
 export type TGetDonationAnalyticsQuery = z.infer<
   typeof getDonationAnalyticsSchema.shape.query
+>;
+
+export type TGetOrganizatinDonationYearlyTrendsQuery = z.infer<
+  typeof getOrganizationDonationYearlyTrends.shape.query
 >;

@@ -364,6 +364,29 @@ const getDonationAnalyticsController = asyncHandler(
   }
 );
 
+const getOrganizationYearlyDonationTrends = asyncHandler(async (req, res) => {
+  const { year } = req.query;
+  const organizationId = req.user?._id;
+
+  if (!organizationId) {
+    throw new AppError(
+      httpStatus.UNAUTHORIZED,
+      'Organization ID not found for this user'
+    );
+  }
+
+  const result = await DonationService.getOrganizationYearlyTrends(
+    Number(year),
+    organizationId.toString()
+  );
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    message: 'Organization trends retrieved successfully',
+    data: result,
+  });
+});
+
 export const DonationController = {
   createOneTimeDonation,
 
@@ -380,4 +403,5 @@ export const DonationController = {
 
   // Analytics endpoint
   getDonationAnalyticsController,
+  getOrganizationYearlyDonationTrends
 };

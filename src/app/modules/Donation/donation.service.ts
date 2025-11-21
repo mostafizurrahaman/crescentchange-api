@@ -2,14 +2,17 @@ import { Types } from 'mongoose';
 import mongoose from 'mongoose';
 import { Donation } from './donation.model';
 import {
+  CategoryData,
   IAnalyticsPeriod,
   IDonation,
   IDonationAnalytics,
   IDonationModel,
   IDonationTypeBreakdown,
+  IOrganizationStatsResponse,
   IPercentageChange,
   IRecentDonor,
   ITopDonor,
+  MonthlyTrend,
 } from './donation.interface';
 import { TCreateOneTimeDonationPayload } from './donation.validation';
 import { AppError } from '../../utils';
@@ -30,6 +33,7 @@ import {
 import { IAuth } from '../Auth/auth.interface';
 import Cause from '../Causes/causes.model';
 import { CAUSE_STATUS_TYPE } from '../Causes/causes.constant';
+import { monthAbbreviations } from './donation.constant';
 
 // Helper function to generate unique idempotency key
 const generateIdempotencyKey = (): string => {
@@ -1159,6 +1163,102 @@ const getRecentDonors = async (
   });
 };
 
+const getOrganizationCauseStats = async (
+  organizationId: string
+): Promise<IOrganizationStatsResponse> => {
+  // Verify organization exists
+  const organization = await Organization.findById(organizationId);
+  if (!organization) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Organization not found');
+  }
+
+  // Aggregate donations by cause with cause details
+  const donationsByCause = await Donation.aggregate([
+    {
+      $match: {
+        organization: new mongoose.Types.ObjectId(organizationId),
+        status: 'completed',
+        cause: { $exists: true, $ne: null },
+      },
+    },
+    {
+      $group: {
+        _id: '$cause',
+        totalAmount: { $sum: '$amount' },
+      },
+    },
+    {
+      $lookup: {
+        from: 'causes',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'causeDetails',
+      },
+    },
+    {
+      $unwind: '$causeDetails',
+    },
+    {
+      $match: {
+        'causeDetails.organization': new mongoose.Types.ObjectId(
+          organizationId
+        ),
+      },
+    },
+    {
+      $project: {
+        causeId: '$_id',
+        causeName: '$causeDetails.name',
+        category: '$causeDetails.category',
+        totalAmount: 1,
+      },
+    },
+  ]);
+
+  // Group by category
+  const categoryMap = new Map<string, CategoryData>();
+  let totalDonationAmount = 0;
+
+  donationsByCause.forEach((item) => {
+    const category = item.category;
+    const amount = parseFloat(item.totalAmount.toFixed(2));
+
+    totalDonationAmount += amount;
+
+    if (!categoryMap.has(category)) {
+      categoryMap.set(category, {
+        category,
+        totalDonationAmount: 0,
+        causes: [],
+      });
+    }
+
+    const categoryData = categoryMap.get(category)!;
+    categoryData.totalDonationAmount += amount;
+    categoryData.causes.push({
+      causeId: item.causeId.toString(),
+      causeName: item.causeName,
+      totalDonationAmount: amount,
+    });
+  });
+
+  // Convert map to array and format
+  const categories: CategoryData[] = Array.from(categoryMap.values())
+    .map((category) => ({
+      category: category.category,
+      totalDonationAmount: parseFloat(category.totalDonationAmount.toFixed(2)),
+      causes: category.causes.sort(
+        (a, b) => b.totalDonationAmount - a.totalDonationAmount
+      ),
+    }))
+    .sort((a, b) => b.totalDonationAmount - a.totalDonationAmount);
+
+  return {
+    totalDonationAmount: parseFloat(totalDonationAmount.toFixed(2)),
+    categories,
+  };
+};
+
 /**
  * Get complete donation analytics dashboard data
  */
@@ -1177,6 +1277,7 @@ const getDonationAnalytics = async (
     donationTypeBreakdown,
     topDonors,
     recentDonors,
+    causeStats,
   ] = await Promise.all([
     getTotalDonatedAmount(current, previous, organizationId),
     getAverageDonationPerUser(current, previous, organizationId),
@@ -1185,6 +1286,7 @@ const getDonationAnalytics = async (
     getDonationTypeBreakdown(current, previous, organizationId),
     getTopDonors(current, previous, organizationId),
     getRecentDonors(current, organizationId),
+    getOrganizationCauseStats(organizationId!),
   ]);
 
   return {
@@ -1195,7 +1297,118 @@ const getDonationAnalytics = async (
     donationTypeBreakdown,
     topDonors,
     recentDonors,
+    causeStats,
   };
+};
+
+const getOrganizationYearlyTrends = async (
+  year: number,
+  organizationId: string
+): Promise<MonthlyTrend[]> => {
+  // Validate year
+  const currentYear = new Date().getFullYear();
+  if (year < 2020 || year > currentYear + 1) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Invalid year. Please provide a year between 2020 and next year'
+    );
+  }
+
+  // Verify organization exists
+  const organization = await Organization.findOne({
+    auth: organizationId,
+  });
+  if (!organization) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Organization not found');
+  }
+
+  // Create date range for the year
+  const startDate = new Date(year, 0, 1);
+  const endDate = new Date(year, 11, 31, 23, 59, 59, 999);
+
+  // Aggregate donations by month with type breakdown
+  const monthlyData = await Donation.aggregate([
+    {
+      $match: {
+        organization: organization?._id,
+        donationDate: {
+          $gte: startDate,
+          $lte: endDate,
+        },
+        status: 'completed',
+      },
+    },
+    {
+      $group: {
+        _id: { $month: '$donationDate' },
+        totalAmount: { $sum: '$amount' },
+        totalCount: { $sum: 1 },
+
+        // One-time donations
+        oneTimeCount: {
+          $sum: { $cond: [{ $eq: ['$donationType', 'one-time'] }, 1, 0] },
+        },
+        oneTimeTotal: {
+          $sum: {
+            $cond: [{ $eq: ['$donationType', 'one-time'] }, '$amount', 0],
+          },
+        },
+
+        // Recurring donations
+        recurringCount: {
+          $sum: { $cond: [{ $eq: ['$donationType', 'recurring'] }, 1, 0] },
+        },
+        recurringTotal: {
+          $sum: {
+            $cond: [{ $eq: ['$donationType', 'recurring'] }, '$amount', 0],
+          },
+        },
+
+        // Round-up donations
+        roundupCount: {
+          $sum: { $cond: [{ $eq: ['$donationType', 'round-up'] }, 1, 0] },
+        },
+        roundUpTotal: {
+          $sum: {
+            $cond: [{ $eq: ['$donationType', 'round-up'] }, '$amount', 0],
+          },
+        },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ]);
+  console.log({ monthlyData });
+
+  // Initialize all months with zero values
+  const monthlyTrends: MonthlyTrend[] = monthAbbreviations.map((month) => ({
+    month,
+    totalAmount: 0,
+    totalCount: 0,
+    oneTimeCount: 0,
+    recurringCount: 0,
+    roundupCount: 0,
+    oneTimeTotal: 0,
+    recurringTotal: 0,
+    roundUpTotal: 0,
+  }));
+
+  // Populate with actual data
+  monthlyData.forEach((data) => {
+    const monthIndex = data._id - 1;
+    monthlyTrends[monthIndex] = {
+      month: monthAbbreviations[monthIndex],
+      totalAmount: parseFloat(data.totalAmount.toFixed(2)),
+      totalCount: data.totalCount,
+      oneTimeCount: data.oneTimeCount,
+      recurringCount: data.recurringCount,
+      roundupCount: data.roundupCount,
+      oneTimeTotal: parseFloat(data.oneTimeTotal.toFixed(2)),
+      recurringTotal: parseFloat(data.recurringTotal.toFixed(2)),
+      roundUpTotal: parseFloat(data.roundUpTotal.toFixed(2)),
+    };
+  });
+
+  return monthlyTrends;
 };
 
 export const DonationService = {
@@ -1228,4 +1441,5 @@ export const DonationService = {
   getDonationTypeBreakdown,
   getTopDonors,
   getRecentDonors,
+  getOrganizationYearlyTrends,
 };

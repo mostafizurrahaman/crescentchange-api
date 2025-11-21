@@ -394,7 +394,7 @@ const getScheduledDonationsDueForExecution = async (): Promise<
 
   const scheduledDonations = await ScheduledDonation.find({
     isActive: true,
-    // nextDonationDate: { $lte: now },
+    nextDonationDate: { $lte: now },
   })
     .populate('user')
     .populate('organization')

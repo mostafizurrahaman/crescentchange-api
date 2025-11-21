@@ -42,3 +42,18 @@ export const BANK_ACCOUNT_STATUS = [
   'login_required',
   'disconnected',
 ] as const;
+
+export const monthAbbreviations = [
+  'JAN',
+  'FEB',
+  'MAR',
+  'APR',
+  'MAY',
+  'JUN',
+  'JUL',
+  'AUG',
+  'SEP',
+  'OCT',
+  'NOV',
+  'DEC',
+];

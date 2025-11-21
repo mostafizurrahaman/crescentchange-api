@@ -20,7 +20,7 @@ const JOB_NAME = 'scheduled-donations';
 
 export const startScheduledDonationsCron = () => {
   // Run every hour at the start of the hour
-  const schedule = '*/1 * * * *'; // Every hour at minute 0
+  const schedule = '0  1 * * *'; // Each Day at 1 AM
 
   // Register job with tracker
   cronJobTracker.registerJob(JOB_NAME, schedule);

@@ -79,4 +79,12 @@ router.get(
   DonationController.getDonationAnalyticsController
 );
 
+// 10. Get yearly donation trends for organization
+router.get(
+  '/analytics/yearly-trends',
+  auth(ROLE.ORGANIZATION),
+  validateRequest(DonationValidation.getOrganizationDonationYearlyTrends),
+  DonationController.getOrganizationYearlyDonationTrends
+);
+
 export default router;

@@ -193,6 +193,21 @@ export interface IRecentDonor {
   lastDonationAmount: number;
 }
 
+export interface CauseData {
+  causeId: string;
+  causeName: string;
+  totalDonationAmount: number;
+}
+
+export interface CategoryData {
+  category: string;
+  totalDonationAmount: number;
+  causes: CauseData[];
+}
+export interface IOrganizationStatsResponse {
+  totalDonationAmount: number;
+  categories: CategoryData[];
+}
 export interface IDonationAnalytics {
   totalDonatedAmount: IPercentageChange;
   averageDonationPerUser: IPercentageChange;
@@ -205,4 +220,17 @@ export interface IDonationAnalytics {
   donationTypeBreakdown: IDonationTypeBreakdown;
   topDonors: ITopDonor[];
   recentDonors: IRecentDonor[];
+  causeStats: IOrganizationStatsResponse;
+}
+
+export interface MonthlyTrend {
+  month: string;
+  totalAmount: number;
+  totalCount: number;
+  oneTimeCount: number;
+  recurringCount: number;
+  roundupCount: number;
+  oneTimeTotal: number;
+  recurringTotal: number;
+  roundUpTotal: number;
 }
