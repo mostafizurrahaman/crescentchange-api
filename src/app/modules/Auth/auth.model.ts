@@ -153,6 +153,18 @@ authSchema.methods.isJWTIssuedBeforePasswordChanged = function (
   return passwordChangedTime > jwtIssuedTimestamp;
 };
 
+authSchema.methods.ensureActiveStatus = function (this: IAuth) {
+  if (this.status === ORGANIZATION_STATUS.PENDING) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'This account is not verified yet!'
+    );
+  }
+  if (this.status === ORGANIZATION_STATUS.SUSPENDED) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'This account is suspended!');
+  }
+};
+
 const Auth = model<IAuth, IAuthModel>('Auth', authSchema);
 
 export default Auth;

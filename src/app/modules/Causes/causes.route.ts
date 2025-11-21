@@ -31,6 +31,13 @@ router
     CauseController.getCausesByOrganization
   );
 
+router
+  .route('/organization/:organizationId/raised-causes')
+  .get(
+    validateRequest(CauseValidation.getRaisedCausesSchema),
+    CauseController.getRaisedCausesByOrganization
+  );
+
 // Update cause status (admin only) - Separate endpoint for status updates
 router.route('/:id/status').patch(
   auth(ROLE.ADMIN), //: TODO: Update cause status only for admin and organization

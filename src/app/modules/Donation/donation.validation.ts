@@ -108,6 +108,29 @@ const getOrganizationDonationsSchema = z.object({
   }),
 });
 
+const getOrganizationCauseStatsSchema = z.object({
+  params: z.object({
+    organizationId: z
+      .string({
+        error: 'Organization ID is required!',
+      })
+      .min(1, { message: 'Organization ID is required!' }),
+  }),
+  query: z.object({
+    causeId: z
+      .string({
+        error: 'Cause ID is required!',
+      })
+      .min(1, { message: 'Cause ID is required!' }),
+    year: z.coerce
+      .number()
+      .int()
+      .min(1970, { message: 'Year must be 1970 or later' })
+      .max(2100, { message: 'Year must be 2100 or earlier' })
+      .optional(),
+  }),
+});
+
 // 5. Create recurring donation schema (for future use)
 const createRecurringDonationSchema = z.object({
   body: z.object({
@@ -435,6 +458,7 @@ export const DonationValidation = {
   getUserDonationsSchema,
   getDonationByIdSchema,
   getOrganizationDonationsSchema,
+  getOrganizationCauseStatsSchema,
   createRecurringDonationSchema,
   createRoundUpSchema,
   createDonationRecordSchema,
@@ -464,6 +488,9 @@ export type TGetOrganizationDonationsParams = z.infer<
 >;
 export type TGetOrganizationDonationsQuery = z.infer<
   typeof getOrganizationDonationsSchema.shape.query
+>;
+export type TGetOrganizationCauseStatsQuery = z.infer<
+  typeof getOrganizationCauseStatsSchema.shape.query
 >;
 export type TCreateDonationRecordPayload = z.infer<
   typeof createDonationRecordSchema.shape.body

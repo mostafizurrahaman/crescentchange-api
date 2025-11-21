@@ -1,6 +1,5 @@
 import { model, now, Schema } from 'mongoose';
 import { IORGANIZATION } from './organization.interface';
-import { optional } from 'zod';
 
 const organizationSchema = new Schema<IORGANIZATION>(
   {

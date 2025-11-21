@@ -6,8 +6,8 @@ import { ExtendedRequest } from '../../types';
 import { DonationService } from './donation.service';
 import { TRetryFailedPaymentParams } from './donation.validation';
 import Client from '../Client/client.model';
-import { isValidFilter } from '../../lib/filter-helper';
 import { ROLE } from '../Auth/auth.constant';
+import { OrganizationModel } from '../Organization/organization.model';
 
 // 1. Create one-time donation with Payment Intent
 const createOneTimeDonation = asyncHandler(
@@ -157,6 +157,54 @@ const getOrganizationDonations = asyncHandler(
   }
 );
 
+const getOrganizationCauseStats = asyncHandler(
+  async (req: ExtendedRequest, res: Response) => {
+    const userId = req.user?._id.toString();
+    const userRole = req.user?.role;
+
+    if (!userId) {
+      throw new AppError(httpStatus.UNAUTHORIZED, 'User not authenticated');
+    }
+
+    const { organizationId } = req.params;
+    const { causeId, year } = req.query as { causeId?: string; year?: string };
+
+    if (!causeId) {
+      throw new AppError(httpStatus.BAD_REQUEST, 'causeId is required');
+    }
+
+    const organization = await OrganizationModel.findById(organizationId);
+
+    if (!organization) {
+      throw new AppError(httpStatus.NOT_FOUND, 'Organization not found');
+    }
+
+    if (
+      userRole === ROLE.ORGANIZATION &&
+      organization.auth.toString() !== userId
+    ) {
+      throw new AppError(
+        httpStatus.FORBIDDEN,
+        "You do not have permission to access this organization's stats"
+      );
+    }
+
+    const targetYear = year ? Number(year) : new Date().getUTCFullYear();
+
+    const stats = await DonationService.getOrganizationCauseMonthlyStats(
+      organizationId,
+      causeId,
+      targetYear
+    );
+
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      message: 'Cause stats retrieved successfully',
+      data: stats,
+    });
+  }
+);
+
 // 7. Get donation full status with payment info
 const getDonationFullStatus = asyncHandler(
   async (req: ExtendedRequest, res: Response) => {
@@ -194,7 +242,6 @@ const getDonationFullStatus = asyncHandler(
       );
     }
 
-    console.log(result);
     // Verify donation belongs to user
     if (result.donation.donor._id?.toString() !== donor._id?.toString()) {
       throw new AppError(httpStatus.FORBIDDEN, 'Access denied');
@@ -323,7 +370,13 @@ const getDonationAnalyticsController = asyncHandler(
     }
 
     // Get filter and year from validated query
-    const { filter, year } = (req as any).validatedQuery;
+    type DonationAnalyticsQuery = {
+      filter: 'today' | 'this_week' | 'this_month';
+      year?: number;
+    };
+    const { filter, year } = (
+      req as ExtendedRequest & { validatedQuery: DonationAnalyticsQuery }
+    ).validatedQuery;
 
     let organizationId: string | undefined;
 
@@ -400,8 +453,9 @@ export const DonationController = {
   getUserDonations,
   getDonationById,
   getOrganizationDonations,
+  getOrganizationCauseStats,
 
   // Analytics endpoint
   getDonationAnalyticsController,
-  getOrganizationYearlyDonationTrends
+  getOrganizationYearlyDonationTrends,
 };

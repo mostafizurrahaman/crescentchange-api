@@ -55,6 +55,13 @@ router.get(
   DonationController.getOrganizationDonations
 );
 
+router.get(
+  '/organization/:organizationId/cause-stats',
+  auth(ROLE.ORGANIZATION, ROLE.ADMIN),
+  validateRequest(DonationValidation.getOrganizationCauseStatsSchema),
+  DonationController.getOrganizationCauseStats
+);
+
 // 7. Cancel donation
 router.post(
   '/:id/cancel',

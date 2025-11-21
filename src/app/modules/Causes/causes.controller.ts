@@ -89,6 +89,49 @@ const getCausesByOrganization = asyncHandler(async (req, res) => {
   });
 });
 
+const getRaisedCausesByOrganization = asyncHandler(async (req, res) => {
+  const { organizationId } = req.params;
+  const {
+    startMonth,
+    endMonth,
+    page = '1',
+    limit = '10',
+    sortBy = 'totalDonationAmount',
+    sortOrder = 'desc',
+  } = req.query as {
+    startMonth: string;
+    endMonth: string;
+    page?: string;
+    limit?: string;
+    sortBy?: 'totalDonationAmount' | 'name' | 'category';
+    sortOrder?: 'asc' | 'desc';
+  };
+
+  const result = await CauseService.getRaisedCausesByOrganizationFromDB(
+    organizationId,
+    startMonth,
+    endMonth,
+    {
+      page: Number(page),
+      limit: Number(limit),
+      sortBy,
+      sortOrder,
+    }
+  );
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    message: 'Raised causes retrieved successfully!',
+    data: result.raisedCauses,
+    meta: {
+      page: result.meta.page,
+      limit: result.meta.limit,
+      total: result.meta.total,
+      totalPage: result.meta.totalPage,
+    },
+  });
+});
+
 // Update cause
 const updateCause = asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -173,6 +216,7 @@ export const CauseController = {
   getCauses,
   getCauseById,
   getCausesByOrganization,
+  getRaisedCausesByOrganization,
   updateCause,
   deleteCause,
   getCauseCategories,

@@ -196,7 +196,7 @@ export const updateOrganizationImage = async (
     const accessTokenPayload = {
       id: user?._id.toString(),
       name: updatedOrganization?.name,
-      image: updatedOrganization?.coverImage!,
+      image: updatedOrganization?.coverImage || '',
       email: user?.email,
       role: user?.role,
       isProfile: user?.isProfile,

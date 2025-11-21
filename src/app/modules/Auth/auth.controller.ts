@@ -67,7 +67,16 @@ const createProfile = asyncHandler(async (req, res) => {
 
 // 6. updatePhoto
 const updatePhoto = asyncHandler(async (req, res) => {
-  const result = await AuthService.updatePhotoIntoDB(req.user, req.file);
+  const files = (req.files as Record<string, Express.Multer.File[]>) || {};
+  const uploadedFile =
+    req.file ||
+    files.file?.[0] ||
+    files.image?.[0] ||
+    files.photo?.[0] ||
+    files.profileImage?.[0] ||
+    files.avatar?.[0];
+
+  const result = await AuthService.updatePhotoIntoDB(req.user, uploadedFile);
 
   sendResponse(res, {
     statusCode: httpStatus.OK,

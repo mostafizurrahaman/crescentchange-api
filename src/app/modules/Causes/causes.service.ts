@@ -1,12 +1,176 @@
 // src/app/modules/Causes/causes.service.ts
 import httpStatus from 'http-status';
-import { startSession } from 'mongoose';
+import { startSession, Types } from 'mongoose';
 import { AppError } from '../../utils';
 import QueryBuilder from '../../builders/QueryBuilder';
 import Cause from './causes.model';
-import { ICause, CauseCategoryType, CauseStatusType } from './causes.interface';
+import {
+  ICause,
+  CauseCategoryType,
+  CauseStatusType,
+  IRaisedCauseSummary,
+} from './causes.interface';
 import Organization from '../Organization/organization.model';
 import { CAUSE_CATEGORY_TYPE } from './causes.constant';
+import Donation from '../Donation/donation.model';
+
+const parseMonthInput = (month: string, boundary: 'start' | 'end') => {
+  const [yearStr, monthStr] = month.split('-');
+  const year = Number(yearStr);
+  const monthIndex = Number(monthStr);
+
+  if (
+    !yearStr ||
+    !monthStr ||
+    Number.isNaN(year) ||
+    Number.isNaN(monthIndex) ||
+    monthIndex < 1 ||
+    monthIndex > 12
+  ) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Month must be in YYYY-MM format!'
+    );
+  }
+
+  if (boundary === 'start') {
+    return new Date(Date.UTC(year, monthIndex - 1, 1, 0, 0, 0, 0));
+  }
+
+  // end boundary -> set to last moment of month
+  const endDate = new Date(Date.UTC(year, monthIndex, 0, 23, 59, 59, 999));
+  return endDate;
+};
+
+const formatMonthLabel = (date: Date) =>
+  date.toLocaleString('en-US', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+
+type RaisedCausesSortField = 'totalDonationAmount' | 'name' | 'category';
+
+type RaisedCausesQueryOptions = {
+  page?: number;
+  limit?: number;
+  sortBy?: RaisedCausesSortField;
+  sortOrder?: 'asc' | 'desc';
+};
+
+type RaisedCauseAggregateResult = {
+  causeId: Types.ObjectId;
+  name: string;
+  category: CauseCategoryType;
+  totalDonationAmount: number;
+};
+
+const getRaisedCausesByOrganizationFromDB = async (
+  organizationId: string,
+  startMonth: string,
+  endMonth: string,
+  options: RaisedCausesQueryOptions = {}
+): Promise<{
+  raisedCauses: IRaisedCauseSummary[];
+  meta: { page: number; limit: number; total: number; totalPage: number };
+}> => {
+  // Validate organization
+  const organization = await Organization.findById(organizationId);
+  if (!organization) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Organization not found!');
+  }
+
+  const startDate = parseMonthInput(startMonth, 'start');
+  const endDate = parseMonthInput(endMonth, 'end');
+
+  if (startDate > endDate) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Start month must be before end month!'
+    );
+  }
+
+  const page = options.page && options.page > 0 ? options.page : 1;
+  const limit = options.limit && options.limit > 0 ? options.limit : 10;
+
+  const allowedSortFields: RaisedCausesSortField[] = [
+    'totalDonationAmount',
+    'name',
+    'category',
+  ];
+  const isValidSortField = (field: unknown): field is RaisedCausesSortField =>
+    typeof field === 'string' &&
+    allowedSortFields.includes(field as RaisedCausesSortField);
+
+  const sortField: RaisedCausesSortField = isValidSortField(options.sortBy)
+    ? options.sortBy!
+    : 'totalDonationAmount';
+  const sortDirection = options.sortOrder === 'asc' ? 1 : -1;
+  const skip = (page - 1) * limit;
+
+  const aggregatedCauses = await Donation.aggregate([
+    {
+      $match: {
+        organization: new Types.ObjectId(organizationId),
+        status: 'completed',
+        donationDate: { $gte: startDate, $lte: endDate },
+        cause: { $exists: true, $ne: null },
+      },
+    },
+    {
+      $group: {
+        _id: '$cause',
+        totalDonationAmount: { $sum: '$amount' },
+      },
+    },
+    {
+      $lookup: {
+        from: 'causes',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'cause',
+      },
+    },
+    { $unwind: '$cause' },
+    {
+      $project: {
+        causeId: '$_id',
+        name: '$cause.name',
+        category: '$cause.category',
+        totalDonationAmount: 1,
+      },
+    },
+    { $sort: { [sortField]: sortDirection } },
+    {
+      $facet: {
+        data: [{ $skip: skip }, { $limit: limit }],
+        total: [{ $count: 'count' }],
+      },
+    },
+  ]);
+
+  const data =
+    (aggregatedCauses[0]?.data as RaisedCauseAggregateResult[]) ?? [];
+  const total = aggregatedCauses[0]?.total?.[0]?.count ?? 0;
+
+  const raisedCauses = data.map((cause) => ({
+    causeId: cause.causeId.toString(),
+    name: cause.name,
+    category: cause.category,
+    totalDonationAmount: cause.totalDonationAmount,
+    startMonth: formatMonthLabel(startDate),
+    endMonth: formatMonthLabel(endDate),
+  }));
+
+  const meta = {
+    page,
+    limit,
+    total,
+    totalPage: total > 0 ? Math.ceil(total / limit) : 0,
+  };
+
+  return { raisedCauses, meta };
+};
 
 // Define searchable fields (fixed from 'notes' to 'description')
 const causeSearchableFields = ['name', 'description'];
@@ -211,6 +375,7 @@ export const CauseService = {
   getCauseByIdFromDB,
   getCausesFromDB,
   getCausesByOrganizationFromDB,
+  getRaisedCausesByOrganizationFromDB,
   updateCauseIntoDB,
   deleteCauseFromDB,
   getCauseCategoriesFromDB,

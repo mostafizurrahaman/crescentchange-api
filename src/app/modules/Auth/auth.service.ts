@@ -1,5 +1,5 @@
 import fs from 'fs';
-import httpStatus, { status } from 'http-status';
+import httpStatus from 'http-status';
 import { startSession } from 'mongoose';
 import config from '../../config';
 import {
@@ -21,7 +21,6 @@ import { updateProfileImage } from './auth.utils';
 import z from 'zod';
 import jwt, { JwtPayload, SignOptions } from 'jsonwebtoken';
 import { ORGANIZATION_STATUS } from '../Organization/organization.constants';
-import { is } from 'zod/v4/locales';
 
 const OTP_EXPIRY_MINUTES =
   Number.parseInt(config.jwt.otpSecretExpiresIn as string, 10) || 5;
@@ -214,15 +213,7 @@ const signinIntoDB = async (payload: {
     throw new AppError(httpStatus.BAD_REQUEST, 'This account is not active!');
   }
 
-  if (user.status === ORGANIZATION_STATUS.PENDING) {
-    throw new AppError(
-      httpStatus.BAD_REQUEST,
-      'This account is not verified yet!'
-    );
-  }
-  if (user.status === ORGANIZATION_STATUS.SUSPENDED) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'This account not suspended!');
-  }
+  user.ensureActiveStatus();
 
   if (user.isDeleted) {
     throw new AppError(httpStatus.BAD_REQUEST, 'This account is deleted!');
@@ -290,15 +281,7 @@ const createProfileIntoDB = async (
     );
   }
 
-  if (user.status === ORGANIZATION_STATUS.PENDING) {
-    throw new AppError(
-      httpStatus.BAD_REQUEST,
-      'This account is not verified yet!'
-    );
-  }
-  if (user.status === ORGANIZATION_STATUS.SUSPENDED) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'This account is suspended!');
-  }
+  user.ensureActiveStatus();
 
   // Destructure relevant fields from the payload
   const {
@@ -635,15 +618,7 @@ const changePasswordIntoDB = async (
     throw new AppError(httpStatus.BAD_REQUEST, 'This account is deleted!');
   }
 
-  if (user.status === ORGANIZATION_STATUS.PENDING) {
-    throw new AppError(
-      httpStatus.BAD_REQUEST,
-      'This account is not verified yet!'
-    );
-  }
-  if (user.status === ORGANIZATION_STATUS.SUSPENDED) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'This account is suspended!');
-  }
+  user.ensureActiveStatus();
 
   const isCredentialsCorrect = await user.isPasswordMatched(
     payload.oldPassword
@@ -724,15 +699,7 @@ const forgotPassword = async (email: string) => {
     throw new AppError(httpStatus.BAD_REQUEST, 'This account is deleted!');
   }
 
-  if (user.status === ORGANIZATION_STATUS.PENDING) {
-    throw new AppError(
-      httpStatus.BAD_REQUEST,
-      'This account is not verified yet!'
-    );
-  }
-  if (user.status === ORGANIZATION_STATUS.SUSPENDED) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'This account is suspended!');
-  }
+  user.ensureActiveStatus();
 
   const now = new Date();
 
@@ -817,15 +784,7 @@ const sendForgotPasswordOtpAgain = async (forgotPassToken: string) => {
     throw new AppError(httpStatus.BAD_REQUEST, 'This account is deleted!');
   }
 
-  if (user.status === ORGANIZATION_STATUS.PENDING) {
-    throw new AppError(
-      httpStatus.BAD_REQUEST,
-      'This account is not verified yet!'
-    );
-  }
-  if (user.status === ORGANIZATION_STATUS.SUSPENDED) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'This account is suspended!');
-  }
+  user.ensureActiveStatus();
 
   const now = new Date();
 
@@ -905,15 +864,7 @@ const verifyOtpForForgotPassword = async (payload: {
     throw new AppError(httpStatus.BAD_REQUEST, 'This account is deleted!');
   }
 
-  if (user.status === ORGANIZATION_STATUS.PENDING) {
-    throw new AppError(
-      httpStatus.BAD_REQUEST,
-      'This account is not verified yet!'
-    );
-  }
-  if (user.status === ORGANIZATION_STATUS.SUSPENDED) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'This account is suspended!');
-  }
+  user.ensureActiveStatus();
 
   // Check if OTP expired
   if (!user.otp || !user.otpExpiry || Date.now() > user.otpExpiry.getTime()) {
@@ -1001,15 +952,7 @@ const resetPasswordIntoDB = async (
     throw new AppError(httpStatus.BAD_REQUEST, 'This account is deleted!');
   }
 
-  if (user.status === ORGANIZATION_STATUS.PENDING) {
-    throw new AppError(
-      httpStatus.BAD_REQUEST,
-      'This account is not verified yet!'
-    );
-  }
-  if (user.status === ORGANIZATION_STATUS.SUSPENDED) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'This account is suspended!');
-  }
+  user.ensureActiveStatus();
 
   user.password = newPassword;
   await user.save({ validateBeforeSave: true });

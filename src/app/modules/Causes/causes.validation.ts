@@ -77,6 +77,38 @@ const getCausesByOrganizationSchema = z.object({
     .optional(),
 });
 
+const getRaisedCausesSchema = z.object({
+  params: z.object({
+    organizationId: z.string({
+      message: 'Organization ID is required!',
+    }),
+  }),
+  query: z
+    .object({
+      startMonth: z
+        .string({
+          message: 'startMonth is required in YYYY-MM format',
+        })
+        .regex(/^\d{4}-(0[1-9]|1[0-2])$/, {
+          message: 'startMonth must be in YYYY-MM format',
+        }),
+      endMonth: z
+        .string({
+          message: 'endMonth is required in YYYY-MM format',
+        })
+        .regex(/^\d{4}-(0[1-9]|1[0-2])$/, {
+          message: 'endMonth must be in YYYY-MM format',
+        }),
+      page: z.coerce.number().int().positive().default(1).optional(),
+      limit: z.coerce.number().int().positive().max(100).default(10).optional(),
+      sortBy: z
+        .enum(['totalDonationAmount', 'name', 'category'] as const)
+        .optional(),
+      sortOrder: z.enum(['asc', 'desc']).optional(),
+    })
+    .strict(),
+});
+
 // Get causes query schema with all filters
 const getCausesQuerySchema = z.object({
   query: z
@@ -120,6 +152,7 @@ export const CauseValidation = {
   updateCauseSchema,
   getCauseByIdSchema,
   getCausesByOrganizationSchema,
+  getRaisedCausesSchema,
   getCausesQuerySchema,
   updateCauseStatusSchema,
 };

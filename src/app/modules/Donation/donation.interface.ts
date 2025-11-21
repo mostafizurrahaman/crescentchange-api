@@ -208,6 +208,10 @@ export interface IOrganizationStatsResponse {
   totalDonationAmount: number;
   categories: CategoryData[];
 }
+export interface ICauseMonthlyStat {
+  month: string;
+  totalAmount: number;
+}
 export interface IDonationAnalytics {
   totalDonatedAmount: IPercentageChange;
   averageDonationPerUser: IPercentageChange;

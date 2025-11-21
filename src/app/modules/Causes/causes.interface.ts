@@ -31,3 +31,12 @@ export interface ICause extends Document {
   status: CauseStatusType; // Enum for status with Pending, suspended, Verified
   organization: Types.ObjectId;
 }
+
+export interface IRaisedCauseSummary {
+  causeId: string;
+  name: string;
+  category: CauseCategoryType;
+  totalDonationAmount: number;
+  startMonth: string;
+  endMonth: string;
+}

@@ -1,7 +1,5 @@
 import { Document, Model, ObjectId } from 'mongoose';
 import { TRole } from './auth.constant';
-import { organizationStatusValues } from '../Organization/organization.constants';
-
 export type OrganizationStatusType = 'pending' | 'suspended' | 'verified';
 
 // Instance methods
@@ -35,6 +33,7 @@ export interface IAuth extends Document {
   isJWTIssuedBeforePasswordChanged(
     jwtIssuedTimestamp: number | undefined
   ): boolean;
+  ensureActiveStatus(): void;
 }
 
 // Static methods

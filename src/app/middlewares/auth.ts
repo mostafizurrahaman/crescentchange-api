@@ -35,15 +35,7 @@ const auth = (...requiredRoles: TRole[]) => {
       throw new AppError(httpStatus.UNAUTHORIZED, 'You are not authorized!');
     }
 
-    if (user.status === ORGANIZATION_STATUS.PENDING) {
-      throw new AppError(
-        httpStatus.BAD_REQUEST,
-        'This account is not verified yet!'
-      );
-    }
-    if (user.status === ORGANIZATION_STATUS.SUSPENDED) {
-      throw new AppError(httpStatus.BAD_REQUEST, 'This account is suspended!');
-    }
+    user.ensureActiveStatus();
 
     if (!user.isVerifiedByOTP) {
       throw new AppError(httpStatus.UNAUTHORIZED, 'You are not authorized!');

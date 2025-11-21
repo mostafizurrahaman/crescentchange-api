@@ -8,6 +8,7 @@ import {
   IDonationAnalytics,
   IDonationModel,
   IDonationTypeBreakdown,
+  ICauseMonthlyStat,
   IOrganizationStatsResponse,
   IPercentageChange,
   IRecentDonor,
@@ -637,7 +638,6 @@ const cancelDonation = async (
 
   // Find donation
   const donation = await Donation.findById(donationId);
-  console.log(donation);
   if (!donation) {
     throw new AppError(httpStatus.NOT_FOUND, 'Donation not found!');
   }
@@ -761,10 +761,6 @@ const getTotalDonatedAmount = async (
   organizationId?: string
 ): Promise<IPercentageChange> => {
   const baseQuery = buildBaseQuery(organizationId);
-  console.log('Base Query for Total Donated Amount:', baseQuery, {
-    current,
-    previous,
-  });
 
   const [currentResult, previousResult] = await Promise.all([
     Donation.aggregate([
@@ -1259,6 +1255,78 @@ const getOrganizationCauseStats = async (
   };
 };
 
+type CauseMonthlyAggregateResult = {
+  _id: { month: number };
+  totalAmount: number;
+};
+
+const getOrganizationCauseMonthlyStats = async (
+  organizationId: string,
+  causeId: string,
+  year: number
+): Promise<ICauseMonthlyStat[]> => {
+  if (!Number.isInteger(year) || year < 1970 || year > 2100) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Year must be a valid integer between 1970 and 2100!'
+    );
+  }
+
+  const [organization, cause] = await Promise.all([
+    Organization.findById(organizationId),
+    Cause.findById(causeId),
+  ]);
+
+  if (!organization) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Organization not found');
+  }
+
+  if (!cause) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Cause not found');
+  }
+
+  if (cause.organization.toString() !== organization._id.toString()) {
+    throw new AppError(
+      httpStatus.FORBIDDEN,
+      'Cause does not belong to the specified organization'
+    );
+  }
+
+  const startDate = new Date(Date.UTC(year, 0, 1, 0, 0, 0, 0));
+  const endDate = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
+
+  const stats = (await Donation.aggregate([
+    {
+      $match: {
+        organization: organization._id,
+        cause: cause._id,
+        status: 'completed',
+        donationDate: { $gte: startDate, $lte: endDate },
+      },
+    },
+    {
+      $group: {
+        _id: { month: { $month: '$donationDate' } },
+        totalAmount: { $sum: '$amount' },
+      },
+    },
+  ])) as CauseMonthlyAggregateResult[];
+
+  const monthTotals = new Map<number, number>();
+  stats.forEach((stat) => {
+    monthTotals.set(stat._id.month, stat.totalAmount);
+  });
+
+  return monthAbbreviations.map((month, index) => {
+    const monthIndex = index + 1;
+    const amount = monthTotals.get(monthIndex) ?? 0;
+    return {
+      month: `${month}-${year}`,
+      totalAmount: Number(amount.toFixed(2)),
+    };
+  });
+};
+
 /**
  * Get complete donation analytics dashboard data
  */
@@ -1377,7 +1445,6 @@ const getOrganizationYearlyTrends = async (
     },
     { $sort: { _id: 1 } },
   ]);
-  console.log({ monthlyData });
 
   // Initialize all months with zero values
   const monthlyTrends: MonthlyTrend[] = monthAbbreviations.map((month) => ({
@@ -1434,6 +1501,7 @@ export const DonationService = {
 
   // Analytics functions
   getDonationAnalytics,
+  getOrganizationCauseMonthlyStats,
   getTotalDonatedAmount,
   getAverageDonationPerUser,
   getTotalDonors,
