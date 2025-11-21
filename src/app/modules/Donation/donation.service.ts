@@ -6,6 +6,7 @@ import {
   IDonation,
   IDonationAnalytics,
   IDonationModel,
+  IDonationTypeBreakdown,
   IPercentageChange,
   IRecentDonor,
   ITopDonor,
@@ -26,6 +27,9 @@ import {
   formatCurrency,
   getDateRanges,
 } from '../../lib/filter-helper';
+import { IAuth } from '../Auth/auth.interface';
+import Cause from '../Causes/causes.model';
+import { CAUSE_STATUS_TYPE } from '../Causes/causes.constant';
 
 // Helper function to generate unique idempotency key
 const generateIdempotencyKey = (): string => {
@@ -82,6 +86,18 @@ const createOneTimeDonation = async (
   // Validate causeId is provided
   if (!causeId || causeId.trim() === '') {
     throw new AppError(httpStatus.BAD_REQUEST, 'Cause ID is required!');
+  }
+
+  // Validate cause exists and is verified
+  const cause = await Cause.findById(causeId);
+  if (!cause) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Cause not found!');
+  }
+  if (cause.status !== CAUSE_STATUS_TYPE.VERIFIED) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Cannot create donation for cause with status: ${cause.status}. Only verified causes can receive donations.`
+    );
   }
 
   // Verify payment method exists and belongs to user
@@ -981,16 +997,16 @@ const getDonationTypeBreakdown = async (
       },
     ]),
   ]);
-  console.log({
-    currentData,
-    previousData,
-  });
 
   const currentMap = new Map(currentData.map((d) => [d._id, d.total]));
   const previousMap = new Map(previousData.map((d) => [d._id, d.total]));
 
   const types = ['round-up', 'recurring', 'one-time'];
-  const breakdown: any = {};
+  const breakdown: IDonationTypeBreakdown = {
+    'round-up': { value: 0, percentageChange: 0, isIncrease: false },
+    recurring: { value: 0, percentageChange: 0, isIncrease: false },
+    'one-time': { value: 0, percentageChange: 0, isIncrease: false },
+  };
 
   types.forEach((type) => {
     const currentAmount = currentMap.get(type) || 0;
@@ -998,7 +1014,7 @@ const getDonationTypeBreakdown = async (
 
     const change = calculatePercentageChange(currentAmount, previousAmount);
 
-    breakdown[type] = {
+    breakdown[type as keyof IDonationTypeBreakdown] = {
       value: formatCurrency(currentAmount),
       ...change,
     };
@@ -1057,6 +1073,7 @@ const getTopDonors = async (
   );
 
   // Get donor details
+  // ✅ FIX: donorIds are Client._id values (from donation.donor field), not Auth._id
   const donorIds = currentDonors.map((d) => d._id);
   const clients = await Client.find({ _id: { $in: donorIds } }).populate(
     'auth',
@@ -1074,8 +1091,8 @@ const getTopDonors = async (
     return {
       donor: {
         _id: donorId,
-        name: client?.name || 'Unknown',
-        email: (client?.auth as any)?.email || '',
+        name: client?.name as string,
+        email: (client?.auth as unknown as IAuth)?.email as string,
         image: client?.image,
       },
       totalAmount: formatCurrency(donor.totalAmount),
@@ -1116,6 +1133,7 @@ const getRecentDonors = async (
   ]);
 
   // Get donor details
+  // ✅ FIX: donorIds are Client._id values (from donation.donor field), not Auth._id
   const donorIds = recentDonations.map((d) => d._id);
   const clients = await Client.find({ _id: { $in: donorIds } }).populate(
     'auth',
@@ -1131,8 +1149,8 @@ const getRecentDonors = async (
     return {
       donor: {
         _id: donorId,
-        name: client?.name || 'Unknown',
-        email: (client?.auth as any)?.email || '',
+        name: client?.name as string,
+        email: (client?.auth as unknown as IAuth)?.email as string,
         image: client?.image,
       },
       lastDonationDate: donation.lastDonationDate,

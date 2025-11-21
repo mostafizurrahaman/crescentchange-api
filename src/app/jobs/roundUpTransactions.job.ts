@@ -1,6 +1,9 @@
 import cron from 'node-cron';
 import mongoose from 'mongoose';
-import { RoundUpModel, IRoundUpDocument } from '../modules/RoundUp/roundUp.model';
+import {
+  RoundUpModel,
+  IRoundUpDocument,
+} from '../modules/RoundUp/roundUp.model';
 import { roundUpService } from '../modules/RoundUp/roundUp.service';
 import { roundUpTransactionService } from '../modules/RoundUpTransaction/roundUpTransaction.service';
 import { cronJobTracker } from './cronJobTracker';
@@ -8,6 +11,9 @@ import { StripeService } from '../modules/Stripe/stripe.service';
 import { RoundUpTransactionModel } from '../modules/RoundUpTransaction/roundUpTransaction.model';
 import Donation from '../modules/Donation/donation.model';
 import { IAuth } from '../modules/Auth/auth.interface';
+import Client from '../modules/Client/client.model';
+import { AppError } from '../utils';
+import httpStatus from 'http-status';
 
 interface IPopulatedRoundUpConfig extends Omit<IRoundUpDocument, 'user'> {
   user: IAuth;
@@ -98,9 +104,20 @@ const processEndOfMonthDonations = async () => {
         continue;
       }
 
+      // ✅ Find Client by auth ID (userId is Auth._id)
+      const donor = await Client.findOne({ auth: userId }).session(session);
+      if (!donor?._id) {
+        console.error(
+          `   ❌ Donor not found for user ${userId} in RoundUp ${config._id}`
+        );
+        await session.abortTransaction();
+        failureCount++;
+        continue;
+      }
+
       // STEP 1: Create Donation record with PENDING status
       const donation = await Donation.create({
-        donor: userId,
+        donor: donor._id,
         organization: config.organization,
         cause: config.cause,
         donationType: 'round-up',
@@ -236,11 +253,12 @@ export const startRoundUpProcessingCron = () => {
       }
 
       // Step 2: Perform regular transaction sync for all active users
-      const activeRoundUpConfigs = await RoundUpModel.find<IPopulatedRoundUpConfig>({
-        isActive: true,
-        enabled: true,
-        bankConnection: { $ne: null },
-      }).populate('user');
+      const activeRoundUpConfigs =
+        await RoundUpModel.find<IPopulatedRoundUpConfig>({
+          isActive: true,
+          enabled: true,
+          bankConnection: { $ne: null },
+        }).populate('user');
 
       if (activeRoundUpConfigs.length === 0) {
         console.log('✅ No active round-ups to sync.');
@@ -265,9 +283,7 @@ export const startRoundUpProcessingCron = () => {
         // We check the status again in case the month-end job just processed this user
         if (config.status === 'processing') {
           console.log(
-            `\n⏭️ Skipping sync for user ${
-              config.user._id
-            }: donation is already processing.`
+            `\n⏭️ Skipping sync for user ${config.user._id}: donation is already processing.`
           );
           continue;
         }
@@ -350,7 +366,8 @@ export const startRoundUpProcessingCron = () => {
       });
     } catch (error: unknown) {
       console.error('❌ Critical error in RoundUp processing cron job:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
       cronJobTracker.failExecution(JOB_NAME, errorMessage);
     } finally {
       isProcessing = false;
@@ -398,11 +415,12 @@ export const manualTriggerRoundUpProcessing = async (
     }
 
     // Step 2: Perform regular transaction sync for all active users
-    const activeRoundUpConfigs = await RoundUpModel.find<IPopulatedRoundUpConfig>({
-      isActive: true,
-      enabled: true,
-      bankConnection: { $ne: null },
-    }).populate('user');
+    const activeRoundUpConfigs =
+      await RoundUpModel.find<IPopulatedRoundUpConfig>({
+        isActive: true,
+        enabled: true,
+        bankConnection: { $ne: null },
+      }).populate('user');
 
     if (activeRoundUpConfigs.length === 0) {
       console.log('✅ No active round-ups to sync.');
@@ -430,9 +448,7 @@ export const manualTriggerRoundUpProcessing = async (
       // We check the status again in case the month-end job just processed this user
       if (config.status === 'processing') {
         console.log(
-          `\n⏭️ Skipping sync for user ${
-            config.user._id
-          }: donation is already processing.`
+          `\n⏭️ Skipping sync for user ${config.user._id}: donation is already processing.`
         );
         continue;
       }
@@ -520,7 +536,8 @@ export const manualTriggerRoundUpProcessing = async (
     };
   } catch (error: unknown) {
     console.error('❌ Critical error in RoundUp processing cron job:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
     cronJobTracker.failExecution(JOB_NAME, errorMessage);
     return {
       success: false,

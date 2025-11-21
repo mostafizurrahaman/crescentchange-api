@@ -9,10 +9,12 @@ import { RoundUpTransactionModel } from '../RoundUpTransaction/roundUpTransactio
 import { IRoundUpTransaction } from '../RoundUpTransaction/roundUpTransaction.interface';
 import { StatusCodes } from 'http-status-codes';
 import Cause from '../Causes/causes.model';
+import { CAUSE_STATUS_TYPE } from '../Causes/causes.constant';
 import { AppError } from '../../utils';
 import httpStatus from 'http-status';
 import Auth from '../Auth/auth.model';
 import PaymentMethod from '../PaymentMethod/paymentMethod.model';
+import Client from '../Client/client.model';
 
 // Individual service functions
 const savePlaidConsent = async (
@@ -380,13 +382,46 @@ const processMonthlyDonation = async (
       };
     }
 
+    // Validate cause exists and is verified
+    const cause = await Cause.findById(roundUpConfig.cause).session(session);
+    if (!cause) {
+      await session.abortTransaction();
+      return {
+        success: false,
+        message: 'Cause not found!',
+        data: null,
+        statusCode: StatusCodes.NOT_FOUND,
+      };
+    }
+    if (cause.status !== CAUSE_STATUS_TYPE.VERIFIED) {
+      await session.abortTransaction();
+      return {
+        success: false,
+        message: `Cannot create donation for cause with status: ${cause.status}. Only verified causes can receive donations.`,
+        data: null,
+        statusCode: StatusCodes.BAD_REQUEST,
+      };
+    }
+
+    // ✅ Find Client by auth ID (userId is Auth._id)
+    const donor = await Client.findOne({ auth: userId }).session(session);
+    if (!donor?._id) {
+      await session.abortTransaction();
+      return {
+        success: false,
+        message: 'Donor not found!',
+        data: null,
+        statusCode: StatusCodes.NOT_FOUND,
+      };
+    }
+
     // ✅ NEW: Generate unique donation ID
     const donationUniqueId = new Types.ObjectId();
 
     // ✅ NEW: Create Donation record FIRST with status 'pending'
     const donation = new Donation({
       _id: donationUniqueId,
-      donor: userId,
+      donor: new Types.ObjectId(donor._id),
       organization: roundUpConfig.organization,
       cause: roundUpConfig.cause,
       donationType: 'round-up',

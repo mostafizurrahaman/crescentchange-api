@@ -24,6 +24,7 @@ export interface IRoundUp {
   lastSuccessfulDonation?: Date;
   lastDonationFailure?: Date;
   lastDonationFailureReason?: string;
+  cancelReason?: string;
   createdAt?: Date;
   updatedAt?: Date;
 }

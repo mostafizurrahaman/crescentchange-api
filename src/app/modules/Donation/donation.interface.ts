@@ -163,9 +163,9 @@ export interface IPercentageChange {
 }
 
 export interface IDonationTypeBreakdown {
-  roundUp: IPercentageChange;
+  'round-up': IPercentageChange;
   recurring: IPercentageChange;
-  oneTime: IPercentageChange;
+  'one-time': IPercentageChange;
 }
 
 export interface ITopDonor {

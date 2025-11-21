@@ -110,6 +110,10 @@ const RoundUpSchema = new Schema(
       type: String,
       maxlength: [500, 'Failure reason must not exceed 500 characters'],
     },
+    cancelReason: {
+      type: String,
+      maxlength: [500, 'Failure reason must not exceed 500 characters'],
+    },
   },
   {
     timestamps: true,
@@ -216,6 +220,7 @@ RoundUpSchema.methods.cancelRoundUp = async function (
   _reason?: string
 ): Promise<void> {
   this.status = 'cancelled';
+  this.cancelReason = _reason;
   this.enabled = false;
   await this.save();
 };

@@ -6,6 +6,9 @@ import httpStatus from 'http-status';
 import { OrganizationModel } from '../Organization/organization.model';
 
 import { Donation } from '../Donation/donation.model';
+import Cause from '../Causes/causes.model';
+import { CAUSE_STATUS_TYPE } from '../Causes/causes.constant';
+import Client from '../Client/client.model';
 import {
   ICheckoutSessionRequest,
   ICheckoutSessionResponse,
@@ -808,6 +811,20 @@ const processRoundUpDonation = async (payload: {
       );
     }
 
+    // Validate cause exists and is verified (if causeId is provided)
+    if (payload.causeId) {
+      const cause = await Cause.findById(payload.causeId);
+      if (!cause) {
+        throw new AppError(httpStatus.NOT_FOUND, 'Cause not found!');
+      }
+      if (cause.status !== CAUSE_STATUS_TYPE.VERIFIED) {
+        throw new AppError(
+          httpStatus.BAD_REQUEST,
+          `Cannot create donation for cause with status: ${cause.status}. Only verified causes can receive donations.`
+        );
+      }
+    }
+
     // For round-up donations, we'll use a direct charge with transfer data
     // This ensures funds go directly to the charity
     const transfer = await stripe.transfers.create({
@@ -826,9 +843,15 @@ const processRoundUpDonation = async (payload: {
       },
     });
 
+    // ✅ Find Client by auth ID (payload.userId is Auth._id)
+    const donor = await Client.findOne({ auth: payload.userId });
+    if (!donor?._id) {
+      throw new AppError(httpStatus.NOT_FOUND, 'Donor not found!');
+    }
+
     // Create donation record in main donation model
     const mainDonation = await Donation.create({
-      donor: payload.userId, // Assume userId corresponds to Client ObjectId for now
+      donor: donor._id,
       organization: payload.charityId,
       cause: payload.causeId, // Cause specified during round-up setup
       donationType: 'round-up',

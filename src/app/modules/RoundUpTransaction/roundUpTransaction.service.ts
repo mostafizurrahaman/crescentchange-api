@@ -1,8 +1,6 @@
-import { PlaidApi, TransactionsGetRequest } from 'plaid';
-import plaidClient from '../../config/plaid';
 import { RoundUpTransactionModel } from './roundUpTransaction.model';
 import { RoundUpModel } from '../RoundUp/roundUp.model';
-import { BankConnectionModel } from '../BankConnection/bankConnection.model';
+
 import {
   IRoundUpTransaction,
   ITransactionProcessingResult,
@@ -11,10 +9,15 @@ import {
 } from './roundUpTransaction.interface';
 import { IPlaidTransaction } from '../BankConnection/bankConnection.interface';
 import { IRoundUpDocument } from '../RoundUp/roundUp.model';
-import { IBankConnectionDocument } from '../BankConnection/bankConnection.model';
+
 import { StripeService } from '../Stripe/stripe.service';
 import { Donation } from '../Donation/donation.model';
-import { pl } from 'zod/v4/locales';
+
+import Cause from '../Causes/causes.model';
+import { CAUSE_STATUS_TYPE } from '../Causes/causes.constant';
+import { AppError } from '../../utils';
+import Client from '../Client/client.model';
+import httpStatus from 'http-status';
 
 // Check and reset monthly total at the beginning of each month
 const checkAndResetMonthlyTotal = async (
@@ -85,9 +88,27 @@ const triggerDonation = async (
     console.log(`   Transaction Count: ${pendingTransactions.length}`);
     console.log(`   Month: ${currentMonth}`);
 
+    // Validate cause exists and is verified
+    const cause = await Cause.findById(roundUpConfig.cause);
+    if (!cause) {
+      throw new AppError(httpStatus.NOT_FOUND, 'Cause not found!');
+    }
+    if (cause.status !== CAUSE_STATUS_TYPE.VERIFIED) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        `Cannot create donation for cause with status: ${cause.status}. Only verified causes can receive donations.`
+      );
+    }
+
+    // ✅ Find Client by auth ID (roundUpConfig.user is Auth._id)
+    const donor = await Client.findOne({ auth: roundUpConfig.user });
+    if (!donor?._id) {
+      throw new AppError(httpStatus.NOT_FOUND, 'Donor not found!');
+    }
+
     // STEP 1: Create Donation record with PENDING status
     const donation = await Donation.create({
-      donor: roundUpConfig.user,
+      donor: donor._id,
       organization: roundUpConfig.organization,
       cause: roundUpConfig.cause,
       donationType: 'round-up',
@@ -380,7 +401,7 @@ const processTransactionsFromPlaid = async (
         );
 
         result.processed++;
-        result.roundUpsCreated.push(roundUpTransaction as any);
+        result.roundUpsCreated.push(roundUpTransaction as IRoundUpTransaction);
 
         // If threshold reached, trigger donation
         if (thresholdReached && roundUpConfig.monthlyThreshold !== 'no-limit') {
@@ -404,10 +425,10 @@ const processTransactionsFromPlaid = async (
 
           break; // Stop processing further transactions
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.log({ error });
         // Handle duplicate key errors specifically
-        if (error?.code === 11000 || error?.codeName === 'DuplicateKey') {
+        if (error instanceof Error && (error.code === 11000 || error.codeName === 'DuplicateKey')) {
           console.warn(
             `Duplicate transaction detected (skipping): ${
               plaidTransaction.transaction_id || 'N/A'
@@ -509,7 +530,7 @@ const getTransactions = async (
   limit = 50
 ): Promise<IRoundUpTransaction[]> => {
   try {
-    const query: any = {};
+    const query: Record<string, unknown> = {};
 
     if (filter.user) query.user = filter.user;
     if (filter.bankConnection) query.bankConnection = filter.bankConnection;
@@ -535,7 +556,7 @@ const getTransactions = async (
     return (await RoundUpTransactionModel.find(query)
       .sort({ transactionDate: -1 })
       .limit(limit)
-      .skip((page - 1) * limit)) as any;
+      .skip((page - 1) * limit)) as IRoundUpTransaction[];
   } catch (error) {
     console.error('Error getting transactions:', error);
     throw error;

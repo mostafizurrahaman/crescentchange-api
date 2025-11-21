@@ -10,7 +10,7 @@ const router = Router();
 // Get cause categories (public route for dropdowns)
 router.route('/categories').get(CauseController.getCauseCategories);
 
-// Create cause and get all causes
+// Create cause and get all causes with filters
 router
   .route('/')
   .post(
@@ -23,13 +23,20 @@ router
     CauseController.getCauses
   );
 
-// Get causes by organization (public route)
+// Get causes by organization (public route with filters)
 router
   .route('/organization/:organizationId')
   .get(
     validateRequest(CauseValidation.getCausesByOrganizationSchema),
     CauseController.getCausesByOrganization
   );
+
+// Update cause status (admin only) - Separate endpoint for status updates
+router.route('/:id/status').patch(
+  auth(ROLE.ADMIN), //: TODO: Update cause status only for admin and organization
+  validateRequest(CauseValidation.updateCauseStatusSchema),
+  CauseController.updateCauseStatus
+);
 
 // Get, update, and delete cause by ID
 router
@@ -47,15 +54,6 @@ router
     auth(ROLE.ORGANIZATION, ROLE.ADMIN),
     validateRequest(CauseValidation.getCauseByIdSchema),
     CauseController.deleteCause
-  );
-
-// Update cause status (admin only)
-router
-  .route('/:id/status')
-  .patch(
-    auth(ROLE.ADMIN),
-    validateRequest(CauseValidation.updateCauseStatusSchema),
-    CauseController.updateCauseStatus
   );
 
 export const CauseRoutes = router;

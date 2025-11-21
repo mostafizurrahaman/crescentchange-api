@@ -10,6 +10,7 @@ import { AppError } from '../../utils';
 import Client from '../Client/client.model';
 import Organization from '../Organization/organization.model';
 import Cause from '../Causes/causes.model';
+import { CAUSE_STATUS_TYPE } from '../Causes/causes.constant';
 import { PaymentMethodService } from '../PaymentMethod/paymentMethod.service';
 import QueryBuilder from '../../builders/QueryBuilder';
 import { Donation } from '../Donation/donation.model';
@@ -95,10 +96,16 @@ const createScheduledDonation = async (
     throw new AppError(httpStatus.NOT_FOUND, 'Organization not found!');
   }
 
-  // Validate cause exists
+  // Validate cause exists and is verified
   const cause = await Cause.findById(causeId);
   if (!cause) {
     throw new AppError(httpStatus.NOT_FOUND, 'Cause not found!');
+  }
+  if (cause.status !== CAUSE_STATUS_TYPE.VERIFIED) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Cannot create scheduled donation for cause with status: ${cause.status}. Only verified causes can receive donations.`
+    );
   }
 
   // Verify payment method exists and belongs to user
@@ -486,6 +493,18 @@ const executeScheduledDonation = async (
     throw new AppError(
       httpStatus.BAD_REQUEST,
       'Scheduled donation has invalid references. Missing user, organization, or cause.'
+    );
+  }
+
+  // Validate cause status is verified before executing donation
+  const cause = await Cause.findById(causeId);
+  if (!cause) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Cause not found!');
+  }
+  if (cause.status !== CAUSE_STATUS_TYPE.VERIFIED) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      `Cannot execute scheduled donation for cause with status: ${cause.status}. Only verified causes can receive donations.`
     );
   }
 

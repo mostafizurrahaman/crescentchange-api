@@ -1,12 +1,15 @@
 // src/app/modules/Causes/causes.service.ts
 import httpStatus from 'http-status';
-import {  startSession } from 'mongoose';
+import { startSession } from 'mongoose';
 import { AppError } from '../../utils';
 import QueryBuilder from '../../builders/QueryBuilder';
 import Cause from './causes.model';
 import { ICause, CauseCategoryType, CauseStatusType } from './causes.interface';
 import Organization from '../Organization/organization.model';
-import { CAUSE_CATEGORY_TYPE, CAUSE_STATUS_TYPE } from './causes.constant';
+import { CAUSE_CATEGORY_TYPE } from './causes.constant';
+
+// Define searchable fields (fixed from 'notes' to 'description')
+const causeSearchableFields = ['name', 'description'];
 
 // Create cause
 const createCauseIntoDB = async (payload: {
@@ -28,8 +31,6 @@ const createCauseIntoDB = async (payload: {
     if (!organization) {
       throw new AppError(httpStatus.NOT_FOUND, 'Organization not found!');
     }
-
-    // Note: With dynamic names, we don't check for duplicates unless specifically needed
 
     // Create cause
     const [cause] = await Cause.create([payload], { session });
@@ -73,21 +74,16 @@ const getCauseByIdFromDB = async (causeId: string) => {
   return cause;
 };
 
-// Define searchable fields
-const causeSearchFields = ['name', 'notes'];
-
-// Get all causes with filters
+// Get all causes with filters, search, pagination and sorting
 const getCausesFromDB = async (query: Record<string, unknown>) => {
-  // Create base query without filters (QueryBuilder will handle filtering)
   const baseQuery = Cause.find().populate(
     'organization',
     'name serviceType coverImage'
   );
 
-  console.log('Query received:', query);
-
+  // Apply QueryBuilder for search, filter, sort, pagination
   const causeQuery = new QueryBuilder<ICause>(baseQuery, query)
-    .search(causeSearchFields)
+    .search(causeSearchableFields)
     .filter()
     .sort()
     .paginate()
@@ -96,20 +92,33 @@ const getCausesFromDB = async (query: Record<string, unknown>) => {
   const result = await causeQuery.modelQuery;
   const meta = await causeQuery.countTotal();
 
-  console.log('Result count:', result.length);
-  console.log('Meta:', meta);
-
   return { causes: result, meta };
 };
 
-// Get causes by organization
-const getCausesByOrganizationFromDB = async (organizationId: string) => {
-  const causes = await Cause.find({ organization: organizationId }).populate(
+// Get causes by organization with filters
+const getCausesByOrganizationFromDB = async (
+  organizationId: string,
+  query: Record<string, unknown> = {}
+) => {
+  // Add organization filter to query
+  const modifiedQuery = { ...query, organization: organizationId };
+
+  const baseQuery = Cause.find({ organization: organizationId }).populate(
     'organization',
     'name serviceType coverImage'
   );
 
-  return causes;
+  const causeQuery = new QueryBuilder<ICause>(baseQuery, modifiedQuery)
+    .search(causeSearchableFields)
+    .filter()
+    .sort()
+    .paginate()
+    .fields();
+
+  const result = await causeQuery.modelQuery;
+  const meta = await causeQuery.countTotal();
+
+  return { causes: result, meta };
 };
 
 // Update cause
@@ -152,29 +161,38 @@ const deleteCauseFromDB = async (causeId: string) => {
 
 // Get cause categories (for dropdown/filter purposes)
 const getCauseCategoriesFromDB = async () => {
-  const causeCategories = Object.entries(CAUSE_CATEGORY_TYPE).map(([key, value]) => ({
-    label: key
-      .replace(/_/g, ' ')
-      .split('/')
-      .map(word => 
-        word.split(' ')
-          .map(subword => 
-            subword.charAt(0).toUpperCase() + subword.slice(1).toLowerCase()
-          )
-          .join(' ')
-      )
-      .join(' / '),
-    value: value,
-  }));
+  const causeCategories = Object.entries(CAUSE_CATEGORY_TYPE).map(
+    ([key, value]) => ({
+      label: key
+        .replace(/_/g, ' ')
+        .split('/')
+        .map((word) =>
+          word
+            .split(' ')
+            .map(
+              (subword) =>
+                subword.charAt(0).toUpperCase() + subword.slice(1).toLowerCase()
+            )
+            .join(' ')
+        )
+        .join(' / '),
+      value: value,
+    })
+  );
 
   return causeCategories;
 };
 
-// Update cause status
+// Update cause status (Admin only)
 const updateCauseStatusIntoDB = async (
   causeId: string,
   status: CauseStatusType
 ) => {
+  // Validate status
+  if (!['pending', 'suspended', 'verified'].includes(status)) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid status value!');
+  }
+
   const cause = await Cause.findByIdAndUpdate(
     causeId,
     { status },

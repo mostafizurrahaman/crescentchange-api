@@ -38,7 +38,7 @@ const createCause = asyncHandler(async (req, res) => {
   });
 });
 
-// Get all causes
+// Get all causes with filtering, searching, sorting and pagination
 const getCauses = asyncHandler(async (req, res) => {
   // Pass the entire query object to service - QueryBuilder will handle it
   const result = await CauseService.getCausesFromDB(req.query);
@@ -72,13 +72,20 @@ const getCauseById = asyncHandler(async (req, res) => {
 const getCausesByOrganization = asyncHandler(async (req, res) => {
   const { organizationId } = req.params;
   const result = await CauseService.getCausesByOrganizationFromDB(
-    organizationId
+    organizationId,
+    req.query
   );
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
     message: 'Organization causes retrieved successfully!',
-    data: result,
+    data: result.causes,
+    meta: {
+      page: result.meta.page,
+      limit: result.meta.limit,
+      total: result.meta.total,
+      totalPage: result.meta.totalPage,
+    },
   });
 });
 
@@ -87,10 +94,6 @@ const updateCause = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const user = req.user as IAuth;
 
-  console.log({
-    id,
-    user,
-  });
   // Check if user is authorized to update
   if (user.role === ROLE.ORGANIZATION) {
     const cause = await CauseService.getCauseByIdFromDB(id);
@@ -119,7 +122,7 @@ const deleteCause = asyncHandler(async (req, res) => {
   const user = req.user as IAuth;
 
   // Check if user is authorized to delete
-  if (user.role === 'ORGANIZATION') {
+  if (user.role === ROLE.ORGANIZATION) {
     const cause = await CauseService.getCauseByIdFromDB(id);
     const organization = await Organization.findOne({ auth: user._id });
 
@@ -151,19 +154,10 @@ const getCauseCategories = asyncHandler(async (req, res) => {
   });
 });
 
-// Update cause status
+// Update cause status (Admin only)
 const updateCauseStatus = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
-  const user = req.user as IAuth;
-
-  // Check if user is authorized to update status (admin only)
-  if (user.role !== ROLE.ADMIN) {
-    throw new AppError(
-      httpStatus.FORBIDDEN,
-      'Only admin can update cause status!'
-    );
-  }
 
   const result = await CauseService.updateCauseStatusIntoDB(id, status);
 

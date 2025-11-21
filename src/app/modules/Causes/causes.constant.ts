@@ -28,5 +28,3 @@ export const CAUSE_STATUS_TYPE = {
 
 export const causeCategoryTypeValues = Object.values(CAUSE_CATEGORY_TYPE);
 export const causeStatusTypeValues = Object.values(CAUSE_STATUS_TYPE);
-
-

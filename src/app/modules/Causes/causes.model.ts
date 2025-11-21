@@ -1,6 +1,9 @@
 import { model, Schema } from 'mongoose';
 import { ICause } from './causes.interface';
-import { causeCategoryTypeValues, causeStatusTypeValues } from './causes.constant';
+import {
+  causeCategoryTypeValues,
+  causeStatusTypeValues,
+} from './causes.constant';
 
 const causeSchema = new Schema<ICause>(
   {
