@@ -369,12 +369,13 @@ const getDonationAnalyticsController = asyncHandler(
       throw new AppError(httpStatus.UNAUTHORIZED, 'User not authenticated');
     }
 
-    // Get filter and year from validated query
+    // Get filter, year, and donationType from validated query
     type DonationAnalyticsQuery = {
       filter: 'today' | 'this_week' | 'this_month';
       year?: number;
+      donationType?: 'all' | 'one-time' | 'recurring' | 'roundup';
     };
-    const { filter, year } = (
+    const { filter, year, donationType } = (
       req as ExtendedRequest & { validatedQuery: DonationAnalyticsQuery }
     ).validatedQuery;
 
@@ -406,7 +407,8 @@ const getDonationAnalyticsController = asyncHandler(
     const analytics = await DonationService.getDonationAnalytics(
       filter as 'today' | 'this_week' | 'this_month',
       organizationId,
-      year
+      year,
+      donationType || 'all'
     );
 
     sendResponse(res, {

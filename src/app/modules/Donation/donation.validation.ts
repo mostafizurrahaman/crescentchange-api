@@ -416,6 +416,13 @@ const getDonationAnalyticsSchema = z.object({
         message: 'Year must be between 2000 and 2100',
       })
       .optional(),
+    donationType: z
+      .enum(['all', 'one-time', 'recurring', 'roundup'], {
+        message:
+          'Invalid donation type. Must be: all, one-time, recurring, or roundup',
+      })
+      .optional()
+      .default('all'),
     topDonorsLimit: z
       .string()
       .regex(/^\d+$/, 'Limit must be a number')

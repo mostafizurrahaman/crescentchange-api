@@ -758,9 +758,10 @@ const refundDonation = async (
 const getTotalDonatedAmount = async (
   current: IAnalyticsPeriod,
   previous: IAnalyticsPeriod,
-  organizationId?: string
+  organizationId?: string,
+  donationType?: string
 ): Promise<IPercentageChange> => {
-  const baseQuery = buildBaseQuery(organizationId);
+  const baseQuery = buildBaseQuery(organizationId, donationType);
 
   const [currentResult, previousResult] = await Promise.all([
     Donation.aggregate([
@@ -799,9 +800,10 @@ const getTotalDonatedAmount = async (
 const getAverageDonationPerUser = async (
   current: IAnalyticsPeriod,
   previous: IAnalyticsPeriod,
-  organizationId?: string
+  organizationId?: string,
+  donationType?: string
 ): Promise<IPercentageChange> => {
-  const baseQuery = buildBaseQuery(organizationId);
+  const baseQuery = buildBaseQuery(organizationId, donationType);
 
   const [currentResult, previousResult] = await Promise.all([
     Donation.aggregate([
@@ -874,9 +876,10 @@ const getAverageDonationPerUser = async (
 const getTotalDonors = async (
   current: IAnalyticsPeriod,
   previous: IAnalyticsPeriod,
-  organizationId?: string
+  organizationId?: string,
+  donationType?: string
 ): Promise<IPercentageChange> => {
-  const baseQuery = buildBaseQuery(organizationId);
+  const baseQuery = buildBaseQuery(organizationId, donationType);
 
   const [currentResult, previousResult] = await Promise.all([
     Donation.aggregate([
@@ -1333,9 +1336,18 @@ const getOrganizationCauseMonthlyStats = async (
 const getDonationAnalytics = async (
   filter: 'today' | 'this_week' | 'this_month',
   organizationId?: string,
-  year?: number
+  year?: number,
+  donationType: 'all' | 'one-time' | 'recurring' | 'roundup' = 'all'
 ): Promise<IDonationAnalytics> => {
   const { current, previous } = getDateRanges(filter, year);
+
+  // Map 'roundup' to 'round-up' for database query
+  const donationTypeFilter =
+    donationType === 'all'
+      ? undefined
+      : donationType === 'roundup'
+      ? 'round-up'
+      : donationType;
 
   const [
     totalDonatedAmount,
@@ -1347,9 +1359,19 @@ const getDonationAnalytics = async (
     recentDonors,
     breakDownByCause,
   ] = await Promise.all([
-    getTotalDonatedAmount(current, previous, organizationId),
-    getAverageDonationPerUser(current, previous, organizationId),
-    getTotalDonors(current, previous, organizationId),
+    getTotalDonatedAmount(
+      current,
+      previous,
+      organizationId,
+      donationTypeFilter
+    ),
+    getAverageDonationPerUser(
+      current,
+      previous,
+      organizationId,
+      donationTypeFilter
+    ),
+    getTotalDonors(current, previous, organizationId, donationTypeFilter),
     getTopCause(current, organizationId),
     getDonationTypeBreakdown(current, previous, organizationId),
     getTopDonors(current, previous, organizationId),

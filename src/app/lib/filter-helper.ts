@@ -84,11 +84,15 @@ export const getDateRanges = (
  * Build base query for donation aggregation
  */
 export const buildBaseQuery = (
-  organizationId?: string
+  organizationId?: string,
+  donationType?: string
 ): Record<string, any> => {
   const query: any = { status: 'completed' };
   if (organizationId) {
     query.organization = new Types.ObjectId(organizationId);
+  }
+  if (donationType) {
+    query.donationType = donationType;
   }
   return query;
 };
