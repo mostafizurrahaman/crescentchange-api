@@ -146,6 +146,21 @@ const editOrgTaxDetails = asyncHandler(
     });
   }
 );
+// Get Organization Details by ID
+const getOrganizationDetails = asyncHandler(
+  async (req: ExtendedRequest, res: Response) => {
+    const organizationId = req.params.id;
+    const result = await OrganizationService.getOrganizationDetailsById(
+      organizationId
+    );
+
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      message: 'Organization details retrieved successfully!',
+      data: result,
+    });
+  }
+);
 
 export const OrganizationController = {
   startStripeConnectOnboarding,
@@ -155,4 +170,5 @@ export const OrganizationController = {
   editOrgTaxDetails,
   updateLogoImage,
   getAllOrganization,
+  getOrganizationDetails,
 };

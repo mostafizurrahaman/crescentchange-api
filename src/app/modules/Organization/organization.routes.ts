@@ -40,6 +40,12 @@ router.get(
   OrganizationController.getAllOrganization
 );
 
+router.get(
+  '/:id',
+  auth(ROLE.CLIENT, ROLE.ORGANIZATION),
+  OrganizationController.getOrganizationDetails
+);
+
 // Stripe Connect Routes
 // Start Stripe Connect onboarding (organizations only)
 router.post(
@@ -63,3 +69,4 @@ router.post(
 );
 
 export const OrganizationRoutes = router;
+ 
