@@ -242,7 +242,7 @@ const getCauseByIdFromDB = async (causeId: string) => {
 const getCausesFromDB = async (query: Record<string, unknown>) => {
   const baseQuery = Cause.find().populate(
     'organization',
-    'name serviceType coverImage'
+    'name registeredCharityName coverImage logoImage aboutUs serviceType isProfileVisible dateOfEstablishment'
   );
 
   // Apply QueryBuilder for search, filter, sort, pagination
@@ -256,7 +256,101 @@ const getCausesFromDB = async (query: Record<string, unknown>) => {
   const result = await causeQuery.modelQuery;
   const meta = await causeQuery.countTotal();
 
-  return { causes: result, meta };
+  // Get all cause IDs from result
+  const causeIds = result.map((cause) => cause._id);
+
+  // Get donation statistics for all causes in one query
+  const donationStats = await Donation.aggregate([
+    {
+      $match: {
+        cause: { $in: causeIds },
+        status: 'completed', // Only count completed donations
+      },
+    },
+    {
+      $group: {
+        _id: '$cause',
+        totalDonationAmount: { $sum: '$amount' },
+        totalDonors: { $addToSet: '$donor' },
+        totalDonations: { $sum: 1 }, // Count total number of donations
+      },
+    },
+    {
+      $project: {
+        _id: 1,
+        totalDonationAmount: 1,
+        totalDonors: { $size: '$totalDonors' },
+        totalDonations: 1,
+      },
+    },
+  ]);
+
+  // Get recent 5 donors for each cause with user information
+  const recentDonors = await Donation.aggregate([
+    {
+      $match: {
+        cause: { $in: causeIds },
+        status: 'completed',
+      },
+    },
+    {
+      $lookup: {
+        from: 'clients',
+        localField: 'donor',
+        foreignField: '_id',
+        as: 'donorInfo',
+      },
+    },
+    { $unwind: '$donorInfo' },
+    {
+      $group: {
+        _id: '$donor',
+        name: { $first: '$donorInfo.name' },
+        image: { $first: '$donorInfo.image' },
+        donationDate: { $first: '$donationDate' },
+        amount: { $first: '$amount' },
+        cause: { $first: '$cause' },
+      },
+    },
+
+    {
+      $sort: { donationDate: -1 },
+    },
+    {
+      $limit: 5,
+    },
+  ]);
+
+  console.log('Recent Donors:', recentDonors);
+
+  // Create maps for quick lookup
+  const statsMap = new Map(
+    donationStats.map((stat) => [stat._id.toString(), stat])
+  );
+  const recentDonorsMap = new Map(
+    recentDonors?.map((donor) => {
+      console.log('Mapping donor for cause:', donor);
+      return [donor?.cause?.toString(), recentDonors];
+    })
+  );
+
+  console.log(recentDonorsMap);
+
+  // Add stats and recent donors to each cause
+  const causesWithStats = result.map((cause) => {
+    const causeObject = cause.toObject();
+    const stats = statsMap.get(cause._id.toString());
+    const recentDonorList = recentDonorsMap.get(cause._id.toString());
+
+    causeObject.totalDonationAmount = stats?.totalDonationAmount || 0;
+    causeObject.totalDonors = stats?.totalDonors || 0;
+    causeObject.totalDonations = stats?.totalDonations || 0;
+    causeObject.recentDonors = recentDonorList || [];
+
+    return causeObject;
+  });
+
+  return { causes: causesWithStats, meta };
 };
 
 // Get causes by organization with filters
