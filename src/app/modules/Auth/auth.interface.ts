@@ -1,6 +1,5 @@
 import { Document, Model, ObjectId } from 'mongoose';
-import { TRole } from './auth.constant';
-export type OrganizationStatusType = 'pending' | 'suspended' | 'verified';
+import { TRole, TAuthStatus } from './auth.constant';
 
 // Instance methods
 export interface IAuth extends Document {
@@ -20,7 +19,7 @@ export interface IAuth extends Document {
   role: TRole;
   isActive: boolean;
   isDeleted: boolean;
-  status: OrganizationStatusType;
+  status: TAuthStatus;
 
   deactivationReason: string;
   deactivatedAt: Date;

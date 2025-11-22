@@ -12,9 +12,9 @@ import { IAuth } from '../Auth/auth.interface';
 import fs from 'fs';
 import { createAccessToken } from '../../lib';
 import {
-  ORGANIZATION_STATUS,
   searchableFields,
 } from './organization.constants';
+import { AUTH_STATUS } from '../Auth/auth.constant';
 import QueryBuilder from '../../builders/QueryBuilder';
 import { is } from 'zod/v4/locales';
 import Cause from '../Causes/causes.model';
@@ -378,7 +378,7 @@ const getAllOrganizations = async (query: Record<string, unknown>) => {
 
     if (status) {
       authQuery.status = status;
-      authQuery.isActive = status === ORGANIZATION_STATUS.ACTIVE;
+      authQuery.isActive = status === AUTH_STATUS.VERIFIED;
     }
 
     const authIds = await Auth.find(authQuery).select('_id');

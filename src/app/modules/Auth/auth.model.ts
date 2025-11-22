@@ -1,14 +1,11 @@
 import bcrypt from 'bcryptjs';
 import { model, Schema } from 'mongoose';
 import config from '../../config';
-import { ROLE } from './auth.constant';
+import { ROLE, AUTH_STATUS } from './auth.constant';
 import { IAuth, IAuthModel } from './auth.interface';
 import { AppError } from '../../utils';
 import httpStatus from 'http-status';
-import {
-  ORGANIZATION_STATUS,
-  organizationStatusValues,
-} from '../Organization/organization.constants';
+import { authStatusValues } from './auth.constant';
 
 const authSchema = new Schema<IAuth, IAuthModel>(
   {
@@ -68,7 +65,7 @@ const authSchema = new Schema<IAuth, IAuthModel>(
     status: {
       type: String,
       required: true,
-      enum: organizationStatusValues,
+      enum: authStatusValues,
     },
   },
   { timestamps: true, versionKey: false }
@@ -154,13 +151,13 @@ authSchema.methods.isJWTIssuedBeforePasswordChanged = function (
 };
 
 authSchema.methods.ensureActiveStatus = function (this: IAuth) {
-  if (this.status === ORGANIZATION_STATUS.PENDING) {
+  if (this.status === AUTH_STATUS.PENDING) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
       'This account is not verified yet!'
     );
   }
-  if (this.status === ORGANIZATION_STATUS.SUSPENDED) {
+  if (this.status === AUTH_STATUS.SUSPENDED) {
     throw new AppError(httpStatus.BAD_REQUEST, 'This account is suspended!');
   }
 };

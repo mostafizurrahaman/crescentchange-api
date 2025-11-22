@@ -428,6 +428,7 @@ const resetPasswordSchema = z.object({
       .regex(/[@$!%*?&#]/, {
         message: 'New password must contain at least one special character',
       }),
+    resetPasswordToken: z.string({ error: 'Token is required' }),
   }),
 });
 
