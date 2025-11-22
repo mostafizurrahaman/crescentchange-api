@@ -11,6 +11,13 @@ import { ROLE } from '../Auth/auth.constant';
 import { IAuth } from '../Auth/auth.interface';
 import fs from 'fs';
 import { createAccessToken } from '../../lib';
+import {
+  ORGANIZATION_STATUS,
+  searchableFields,
+} from './organization.constants';
+import QueryBuilder from '../../builders/QueryBuilder';
+import { is } from 'zod/v4/locales';
+import Cause from '../Causes/causes.model';
 
 /**
  * Start Stripe Connect onboarding for an organization
@@ -327,6 +334,108 @@ const editOrgTaxDetailsIntoDB = async (
   };
 };
 
+/**
+ * Get verified Carities/ Organizations list
+ */
+const getAllOrganizations = async (query: Record<string, unknown>) => {
+  // Extract special filters
+  const {
+    dateFrom,
+    dateTo,
+    dateOfEstablishment,
+    status,
+    isProfileVisible,
+    populateCauses, // Add this to control whether to populate causes
+    ...restQuery
+  } = query;
+
+  // Build base conditions
+  const conditions: any = {};
+
+  if (dateOfEstablishment) {
+    conditions.dateOfEstablishment = new Date(dateOfEstablishment as string);
+  }
+
+  if (isProfileVisible) {
+    conditions.isProfileVisible = Boolean(isProfileVisible);
+  }
+
+  // Handle date range filters
+  if (dateFrom || dateTo) {
+    conditions.createdAt = {};
+    if (dateFrom) {
+      conditions.createdAt.$gte = new Date(dateFrom as string);
+    }
+    if (dateTo) {
+      conditions.createdAt.$lte = new Date(dateTo as string);
+    }
+  }
+
+  // Handle status filter
+  let authIdArray: any[] = [];
+  if (status) {
+    const authQuery: any = { role: ROLE.ORGANIZATION };
+
+    if (status) {
+      authQuery.status = status;
+      authQuery.isActive = status === ORGANIZATION_STATUS.ACTIVE;
+    }
+
+    const authIds = await Auth.find(authQuery).select('_id');
+    authIdArray = authIds.map((auth) => auth._id);
+    conditions.auth = { $in: authIdArray };
+  }
+
+  console.log('Conditions:', conditions);
+
+  // Create base query with conditions
+  const organizationQuery = Organization.find(conditions).populate({
+    path: 'auth',
+    select: 'email role isActive status',
+  });
+
+  // Apply QueryBuilder
+  const queryBuilder = new QueryBuilder(organizationQuery, restQuery)
+    .search(searchableFields)
+    .filter()
+    .sort()
+    .paginate()
+    .fields();
+
+  // Execute query
+  const result = await queryBuilder.modelQuery;
+  const meta = await queryBuilder.countTotal();
+
+  // Populate causes after QueryBuilder execution (if requested)
+  if (populateCauses === 'true' || populateCauses === true) {
+    const organizationIds = result.map((org: any) => org._id);
+
+    // Get causes for all organizations in one query
+    const causes = await Cause.find({
+      organization: { $in: organizationIds },
+    });
+
+    // Map causes to their organizations
+    const resultWithCauses = result.map((org: any) => {
+      const orgObject = org.toObject();
+      orgObject.causes = causes.filter(
+        (cause: any) => cause.organization.toString() === org._id.toString()
+      );
+      return orgObject;
+    });
+
+    return {
+      data: resultWithCauses,
+      meta,
+    };
+  }
+
+  return {
+    data: result,
+    meta,
+  };
+};
+
 export const OrganizationService = {
   startStripeConnectOnboarding,
   getStripeConnectStatus,
@@ -334,4 +443,5 @@ export const OrganizationService = {
   editProfileOrgDetailsIntoDB,
   updateLogoImageIntoDB,
   editOrgTaxDetailsIntoDB,
+  getAllOrganizations,
 };

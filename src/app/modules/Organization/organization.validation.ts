@@ -1,4 +1,8 @@
 import z from 'zod';
+import {
+  ORGANIZATION_STATUS,
+  organizationStatusValues,
+} from './organization.constants';
 
 // Tab 1: Organization Details (without images)
 const editProfileOrgDetailsSchema = z.object({
@@ -29,15 +33,122 @@ const editOrgTaxDetailsSchema = z.object({
   }),
 });
 
+/**
+ * Query validation for getting all organizations
+ */
+const getAllOrganizationsSchema = z.object({
+  query: z
+    .object({
+      // Search term
+      searchTerm: z.string().trim().optional(),
+
+      // Status filter (from Auth model)
+      status: z
+        .enum(organizationStatusValues as [string, ...string[]], {
+          message: `Status must be one of: ${organizationStatusValues.join(
+            ', '
+          )}`,
+        })
+
+        .optional(),
+
+      // Location filters
+      country: z.string().trim().optional(),
+      state: z.string().trim().optional(),
+      postalCode: z.string().trim().optional(),
+      address: z.string().trim().optional(),
+
+      // Organization type filters
+      serviceType: z.string().trim().optional(),
+
+      // Visibility filter
+      isProfileVisible: z
+        .string()
+        .transform((val) => val === 'true')
+        .or(z.boolean())
+        .optional(),
+      populateCauses: z
+        .string()
+        .transform((val) => val === 'true')
+        .optional(),
+
+      // Date range filters for establishment date
+      dateFrom: z
+        .string()
+        .refine((date) => !isNaN(Date.parse(date)), {
+          message: 'Invalid date format for dateFrom',
+        })
+        .optional(),
+      dateTo: z
+        .string()
+        .refine((date) => !isNaN(Date.parse(date)), {
+          message: 'Invalid date format for dateTo',
+        })
+        .optional(),
+
+      // Pagination
+      page: z
+        .string()
+        .regex(/^\d+$/, 'Page must be a number')
+        .transform((val) => parseInt(val, 10))
+        .refine((val) => val > 0, 'Page must be greater than 0')
+        .optional()
+        .default(1),
+
+      limit: z
+        .string()
+        .regex(/^\d+$/, 'Limit must be a number')
+        .transform((val) => parseInt(val, 10))
+        .refine(
+          (val) => val > 0 && val <= 100,
+          'Limit must be between 1 and 100'
+        )
+        .optional()
+        .default(10),
+
+      // Sorting
+      sort: z
+        .string()
+        .regex(
+          /^-?[a-zA-Z]+(,-?[a-zA-Z]+)*$/,
+          'Invalid sort format. Use field names with optional - prefix for descending order'
+        )
+        .optional(),
+
+      // Field selection
+      fields: z
+        .string()
+        .regex(
+          /^[a-zA-Z]+(,[a-zA-Z]+)*$/,
+          'Invalid fields format. Use comma-separated field names'
+        )
+        .optional(),
+    })
+    .refine(
+      (data) => {
+        // Validate date ranges
+        if (data.dateFrom && data.dateTo) {
+          return new Date(data.dateFrom) <= new Date(data.dateTo);
+        }
+        return true;
+      },
+      {
+        message: 'dateFrom must be before or equal to dateTo',
+        path: ['dateFrom'],
+      }
+    ),
+});
+
 export const OrganizationValidation = {
   editProfileOrgDetailsSchema,
   editOrgTaxDetailsSchema,
+  getAllOrganizationsSchema,
 };
 
-export const organizationValidation = {
-  editProfileOrgDetailsSchema,
-  editOrgTaxDetailsSchema,
-};
+// Type inference for the query parameters
+export type TGetAllOrganizationsQuery = z.infer<
+  typeof getAllOrganizationsSchema.shape.query
+>;
 
 export type TEditProfileOrgDetails = z.infer<
   typeof editProfileOrgDetailsSchema.shape.body

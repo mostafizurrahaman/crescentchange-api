@@ -32,6 +32,14 @@ router.patch(
   OrganizationController.editOrgTaxDetails
 );
 
+// Get all carites:
+router.get(
+  '/get-all',
+  auth(ROLE.CLIENT, ROLE.BUSINESS),
+  validateRequest(OrganizationValidation.getAllOrganizationsSchema),
+  OrganizationController.getAllOrganization
+);
+
 // Stripe Connect Routes
 // Start Stripe Connect onboarding (organizations only)
 router.post(

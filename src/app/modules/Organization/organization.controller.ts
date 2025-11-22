@@ -71,6 +71,17 @@ const refreshStripeConnectOnboarding = asyncHandler(
   }
 );
 
+const getAllOrganization = asyncHandler(async (req, res) => {
+  const result = await OrganizationService.getAllOrganizations(req.query);
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    message: 'All organizations retrieved successfully!',
+    data: result.data,
+    meta: result.meta,
+  });
+});
+
 /**
  * Edit Organization Profile Details (Tab 1 - Text fields only)
  * PATCH /api/v1/organization/profile-details
@@ -143,4 +154,5 @@ export const OrganizationController = {
   editProfileOrgDetails,
   editOrgTaxDetails,
   updateLogoImage,
+  getAllOrganization,
 };
