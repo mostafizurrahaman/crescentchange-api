@@ -24,10 +24,6 @@ import jwt, { JwtPayload, SignOptions } from 'jsonwebtoken';
 const OTP_EXPIRY_MINUTES =
   Number.parseInt(config.jwt.otpSecretExpiresIn as string, 10) || 5;
 
-// Debug logging to check the value
-console.log('config.jwt.otpSecretExpiresIn:', config.jwt.otpSecretExpiresIn);
-console.log('OTP_EXPIRY_MINUTES:', OTP_EXPIRY_MINUTES);
-
 // 1. createAuthIntoDB
 const createAuthIntoDB = async (payload: IAuth) => {
   const existingUser = await Auth.isUserExistsByEmail(payload.email);
@@ -339,10 +335,6 @@ const createProfileIntoDB = async (
 
   const drivingLicenseURL =
     files?.drivingLincenseURL?.[0]?.path.replace(/\\/g, '/') || null;
-
-  console.log({
-    drivingLicenseURL,
-  });
 
   // Start a MongoDB session for transaction
   const session = await startSession();
@@ -771,21 +763,10 @@ const forgotPassword = async (email: string) => {
     await sendOtpEmail({ email, otp, name });
   }
 
-  console.log('Generating forgot password token for email:', {
-    email,
-    secret: config.jwt.otpSecret,
-    expiresIn: config.jwt.otpSecretExpiresIn,
-  });
-
   // Issue token (just with email)
   const token = jwt.sign({ email }, config.jwt.otpSecret!, {
     expiresIn: config.jwt.otpSecretExpiresIn!,
   } as SignOptions);
-
-  // Debug logging
-  console.log('Generated forgot password token:', token);
-  console.log('Used JWT OTP Secret:', config.jwt.otpSecret);
-  console.log('Token expires in:', config.jwt.otpSecretExpiresIn);
 
   return { token };
 };
@@ -801,21 +782,12 @@ const sendForgotPasswordOtpAgain = async (forgotPassToken: string) => {
     throw new AppError(httpStatus.BAD_REQUEST, 'Invalid token format!');
   }
 
-  // Debug logging
-  console.log('Received token length:', forgotPassToken.length);
-  console.log('Token format check:', forgotPassToken.split('.').length === 3);
-  console.log('JWT OTP Secret from config:', config.jwt.otpSecret);
-
   let decoded: JwtPayload;
   try {
     decoded = jwt.verify(forgotPassToken, config.jwt.otpSecret!, {
       ignoreExpiration: true,
     }) as JwtPayload;
-    console.log('Token decoded successfully:', decoded);
   } catch (error) {
-    console.log('Token verification failed:', error);
-    console.log('Error type:', error.name);
-    console.log('Error message:', error.message);
     throw new AppError(httpStatus.BAD_REQUEST, 'Invalid token!');
   }
   const email = decoded.email;
@@ -974,10 +946,7 @@ const verifyOtpForForgotPassword = async (payload: {
     throw new AppError(httpStatus.BAD_REQUEST, 'Invalid OTP!');
   }
 
-  console.log(`Verify Password OTP secret`, {
-    secret: config.jwt.otpSecret,
-    expiresIn: config.jwt.otpSecretExpiresIn,
-  });
+  
   // OTP verified → issue reset password token
   const resetPasswordToken = jwt.sign(
     {
@@ -988,7 +957,6 @@ const verifyOtpForForgotPassword = async (payload: {
     { expiresIn: config.jwt.otpSecretExpiresIn } as SignOptions
   );
 
-  console.log('Generated reset password token:', { resetPasswordToken });
   return { resetPasswordToken };
 };
 
@@ -1001,17 +969,12 @@ const resetPasswordIntoDB = async (
     throw new AppError(httpStatus.FORBIDDEN, 'Invalid reset password token!');
   }
 
-  console.log({
-    resetPasswordToken,
-    secret: config.jwt.otpSecret,
-  });
+  
 
   const payload = verifyToken(resetPasswordToken, config.jwt.otpSecret!) as {
     email: string;
     isResetPassword?: boolean;
   };
-
-  console.log('Reset password token payload:', payload);
 
   if (!payload?.isResetPassword || !payload?.email) {
     throw new AppError(httpStatus.FORBIDDEN, 'Invalid reset password token!');

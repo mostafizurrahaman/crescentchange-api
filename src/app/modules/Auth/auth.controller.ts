@@ -111,9 +111,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
 
 // 9. sendForgotPasswordOtpAgain
 const sendForgotPasswordOtpAgain = asyncHandler(async (req, res) => {
-  console.log('Request body received:', req.body);
   const token = req.body.token;
-  console.log('Token extracted from request body:', token);
   const result = await AuthService.sendForgotPasswordOtpAgain(token);
 
   sendResponse(res, {
@@ -136,7 +134,6 @@ const verifyOtpForForgotPassword = asyncHandler(async (req, res) => {
 
 // 11. resetPassword
 const resetPassword = asyncHandler(async (req, res) => {
-  console.log('Reset Password Request Body:', req.body);
   const result = await AuthService.resetPasswordIntoDB(
     req.body.resetPasswordToken,
     req.body.newPassword
