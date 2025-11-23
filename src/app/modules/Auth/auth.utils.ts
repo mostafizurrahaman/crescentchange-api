@@ -25,7 +25,7 @@ export const updateProfileImage = async (
   model: any, // Client, Business, or Organization
   imageField: string
 ) => {
-  console.log({ file, user, model, imageField });
+  
   if (!file?.path) {
     throw new AppError(httpStatus.BAD_REQUEST, 'File is required!');
   }

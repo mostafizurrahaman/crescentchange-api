@@ -13,21 +13,16 @@ import { AppError, sendOtpEmail } from '../../utils';
 import Business from '../Business/business.model';
 import Organization from '../Organization/organization.model';
 import Client from '../Client/client.model';
-import { IAuth, OrganizationStatusType } from './auth.interface';
-import { defaultUserImage, ROLE } from './auth.constant';
+import { IAuth } from './auth.interface';
+import { defaultUserImage, ROLE, AUTH_STATUS } from './auth.constant';
 import Auth from './auth.model';
 import { AuthValidation, TProfilePayload } from './auth.validation';
 import { updateProfileImage } from './auth.utils';
 import z from 'zod';
 import jwt, { JwtPayload, SignOptions } from 'jsonwebtoken';
-import { ORGANIZATION_STATUS } from '../Organization/organization.constants';
 
 const OTP_EXPIRY_MINUTES =
   Number.parseInt(config.jwt.otpSecretExpiresIn as string, 10) || 5;
-
-// Debug logging to check the value
-console.log('config.jwt.otpSecretExpiresIn:', config.jwt.otpSecretExpiresIn);
-console.log('OTP_EXPIRY_MINUTES:', OTP_EXPIRY_MINUTES);
 
 // 1. createAuthIntoDB
 const createAuthIntoDB = async (payload: IAuth) => {
@@ -76,7 +71,7 @@ const createAuthIntoDB = async (payload: IAuth) => {
         now.getTime() + (OTP_EXPIRY_MINUTES || 5) * 60 * 1000
       ),
       isVerifiedByOTP: false,
-      status: ORGANIZATION_STATUS.PENDING,
+      status: AUTH_STATUS.PENDING,
     });
 
     // const token = jwt.sign({ ...payload, otp }, config.jwt.otp_secret!, {
@@ -111,6 +106,12 @@ const sendSignupOtpAgain = async (email: string) => {
     user.otpExpiry = new Date(
       now.getTime() + (OTP_EXPIRY_MINUTES || 5) * 60 * 1000
     );
+
+    // Ensure status is set before saving
+    if (!user.status) {
+      user.status = AUTH_STATUS.PENDING;
+    }
+
     await user.save();
 
     return {
@@ -167,7 +168,11 @@ const verifySignupOtpIntoDB = async (email: string, otp: string) => {
 
   // Mark user as verified
   user.isVerifiedByOTP = true;
-  user.status = ORGANIZATION_STATUS.ACTIVE as OrganizationStatusType;
+  if (!user.status) {
+    user.status = AUTH_STATUS.VERIFIED;
+  } else {
+    user.status = AUTH_STATUS.VERIFIED;
+  }
   await user.save();
 
   // Prepare user data for token generation
@@ -179,7 +184,7 @@ const verifySignupOtpIntoDB = async (email: string, otp: string) => {
     role: user?.role,
     isProfile: user?.isProfile,
     isActive: user?.isActive,
-    status: ORGANIZATION_STATUS.ACTIVE,
+    status: AUTH_STATUS.VERIFIED,
   };
 
   const refreshTokenPayload = {
@@ -226,6 +231,12 @@ const signinIntoDB = async (payload: {
 
     user.otp = otp;
     user.otpExpiry = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+
+    // Ensure status is set before saving
+    if (!user.status) {
+      user.status = AUTH_STATUS.PENDING;
+    }
+
     await user.save();
 
     throw new AppError(
@@ -324,10 +335,6 @@ const createProfileIntoDB = async (
 
   const drivingLicenseURL =
     files?.drivingLincenseURL?.[0]?.path.replace(/\\/g, '/') || null;
-
-  console.log({
-    drivingLicenseURL,
-  });
 
   // Start a MongoDB session for transaction
   const session = await startSession();
@@ -634,6 +641,11 @@ const changePasswordIntoDB = async (
   user.password = payload.newPassword;
   user.passwordChangedAt = new Date(Date.now() - 5000); // set 5 second before to avoid isJWTIssuedBeforePasswordChanged issue
 
+  // Ensure status is set before saving
+  if (!user.status) {
+    user.status = AUTH_STATUS.PENDING;
+  }
+
   await user.save();
 
   let name: string = 'User';
@@ -722,6 +734,12 @@ const forgotPassword = async (email: string) => {
 
     user.otp = otp;
     user.otpExpiry = otpExpiry;
+
+    // Ensure status is set before saving
+    if (!user.status) {
+      user.status = AUTH_STATUS.PENDING;
+    }
+
     await user.save();
 
     let name: string = 'User';
@@ -755,12 +773,21 @@ const forgotPassword = async (email: string) => {
 
 // 9. sendForgotPasswordOtpAgain - 2.(send Otp Again)
 const sendForgotPasswordOtpAgain = async (forgotPassToken: string) => {
+  if (!forgotPassToken) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Token is required!');
+  }
+
+  // Check if token is a valid JWT format (should have 3 parts separated by dots)
+  if (typeof forgotPassToken !== 'string' || !forgotPassToken.includes('.')) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid token format!');
+  }
+
   let decoded: JwtPayload;
   try {
     decoded = jwt.verify(forgotPassToken, config.jwt.otpSecret!, {
       ignoreExpiration: true,
     }) as JwtPayload;
-  } catch {
+  } catch (error) {
     throw new AppError(httpStatus.BAD_REQUEST, 'Invalid token!');
   }
   const email = decoded.email;
@@ -807,6 +834,12 @@ const sendForgotPasswordOtpAgain = async (forgotPassToken: string) => {
 
     user.otp = otp;
     user.otpExpiry = otpExpiry;
+
+    // Ensure status is set before saving
+    if (!user.status) {
+      user.status = AUTH_STATUS.PENDING;
+    }
+
     await user.save();
 
     let name: string = 'User';
@@ -839,6 +872,7 @@ const verifyOtpForForgotPassword = async (payload: {
   otp: string;
 }) => {
   let decoded: JwtPayload;
+
   try {
     decoded = jwt.verify(payload.token, config.jwt.otpSecret!, {
       ignoreExpiration: true,
@@ -874,6 +908,12 @@ const verifyOtpForForgotPassword = async (payload: {
 
     user.otp = newOtp;
     user.otpExpiry = newExpiry;
+
+    // Ensure status is set before saving
+    if (!user.status) {
+      user.status = AUTH_STATUS.PENDING;
+    }
+
     await user.save();
 
     let name: string = 'User';
@@ -906,6 +946,7 @@ const verifyOtpForForgotPassword = async (payload: {
     throw new AppError(httpStatus.BAD_REQUEST, 'Invalid OTP!');
   }
 
+  
   // OTP verified → issue reset password token
   const resetPasswordToken = jwt.sign(
     {
@@ -913,7 +954,7 @@ const verifyOtpForForgotPassword = async (payload: {
       isResetPassword: true,
     },
     config.jwt.otpSecret!,
-    { expiresIn: config.jwt.otpSecretExpiresIn! } as SignOptions
+    { expiresIn: config.jwt.otpSecretExpiresIn } as SignOptions
   );
 
   return { resetPasswordToken };
@@ -927,6 +968,8 @@ const resetPasswordIntoDB = async (
   if (!resetPasswordToken) {
     throw new AppError(httpStatus.FORBIDDEN, 'Invalid reset password token!');
   }
+
+  
 
   const payload = verifyToken(resetPasswordToken, config.jwt.otpSecret!) as {
     email: string;
@@ -1210,13 +1253,40 @@ const updateAuthDataIntoDB = async (
   payload: { name: string },
   userData: IAuth
 ) => {
-  const user = await Auth.findByIdAndUpdate(
-    userData._id,
-    {
-      name: payload.name,
-    },
-    { new: true }
-  );
+  let updatedProfile;
+
+  // Update name in the appropriate profile model based on user role
+  if (userData.role === ROLE.CLIENT) {
+    updatedProfile = await Client.findOneAndUpdate(
+      { auth: userData._id },
+      { name: payload.name },
+      { new: true }
+    );
+  } else if (userData.role === ROLE.BUSINESS) {
+    updatedProfile = await Business.findOneAndUpdate(
+      { auth: userData._id },
+      { name: payload.name },
+      { new: true }
+    );
+  } else if (userData.role === ROLE.ORGANIZATION) {
+    updatedProfile = await Organization.findOneAndUpdate(
+      { auth: userData._id },
+      { name: payload.name },
+      { new: true }
+    );
+  } else {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Invalid user role for profile update!'
+    );
+  }
+
+  if (!updatedProfile) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Profile not found!');
+  }
+
+  // Re-fetch the user to ensure we have the latest data
+  const user = await Auth.findById(userData._id);
 
   if (!user) {
     throw new AppError(httpStatus.NOT_FOUND, 'User not found!');
@@ -1230,29 +1300,19 @@ const updateAuthDataIntoDB = async (
     throw new AppError(httpStatus.BAD_REQUEST, 'This account is deleted!');
   }
 
-  if (user?.status !== ORGANIZATION_STATUS.ACTIVE) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'This account is not active!');
+  if (user?.status !== AUTH_STATUS.VERIFIED) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'This account is not verified!');
   }
 
-  let name: string = 'User';
+  let name: string = updatedProfile.name || 'User';
   let image: string = defaultUserImage;
 
   if (user.role === ROLE.CLIENT) {
-    const client = await Client.findOne({ auth: user._id });
-    name = client?.name || 'User';
-    image = client?.image || defaultUserImage;
-  }
-
-  if (user.role === ROLE.BUSINESS) {
-    const business = await Business.findOne({ auth: user._id });
-    name = business?.name || 'Business';
-    image = business?.coverImage || defaultUserImage;
-  }
-
-  if (user.role === ROLE.ORGANIZATION) {
-    const organization = await Organization.findOne({ auth: user._id });
-    name = organization?.name || 'Organization';
-    image = organization?.coverImage || defaultUserImage;
+    image = (updatedProfile as any)?.image || defaultUserImage;
+  } else if (user.role === ROLE.BUSINESS) {
+    image = (updatedProfile as any)?.coverImage || defaultUserImage;
+  } else if (user.role === ROLE.ORGANIZATION) {
+    image = (updatedProfile as any)?.coverImage || defaultUserImage;
   }
 
   // Prepare user data for tokens

@@ -1110,17 +1110,31 @@ const getTopDonors = async (
  * Get recent donors with their last donation details
  */
 const getRecentDonors = async (
-  current: IAnalyticsPeriod,
+  current?: IAnalyticsPeriod,
   organizationId?: string,
   limit: number = 10
 ): Promise<IRecentDonor[]> => {
   const baseQuery = buildBaseQuery(organizationId);
+  console.log({
+    current,
+  });
+
+  if (current?.startDate || current?.endDate) {
+    if (current.startDate) {
+      baseQuery.donationDate = { $gte: current.startDate };
+    }
+    if (current.endDate) {
+      baseQuery.donationDate = {
+        ...baseQuery.donationDate,
+        $lte: current.endDate,
+      };
+    }
+  }
 
   const recentDonations = await Donation.aggregate([
     {
       $match: {
         ...baseQuery,
-        donationDate: { $gte: current.startDate, $lte: current.endDate },
       },
     },
     { $sort: { donationDate: -1 } },
@@ -1134,6 +1148,7 @@ const getRecentDonors = async (
     { $sort: { lastDonationDate: -1 } },
     { $limit: limit },
   ]);
+  console.log({ recentDonations });
 
   // Get donor details
   // ✅ FIX: donorIds are Client._id values (from donation.donor field), not Auth._id

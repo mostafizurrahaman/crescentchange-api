@@ -11,13 +11,12 @@ import { ROLE } from '../Auth/auth.constant';
 import { IAuth } from '../Auth/auth.interface';
 import fs from 'fs';
 import { createAccessToken } from '../../lib';
-import {
-  ORGANIZATION_STATUS,
-  searchableFields,
-} from './organization.constants';
+import { searchableFields } from './organization.constants';
+import { AUTH_STATUS } from '../Auth/auth.constant';
 import QueryBuilder from '../../builders/QueryBuilder';
 import { is } from 'zod/v4/locales';
 import Cause from '../Causes/causes.model';
+import { DonationService } from '../Donation/donation.service';
 
 /**
  * Start Stripe Connect onboarding for an organization
@@ -378,7 +377,7 @@ const getAllOrganizations = async (query: Record<string, unknown>) => {
 
     if (status) {
       authQuery.status = status;
-      authQuery.isActive = status === ORGANIZATION_STATUS.ACTIVE;
+      authQuery.isActive = status === AUTH_STATUS.VERIFIED;
     }
 
     const authIds = await Auth.find(authQuery).select('_id');
@@ -436,6 +435,31 @@ const getAllOrganizations = async (query: Record<string, unknown>) => {
   };
 };
 
+/**
+ * Get Organization Details by ID
+ */
+const getOrganizationDetailsById = async (organizationId: string) => {
+  // Find organization by ID
+  const organization = await Organization.findById(organizationId)
+    .select(
+      'name registeredCharityName logoImage coverImage aboutUs serviceType address state postalCode website phoneNumber'
+    )
+    .populate('auth', 'email role isActive status');
+
+  const recentDonors = await DonationService.getRecentDonors(
+    {},
+    organizationId,
+    5
+  );
+  console.log('Recent Donors:', recentDonors);
+
+  if (!organization) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Organization not found!');
+  }
+
+  return { ...organization.toObject(), recentDonors };
+};
+
 export const OrganizationService = {
   startStripeConnectOnboarding,
   getStripeConnectStatus,
@@ -444,4 +468,5 @@ export const OrganizationService = {
   updateLogoImageIntoDB,
   editOrgTaxDetailsIntoDB,
   getAllOrganizations,
+  getOrganizationDetailsById,
 };

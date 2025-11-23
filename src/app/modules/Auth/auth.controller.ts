@@ -134,12 +134,8 @@ const verifyOtpForForgotPassword = asyncHandler(async (req, res) => {
 
 // 11. resetPassword
 const resetPassword = asyncHandler(async (req, res) => {
-  const resetPasswordToken = req
-    ?.header('Authorization')
-    ?.replace('Bearer ', '');
-
   const result = await AuthService.resetPasswordIntoDB(
-    resetPasswordToken!,
+    req.body.resetPasswordToken,
     req.body.newPassword
   );
 

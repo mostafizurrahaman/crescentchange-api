@@ -152,8 +152,8 @@ export interface IRoundUpModel extends IRoundUp, Document {
 // src/app/modules/Donation/donation.interface.ts (add these)
 
 export interface IAnalyticsPeriod {
-  startDate: Date;
-  endDate: Date;
+  startDate?: Date;
+  endDate?: Date;
 }
 
 export interface IPercentageChange {
