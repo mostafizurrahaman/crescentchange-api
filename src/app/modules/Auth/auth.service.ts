@@ -946,7 +946,6 @@ const verifyOtpForForgotPassword = async (payload: {
     throw new AppError(httpStatus.BAD_REQUEST, 'Invalid OTP!');
   }
 
-  
   // OTP verified → issue reset password token
   const resetPasswordToken = jwt.sign(
     {
@@ -968,8 +967,6 @@ const resetPasswordIntoDB = async (
   if (!resetPasswordToken) {
     throw new AppError(httpStatus.FORBIDDEN, 'Invalid reset password token!');
   }
-
-  
 
   const payload = verifyToken(resetPasswordToken, config.jwt.otpSecret!) as {
     email: string;
@@ -1334,6 +1331,178 @@ const updateAuthDataIntoDB = async (
   };
 };
 
+// Business Signup with Profile Creation (Single Transaction)
+const businessSignupWithProfile = async (
+  payload: {
+    // Auth fields
+    email: string;
+    password: string;
+
+    // Business profile fields (required)
+    category: string;
+    name: string;
+    tagLine: string;
+    description: string;
+
+    // Business profile fields (optional)
+    businessPhoneNumber?: string;
+    businessEmail?: string;
+    businessWebsite?: string;
+    locations?: string[];
+  },
+  files?: {
+    coverImage?: Express.Multer.File[];
+  }
+) => {
+  // Extract auth and business data
+  const { email, password, ...businessData } = payload;
+
+  // Check if user already exists
+  const existingUser = await Auth.isUserExistsByEmail(email);
+
+  if (existingUser) {
+    // Clean up uploaded files if user exists
+    if (files?.coverImage?.[0]?.path) {
+      try {
+        fs.unlinkSync(files.coverImage[0].path);
+      } catch (err) {
+        console.error('Failed to delete uploaded file:', err);
+      }
+    }
+
+    // Throw error immediately - no OTP sending
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'User with this email already exists!'
+    );
+  }
+
+  // Extract cover image path (optional)
+  const coverImage = files?.coverImage?.[0]?.path.replace(/\\/g, '/') || null;
+
+  // Generate OTP for new user
+  const otp = generateOtp();
+  const now = new Date();
+  const otpExpiry = new Date(now.getTime() + OTP_EXPIRY_MINUTES * 60 * 1000);
+
+  // Start transaction
+  const session = await startSession();
+
+  try {
+    session.startTransaction();
+
+    // 1. Create Auth record
+    const authPayload = {
+      email,
+      password,
+      otp,
+      otpExpiry,
+      isVerifiedByOTP: false,
+      isProfile: true, // Set to true since we're creating profile
+      role: ROLE.BUSINESS,
+      isActive: true,
+      isDeleted: false,
+      status: AUTH_STATUS.PENDING, // Will be verified after OTP verification
+    };
+
+    const [newAuth] = await Auth.create([authPayload], { session });
+
+    if (!newAuth) {
+      throw new AppError(
+        httpStatus.INTERNAL_SERVER_ERROR,
+        'Failed to create authentication record!'
+      );
+    }
+
+    // 2. Create Business profile with optional fields
+    const businessPayload = {
+      auth: newAuth._id,
+      category: businessData.category,
+      name: businessData.name,
+      tagLine: businessData.tagLine,
+      description: businessData.description,
+
+      // Optional fields - only add if provided
+      ...(coverImage && { coverImage }),
+      ...(businessData.businessPhoneNumber && {
+        businessPhoneNumber: businessData.businessPhoneNumber,
+      }),
+      ...(businessData.businessEmail && {
+        businessEmail: businessData.businessEmail,
+      }),
+      ...(businessData.businessWebsite && {
+        businessWebsite: businessData.businessWebsite,
+      }),
+      ...(businessData.locations &&
+        businessData.locations.length > 0 && {
+          locations: businessData.locations,
+        }),
+    };
+
+    const [newBusiness] = await Business.create([businessPayload], { session });
+
+    if (!newBusiness) {
+      throw new AppError(
+        httpStatus.INTERNAL_SERVER_ERROR,
+        'Failed to create business profile!'
+      );
+    }
+
+    // 3. Send OTP email
+    await sendOtpEmail({
+      email,
+      otp,
+      name: businessData.name,
+      customMessage:
+        'Welcome to our platform! Please verify your business account with this OTP.',
+    });
+
+    // Commit transaction
+    await session.commitTransaction();
+    await session.endSession();
+
+    // Return response (without tokens since account is not verified yet)
+    return {
+      message:
+        'Business account created successfully! Please check your email for OTP verification.',
+      data: {
+        email: newAuth.email,
+        businessName: newBusiness.name,
+        isProfileCreated: true,
+        requiresVerification: true,
+      },
+    };
+  } catch (error: any) {
+    // Rollback transaction
+    await session.abortTransaction();
+    await session.endSession();
+
+    // Clean up uploaded files on error
+    if (coverImage && fs.existsSync(coverImage)) {
+      try {
+        fs.unlinkSync(coverImage);
+      } catch (deleteErr) {
+        console.error('Failed to delete uploaded file:', deleteErr);
+      }
+    }
+
+    // Re-throw application errors
+    if (error instanceof AppError) {
+      throw error;
+    }
+
+    // Handle MongoDB duplicate key error
+    if (error.code === 11000) {
+      throw new AppError(httpStatus.BAD_REQUEST, 'Email already exists!');
+    }
+
+    throw new AppError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      error?.message || 'Failed to create business account!'
+    );
+  }
+};
+
 export const AuthService = {
   createAuthIntoDB,
   sendSignupOtpAgain,
@@ -1351,4 +1520,5 @@ export const AuthService = {
   deleteSpecificUserAccountFromDB,
   getNewAccessTokenFromServer,
   updateAuthDataIntoDB,
+  businessSignupWithProfile,
 };

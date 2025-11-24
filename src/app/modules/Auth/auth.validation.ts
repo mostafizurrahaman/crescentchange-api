@@ -466,6 +466,47 @@ const updateAuthDataSchema = z.object({
   }),
 });
 
+// 14:  BUSINESS ACCOUNT PROFILE AND SINGUP AT A TIME:
+const businessSignupWithProfileSchema = z.object({
+  body: z.object({
+    // Auth fields (Required)
+    email: z
+      .string()
+      .email({ message: 'Invalid email format!' })
+      .transform((email) => email.toLowerCase()),
+
+    password: z
+      .string()
+      .min(8, { message: 'Password must be at least 8 characters long!' })
+      .max(20, { message: 'Password cannot exceed 20 characters!' })
+      .regex(/[A-Z]/, {
+        message: 'Password must contain at least one uppercase letter!',
+      })
+      .regex(/[a-z]/, {
+        message: 'Password must contain at least one lowercase letter!',
+      })
+      .regex(/[0-9]/, { message: 'Password must contain at least one number!' })
+      .regex(/[@$!%*?&#]/, {
+        message: 'Password must contain at least one special character!',
+      }),
+
+    // Business profile fields (Required)
+    category: z.string().min(1, 'Category is required!'),
+    name: z.string().min(1, 'Business name is required!'),
+    tagLine: z.string().min(1, 'Tag line is required!'),
+    description: z.string().min(1, 'Description is required!'),
+
+    // Business profile fields (Optional)
+    businessPhoneNumber: z.string().optional(),
+    businessEmail: z
+      .string()
+      .email('Invalid business email format!')
+      .optional(),
+    businessWebsite: z.string().url('Invalid website URL format!').optional(),
+    locations: z.array(z.string()).optional(),
+  }),
+});
+
 export type TProfilePayload = z.infer<typeof createProfileSchema.shape.body>;
 
 export const AuthValidation = {
@@ -482,4 +523,5 @@ export const AuthValidation = {
   deactivateUserAccountSchema,
   getNewAccessTokenSchema,
   updateAuthDataSchema,
+  businessSignupWithProfileSchema,
 };
