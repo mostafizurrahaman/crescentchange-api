@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: "crecent-change-apis",
+      name: "crescentchange-api",
       script: "./dist/server.js",
 
       instances: 1,
