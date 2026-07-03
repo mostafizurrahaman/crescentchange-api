@@ -48,7 +48,7 @@ jobs:
           host: $EC2_HOST
           username: $EC2_USER
           key: $SSH_PRIVATE_KEY
-          source: "./*"
+          source: "."
           target: "~/$PROJECT_FOLDER"
           rm: false
           strip_components: 0
