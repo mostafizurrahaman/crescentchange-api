@@ -37,7 +37,7 @@ jobs:
         run: npm run build
 
       - name: COPY FILE VIA SCP
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/scp-action@v1
         env:
           SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
           EC2_USER: ${{ secrets.EC2_USER }}
