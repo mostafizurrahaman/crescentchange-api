@@ -55,7 +55,7 @@ jobs:
           script: |
             cd ${{ secrets.PROJECT_FOLDER }}
 
-            echo '${{ secrets.ENV_FILE }}' > .env
+            echo '${{ secrets.ENV_FILE }}' > .env.development
 
             npm ci
             pm2 restart ecosystem.config.js
