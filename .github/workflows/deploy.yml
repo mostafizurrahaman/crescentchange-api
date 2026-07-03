@@ -35,6 +35,11 @@ jobs:
         run: npm ci
       - name: Build the Code
         run: npm run build
+      - name: Debug host and user
+        run: |
+          echo "Host: ${{ secrets.EC2_HOST }}"
+          echo "User: ${{ secrets.EC2_USER }}"
+          echo "User: ${{ secrets.EC2_SSH_PRIVATE_KEY }}"
 
       - name: COPY FILE VIA SCP
         uses: appleboy/scp-action@v1
