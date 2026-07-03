@@ -45,9 +45,9 @@ jobs:
           PROJECT_FOLDER: ${{ secrets.PROJECT_FOLDER }}
         with:
           envs: SSH_PRIVATE_KEY,EC2_USER,EC2_HOST,PROJECT_FOLDER
-          host: $EC2_HOST
-          username: $EC2_USER
-          key: $SSH_PRIVATE_KEY
+          host: ${{ env.EC2_HOST }}
+          username: ${{ env.EC2_USER }}
+          key: ${{ env.SSH_PRIVATE_KEY }}
           source: .
           target: /home/ec2-user
           rm: false
@@ -68,9 +68,9 @@ jobs:
           PROJECT_FOLDER: ${{ secrets.PROJECT_FOLDER }}
         with:
           envs: SSH_PRIVATE_KEY,EC2_USER,EC2_HOST,ENV_FILE,PROJECT_FOLDER
-          host: $EC2_HOST
-          username: $EC2_USER
-          key: $SSH_PRIVATE_KEY
+          host: ${{ env.EC2_HOST }}
+          username: ${{ env.EC2_USER }}
+          key: ${{ env.SSH_PRIVATE_KEY }}
           script: |
             cd ~/$PROJECT_FOLDER
 
