@@ -159,6 +159,11 @@ authSchema.pre('findOne', function (next) {
   next();
 });
 
+authSchema.pre('countDocuments', function (next) {
+  this.find({ isDeleted: { $ne: true } });
+  next();
+});
+
 authSchema.pre('aggregate', function (next) {
   this.pipeline().unshift({ $match: { isDeleted: { $ne: true } } });
   next();

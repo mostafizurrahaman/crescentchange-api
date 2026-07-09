@@ -414,6 +414,9 @@ const getDonationsByOrganization = async (
           localField: 'donorData.auth',
           foreignField: '_id',
           as: 'authData',
+          pipeline: [
+            { $match: { isDeleted: { $ne: true } } },
+          ],
         },
       },
       { $unwind: { path: '$authData', preserveNullAndEmptyArrays: true } },

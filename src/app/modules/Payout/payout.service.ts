@@ -175,6 +175,11 @@ const getAllPayouts = async (
       as: 'requestedBy',
       pipeline: [
         {
+          $match: {
+            isDeleted: { $ne: true },
+          },
+        },
+        {
           $project: {
             _id: 1,
             email: 1,

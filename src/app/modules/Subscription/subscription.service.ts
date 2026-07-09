@@ -143,6 +143,11 @@ const getAdminSubscriptionAndPaymentsStats = async () => {
               as: 'userRole',
               pipeline: [
                 {
+                  $match: {
+                    isDeleted: { $ne: true },
+                  },
+                },
+                {
                   $project: {
                     _id: 0,
                     role: 1,
@@ -240,6 +245,9 @@ const getAdminSubscriptionAndPayments = async (query: Record<string, any>) => {
         localField: 'user',
         foreignField: '_id',
         as: 'user',
+        pipeline: [
+          { $match: { isDeleted: { $ne: true } } },
+        ],
       },
     },
 

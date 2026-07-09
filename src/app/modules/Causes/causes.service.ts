@@ -329,6 +329,11 @@ pipeline.push({
               foreignField: "_id", 
               as: "authDetails",
               pipeline: [
+                {
+                  $match: {
+                    isDeleted: { $ne: true },
+                  },
+                },
                 { 
                   $project: { 
                     _id: 1, 

@@ -533,10 +533,13 @@ const getAdminStatesFromDb = async (params?: AdminStatesParams) => {
 
     {
       $lookup: {
-      from: 'auths',
-      localField: 'donor.auth',
-      foreignField: '_id',
-      as: 'donor_auth',
+        from: 'auths',
+        localField: 'donor.auth',
+        foreignField: '_id',
+        as: 'donor_auth',
+        pipeline: [
+          { $match: { isDeleted: { $ne: true } } },
+        ],
       },
     },
 
@@ -763,7 +766,12 @@ const getDonationsReportFromDb = async (params?: DonationsReportParams) => {
         from: 'auths',
         let: { donorAuthId: { $arrayElemAt: ['$donorDetails.auth', 0] } },
         pipeline: [
-          { $match: { $expr: { $eq: ['$_id', '$$donorAuthId'] } } },
+          {
+            $match: {
+              $expr: { $eq: ['$_id', '$$donorAuthId'] },
+              isDeleted: { $ne: true },
+            },
+          },
           { $project: { email: 1, _id: 0 } },
         ],
         as: 'donorAuth',
@@ -775,7 +783,12 @@ const getDonationsReportFromDb = async (params?: DonationsReportParams) => {
         from: 'auths',
         let: { orgAuthId: { $arrayElemAt: ['$organizationDetails.auth', 0] } },
         pipeline: [
-          { $match: { $expr: { $eq: ['$_id', '$$orgAuthId'] } } },
+          {
+            $match: {
+              $expr: { $eq: ['$_id', '$$orgAuthId'] },
+              isDeleted: { $ne: true },
+            },
+          },
           { $project: { email: 1, _id: 0 } },
         ],
         as: 'organizationAuth',
@@ -2119,7 +2132,12 @@ const getCausesReportFromDb = async (params?: CausesReportParams) => {
         from: 'auths',
         let: { orgAuthId: { $arrayElemAt: ['$organizationDetails.auth', 0] } },
         pipeline: [
-          { $match: { $expr: { $eq: ['$_id', '$$orgAuthId'] } } },
+          {
+            $match: {
+              $expr: { $eq: ['$_id', '$$orgAuthId'] },
+              isDeleted: { $ne: true },
+            },
+          },
           { $project: { email: 1, _id: 0 } },
         ],
         as: 'organizationAuth',
@@ -2242,6 +2260,14 @@ const getBusinessesReportFromDb = async (params?: BusinessesReportParams) => {
         localField: 'auth',
         foreignField: '_id',
         as: 'authDetails',
+        pipeline: [
+          { $match: { isDeleted: { $ne: true } } },
+        ],
+      },
+    },
+    {
+      $match: {
+        'authDetails.0': { $exists: true },
       },
     },
     {
@@ -2508,6 +2534,9 @@ export const getDonorsFromDB = async (query: Record<string, unknown>) => {
         localField: 'auth',
         foreignField: '_id',
         as: 'authDetails',
+        pipeline: [
+          { $match: { isDeleted: { $ne: true } } },
+        ],
       },
     },
     { $unwind: '$authDetails' },
@@ -2741,7 +2770,10 @@ export const getBusinessRewardOverview = async (query: {
         localField: 'auth',
         foreignField: '_id',
         as: 'auth',
-        pipeline: [{ $project: { email: 1 } }],
+        pipeline: [
+          { $match: { isDeleted: { $ne: true } } },
+          { $project: { email: 1 } },
+        ],
       },
     },
     { $unwind: '$auth' }
