@@ -439,7 +439,9 @@ const getAllOrganizations = async (query: Record<string, unknown>) => {
   let authIdArray: any[] = [];
   if (status) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const authQuery: any = { role: ROLE.ORGANIZATION };
+    const authQuery: any = { role: ROLE.ORGANIZATION,   isDeleted: { 
+      $ne: true,
+    } };
 
     if (status) {
       authQuery.status = status;
@@ -447,7 +449,19 @@ const getAllOrganizations = async (query: Record<string, unknown>) => {
       authQuery.isActive = status === AUTH_STATUS.VERIFIED;
     }
 
+
+
     const authIds = await Auth.find(authQuery).select('_id');
+    authIdArray = authIds.map((auth) => auth._id);
+    conditions.auth = { $in: authIdArray };
+  } else { 
+  const authIds = await Auth.find({ 
+    role: ROLE.ORGANIZATION,
+    isDeleted: { 
+      $ne: true,
+    }
+
+  }).select('_id');
     authIdArray = authIds.map((auth) => auth._id);
     conditions.auth = { $in: authIdArray };
   }
@@ -456,6 +470,9 @@ const getAllOrganizations = async (query: Record<string, unknown>) => {
   const organizationQuery = Organization.find(conditions).populate({
     path: 'auth',
     select: 'email role isActive status',
+    match: {
+     isDeleted: false
+    }
   });
 
   // Apply QueryBuilder

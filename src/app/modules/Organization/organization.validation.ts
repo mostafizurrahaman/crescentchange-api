@@ -3,6 +3,7 @@ import {
   ORGANIZATION_STATUS,
   organizationServiceTypeValues,
 } from './organization.constants';
+import { authStatusValues } from '../Auth/auth.constant';
 
 // Tab 1: Organization Details (without images)
 const editProfileOrgDetailsSchema = z.object({
@@ -44,8 +45,8 @@ const getAllOrganizationsSchema = z.object({
 
       // Status filter (from Auth model)
       status: z
-        .enum(organizationServiceTypeValues as [string, ...string[]], {
-          message: `Status must be one of: ${organizationServiceTypeValues.join(
+        .enum(authStatusValues as [string, ...string[]], {
+          message: `Status must be one of: ${authStatusValues.join(
             ', '
           )}`,
         })
