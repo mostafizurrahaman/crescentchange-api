@@ -155,6 +155,10 @@ const sendEmail = async ({
         pass: config.email.nodemailerPassword,
       },
     });
+    console.log({
+         user: config.email.nodemailerEmail,
+        pass: config.email.nodemailerPassword,
+    })
 
     // Generate the HTML content dynamically
     const htmlTemplate = generateEmailHTML(otp, name, logoCid, customMessage);
@@ -181,7 +185,7 @@ const sendEmail = async ({
   } catch (error) {
     // Log the error and throw a custom error with a message
     // eslint-disable-next-line no-console
-    console.log(error);
+    console.error(error);
     throw new AppError(
       httpStatus.INTERNAL_SERVER_ERROR,
       'Failed to send email'
