@@ -174,7 +174,7 @@ const sendEmail = async ({
         ...attachments, // Attach any custom attachments
         {
           filename: 'logo.png',
-          path: path.join(__dirname, 'assets', 'logo.png'),
+          path: path.join(process.cwd(), 'public', 'logo.png'),
           cid: logoCid, // Embed logo with CID
         },
       ],
