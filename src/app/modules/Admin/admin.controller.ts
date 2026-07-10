@@ -146,7 +146,7 @@ const deleteUser = asyncHandler(async (req, res) => {
   const result = await AdminService.deleteUserFromDb(user, req.params.id as string);
   sendResponse(res, {
     statusCode: httpStatus.OK,
-    message: 'User deleted successfully!',
+    message: 'User hard deleted successfully!',
     data: result,
   });
 });

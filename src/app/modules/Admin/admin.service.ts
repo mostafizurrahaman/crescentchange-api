@@ -9,6 +9,7 @@ import Business from '../Business/business.model';
 import Client from '../Client/client.model';
 import { IAuth } from '../Auth/auth.interface';
 import { AppError } from '../../utils';
+import { AuthService } from '../Auth/auth.service';
 
 // Utility function to get date ranges based on filter type
 const getDateRange = (filter?: 'today' | 'week' | 'month') => {
@@ -1354,7 +1355,6 @@ const changeUserStatusInDb = async (
 };
 
 const deleteUserFromDb = async (currentUser: IAuth, userId: string) => {
-  // delete the user softly
   const user = await Auth.findById(userId);
   if (!user) {
     throw new Error('User not found');
@@ -1376,11 +1376,7 @@ const deleteUserFromDb = async (currentUser: IAuth, userId: string) => {
     throw new AppError(httpStatus.NOT_FOUND, "You dont' have enough permission to delete this user.")
   }
 
-
-
-  user.isDeleted = true;
-  await user.save();
-  return user;
+  return AuthService.deleteUserAccountByIdFromDB(userId);
 };
 
 const getPendingUsersReportFromDb = async (

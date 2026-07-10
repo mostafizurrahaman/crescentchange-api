@@ -14,7 +14,10 @@ import {
 } from '../../lib';
 import { TDeactiveAccountPayload, TProfileFileFields } from '../../types';
 import { AppError, sendOtpEmail, uploadToS3 } from '../../utils';
-import Business from '../Business/business.model';
+import Business, {
+  BusinessView,
+  BusinessWebsiteView,
+} from '../Business/business.model';
 import Organization from '../Organization/organization.model';
 import Client from '../Client/client.model';
 import { IAuth } from './auth.interface';
@@ -50,6 +53,25 @@ import { SubscriptionHistory } from '../subscriptionHistory/subscriptionHistory.
 import { SubscriptionService } from '../Subscription/subscription.service';
 import firebaseAdmin from '../../lib/firebase';
 import { DecodedIdToken } from 'firebase-admin/auth';
+import { BankConnectionModel } from '../BankConnection/bankConnection.model';
+import { BalanceTransaction } from '../Balance/balance.model';
+import { UserBadge, UserBadgeHistory } from '../badge/badge.model';
+import Cause from '../Causes/causes.model';
+import Donation from '../Donation/donation.model';
+import { FavoriteReward } from '../FavoriteReward/FavoriteReward.model';
+import Notification from '../Notification/notification.model';
+import { NotificationSetting } from '../NotificationSetting/notificationSetting.model';
+import { StripeAccount } from '../OrganizationAccount/stripe-account.model';
+import PaymentMethod from '../PaymentMethod/paymentMethod.model';
+import { Payout } from '../Payout/payout.model';
+import { PointsBalance, PointsTransaction } from '../Points/points.model';
+import { Receipt } from '../Receipt/receipt.model';
+import { Reward, ViewReward } from '../Reward/reward.model';
+import { RewardCode } from '../RewardCode/reward-code.model';
+import { RewardRedemption } from '../RewardRedeemtion/reward-redeemtion.model';
+import { RoundUpModel } from '../RoundUp/roundUp.model';
+import { RoundUpTransactionModel } from '../RoundUpTransaction/roundUpTransaction.model';
+import { ScheduledDonation } from '../ScheduledDonation/scheduledDonation.model';
 const OTP_EXPIRY_MINUTES =
   Number.parseInt(config.jwt.otpSecretExpiresIn as string, 10) || 5;
 
@@ -1182,6 +1204,255 @@ const deactivateUserAccountFromDB = async (
   return result;
 };
 
+const uniqueObjectIds = (ids: mongoose.Types.ObjectId[]) =>
+  Array.from(new Set(ids.map((id) => id.toString()))).map(
+    (id) => new mongoose.Types.ObjectId(id),
+  );
+
+const getObjectIds = <T extends { _id: mongoose.Types.ObjectId }>(docs: T[]) =>
+  docs.map((doc) => doc._id);
+
+const hardDeleteUserAccountById = async (
+  userId: string,
+  session: mongoose.ClientSession,
+) => {
+  const userToDelete = await Auth.findById(userId).session(session);
+
+  if (!userToDelete) {
+    throw new AppError(httpStatus.NOT_FOUND, 'User not found!');
+  }
+
+  const authId = userToDelete._id;
+
+  const clientProfile = await Client.findOne({ auth: authId }).session(session);
+  const businessProfile = await Business.findOne({ auth: authId }).session(
+    session,
+  );
+  const organizationProfile = await Organization.findOne({
+    auth: authId,
+  }).session(session);
+  const adminProfile = await SuperAdmin.findOne({ auth: authId }).session(
+    session,
+  );
+
+  const clientId = clientProfile?._id;
+  const businessId = businessProfile?._id;
+  const organizationId = organizationProfile?._id;
+
+  const rewardIds = businessId
+    ? getObjectIds(
+        await Reward.find({ business: businessId }).select('_id').session(
+          session,
+        ),
+      )
+    : [];
+
+  const donationIds = uniqueObjectIds([
+    ...(clientId
+      ? getObjectIds(
+          await Donation.find({ donor: clientId }).select('_id').session(
+            session,
+          ),
+        )
+      : []),
+    ...(organizationId
+      ? getObjectIds(
+          await Donation.find({ organization: organizationId })
+            .select('_id')
+            .session(session),
+        )
+      : []),
+  ]);
+
+  const rewardRedemptionIds = uniqueObjectIds([
+    ...(clientId
+      ? getObjectIds(
+          await RewardRedemption.find({ user: clientId })
+            .select('_id')
+            .session(session),
+        )
+      : []),
+    ...(businessId || rewardIds.length
+      ? getObjectIds(
+          await RewardRedemption.find({
+            $or: [
+              ...(businessId ? [{ business: businessId }] : []),
+              ...(rewardIds.length ? [{ reward: { $in: rewardIds } }] : []),
+            ],
+          })
+            .select('_id')
+            .session(session),
+        )
+      : []),
+  ]);
+
+  const userBadgeIds = clientId
+    ? getObjectIds(
+        await UserBadge.find({ user: clientId }).select('_id').session(session),
+      )
+    : [];
+
+  await FcmToken.deleteMany({ user: authId }).session(session);
+  await NotificationSetting.deleteMany({ user: authId }).session(session);
+  await Notification.deleteMany({ receiver: authId }).session(session);
+  await FavoriteReward.deleteMany({ user: authId }).session(session);
+  await BankConnectionModel.deleteMany({ user: authId }).session(session);
+  await PaymentMethod.deleteMany({ user: authId }).session(session);
+  await RoundUpModel.deleteMany({ user: authId }).session(session);
+  await RoundUpTransactionModel.deleteMany({ user: authId }).session(session);
+  await SubscriptionHistory.deleteMany({ user: authId }).session(session);
+  await Subscription.deleteMany({ user: authId }).session(session);
+  await BusinessView.deleteMany({ user: authId }).session(session);
+  await BusinessWebsiteView.deleteMany({ user: authId }).session(session);
+  await ViewReward.deleteMany({ user: authId }).session(session);
+  await Payout.deleteMany({
+    $or: [{ requestedBy: authId }, { approvedBy: authId }],
+  }).session(session);
+  await BalanceTransaction.deleteMany({ processedBy: authId }).session(session);
+
+  if (clientId) {
+    await Receipt.deleteMany({ donor: clientId }).session(session);
+    await Donation.deleteMany({ donor: clientId }).session(session);
+    await ScheduledDonation.deleteMany({ user: clientId }).session(session);
+    await RewardRedemption.deleteMany({ user: clientId }).session(session);
+    await PointsTransaction.deleteMany({ user: clientId }).session(session);
+    await PointsBalance.deleteMany({ user: clientId }).session(session);
+    await UserBadgeHistory.deleteMany({ user: clientId }).session(session);
+    await UserBadge.deleteMany({ user: clientId }).session(session);
+    await RewardCode.updateMany(
+      { usedBy: clientId },
+      {
+        $unset: {
+          usedBy: '',
+          usedAt: '',
+          redemption: '',
+        },
+      },
+    ).session(session);
+  }
+
+  if (businessId) {
+    await BusinessView.deleteMany({ business: businessId }).session(session);
+    await BusinessWebsiteView.deleteMany({ business: businessId }).session(
+      session,
+    );
+    await RewardCode.deleteMany({ business: businessId }).session(session);
+    await RewardRedemption.deleteMany({ business: businessId }).session(
+      session,
+    );
+    await Reward.deleteMany({ business: businessId }).session(session);
+  }
+
+  if (organizationId) {
+    await BoardMemeber.deleteMany({ organization: organizationId }).session(
+      session,
+    );
+    await Cause.deleteMany({ organization: organizationId }).session(session);
+    await Receipt.deleteMany({ organization: organizationId }).session(session);
+    await Donation.deleteMany({ organization: organizationId }).session(
+      session,
+    );
+    await ScheduledDonation.deleteMany({ organization: organizationId }).session(
+      session,
+    );
+    await RoundUpModel.deleteMany({ organization: organizationId }).session(
+      session,
+    );
+    await RoundUpTransactionModel.deleteMany({
+      organization: organizationId,
+    }).session(session);
+    await BalanceTransaction.deleteMany({
+      organization: organizationId,
+    }).session(session);
+    await Payout.deleteMany({ organization: organizationId }).session(session);
+    await StripeAccount.deleteMany({ organization: organizationId }).session(
+      session,
+    );
+  }
+
+  if (rewardIds.length) {
+    await FavoriteReward.deleteMany({ reward: { $in: rewardIds } }).session(
+      session,
+    );
+    await ViewReward.deleteMany({ reward: { $in: rewardIds } }).session(
+      session,
+    );
+    await RewardCode.deleteMany({ reward: { $in: rewardIds } }).session(
+      session,
+    );
+    await RewardRedemption.deleteMany({ reward: { $in: rewardIds } }).session(
+      session,
+    );
+  }
+
+  if (donationIds.length) {
+    await Receipt.deleteMany({ donation: { $in: donationIds } }).session(
+      session,
+    );
+    await BalanceTransaction.deleteMany({
+      donation: { $in: donationIds },
+    }).session(session);
+    await PointsTransaction.deleteMany({
+      donation: { $in: donationIds },
+    }).session(session);
+    await UserBadgeHistory.deleteMany({
+      donation: { $in: donationIds },
+    }).session(session);
+  }
+
+  if (rewardRedemptionIds.length) {
+    await PointsTransaction.deleteMany({
+      rewardRedemption: { $in: rewardRedemptionIds },
+    }).session(session);
+    await RewardCode.deleteMany({
+      redemption: { $in: rewardRedemptionIds },
+    }).session(session);
+  }
+
+  if (userBadgeIds.length) {
+    await UserBadgeHistory.deleteMany({
+      userBadge: { $in: userBadgeIds },
+    }).session(session);
+  }
+
+  await Client.deleteMany({ auth: authId }).session(session);
+  await Business.deleteMany({ auth: authId }).session(session);
+  await Organization.deleteMany({ auth: authId }).session(session);
+  await SuperAdmin.deleteMany({ auth: authId }).session(session);
+  await Auth.findByIdAndDelete(authId, { session });
+
+  return {
+    email: userToDelete.email,
+    id: userToDelete._id,
+    name:
+      clientProfile?.name ||
+      businessProfile?.name ||
+      organizationProfile?.name ||
+      adminProfile?.name ||
+      'User',
+    role: userToDelete.role,
+  };
+};
+
+const deleteUserAccountByIdFromDB = async (userId: string) => {
+  const session = await startSession();
+
+  try {
+    session.startTransaction();
+
+    const deletedUser = await hardDeleteUserAccountById(userId, session);
+
+    await session.commitTransaction();
+    await session.endSession();
+
+    return deletedUser;
+  } catch (error) {
+    await session.abortTransaction();
+    await session.endSession();
+    throw error;
+  }
+};
+
 // 14. deleteSpecificUserAccountFromDB
 const deleteSpecificUserAccountFromDB = async (user: IAuth) => {
   const session = await startSession();
@@ -1189,56 +1460,15 @@ const deleteSpecificUserAccountFromDB = async (user: IAuth) => {
   try {
     session.startTransaction();
 
-    // 1. Find the user to get their email and confirm they exist before deleting.
-    const userToDelete = await Auth.findById(user._id).session(session);
-
-    if (!userToDelete) {
-      throw new AppError(httpStatus.NOT_FOUND, 'User not found!');
-    }
-
-    // 2. Initialize a default name for the return object.
-    let name: string = 'User';
-
-    // 3. Find and delete the associated profile document based on the user's role.
-    if (user.role === ROLE.CLIENT) {
-      const deletedClient = await Client.findOneAndDelete(
-        { auth: user._id },
-        { session },
-      );
-      // If a client profile existed and was deleted, use its name.
-      if (deletedClient?.name) {
-        name = deletedClient.name;
-      }
-    } else if (user.role === ROLE.BUSINESS) {
-      const deletedBusiness = await Business.findOneAndDelete(
-        { auth: user._id },
-        { session },
-      );
-      if (deletedBusiness?.name) {
-        name = deletedBusiness.name;
-      }
-    } else if (user.role === ROLE.ORGANIZATION) {
-      const deletedOrganization = await Organization.findOneAndDelete(
-        { auth: user._id },
-        { session },
-      );
-      if (deletedOrganization?.name) {
-        name = deletedOrganization.name;
-      }
-    }
-
-    // 4. Hard delete the main authentication document.
-    await Auth.findByIdAndDelete(user._id, { session });
+    const deletedUser = await hardDeleteUserAccountById(
+      user._id.toString(),
+      session,
+    );
 
     await session.commitTransaction();
     await session.endSession();
 
-    // 5. Return the details of the deleted user.
-    return {
-      email: userToDelete.email,
-      id: userToDelete._id,
-      name,
-    };
+    return deletedUser;
   } catch (error) {
     await session.abortTransaction();
     await session.endSession();
@@ -2547,6 +2777,7 @@ export const AuthService = {
   resetPasswordIntoDB,
   fetchProfileFromDB,
   deactivateUserAccountFromDB,
+  deleteUserAccountByIdFromDB,
   deleteSpecificUserAccountFromDB,
   getNewAccessTokenFromServer,
   updateAuthDataIntoDB,

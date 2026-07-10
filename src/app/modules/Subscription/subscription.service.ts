@@ -13,6 +13,7 @@ import { OrganizationModel } from '../Organization/organization.model';
 import config from '../../config';
 
 import { calculatePercentageChange } from '../../lib/filter-helper';
+import { PipelineStage } from 'mongoose';
 
 const createSubscriptionSession = async (
   userId: string,
@@ -234,7 +235,7 @@ const getAdminSubscriptionAndPayments = async (query: Record<string, any>) => {
     matchStage.currentPeriodStart = dateFilter;
   }
 
-  const pipeline: any[] = [
+  const pipeline: PipelineStage[] = [
     /** 1. Match subscription filters */
     { $match: matchStage },
 
