@@ -144,7 +144,7 @@ const sendSignupOtpAgain = async (email: string) => {
   if (!user) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'You must sign up first to get an OTP!',
+      `Account not found!`,
     );
   } else if (!user.otpExpiry || user.otpExpiry < now) {
     // sending new OTP if previous one is expired
