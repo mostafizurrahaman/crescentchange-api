@@ -29,6 +29,7 @@ import { SubscriptionHistoryRoutes } from '../modules/subscriptionHistory/subscr
 import { NotificationSettingRoutes } from '../modules/NotificationSetting/notificationSetting.route';
 import { favoriteRoutes } from '../modules/FavoriteReward/FavoriteReward.routes';
 import { revenueCatRoutes } from '../modules/RevenueCat/revenue-cat.routes';
+import { featureHandlerRoutes } from '../modules/FeatureHandler/feature-handler.routes';
 
 const router = Router();
 
@@ -155,6 +156,10 @@ const moduleRoutes = [
   {
     path: '/revenuecat',
     route: revenueCatRoutes,
+  },
+   {
+    path: '/feature-handler',
+    route: featureHandlerRoutes,
   },
 ];
 
