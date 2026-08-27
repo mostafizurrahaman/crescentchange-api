@@ -15,7 +15,17 @@ export interface IDonation {
   netAmount: number; // The clean amount credited to the Organization
   totalAmount: number; // The actual charge to the card
 
-  currency: string;
+  currency: string; // Charge currency (org defaultCurrency)
+
+  // Platform base currency snapshot (locked at payment time)
+  baseCurrency?: string; // Always USD for reporting
+  exchangeRate?: number; // original → baseCurrency at charge time
+  amountBase?: number;
+  totalAmountBase?: number;
+  netAmountBase?: number;
+  platformFeeBase?: number;
+  gstOnFeeBase?: number;
+  stripeFeeBase?: number;
   status:
     | 'pending'
     | 'processing'

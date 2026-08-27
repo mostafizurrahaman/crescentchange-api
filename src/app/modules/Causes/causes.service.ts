@@ -123,7 +123,7 @@ const getRaisedCausesByOrganizationFromDB = async (
     {
       $group: {
         _id: '$cause',
-        totalDonationAmount: { $sum: '$amount' },
+        totalDonationAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } },
       },
     },
     {
@@ -477,7 +477,7 @@ const totalPages = Math.round(total / limitNum)
     {
       $group: {
         _id: '$cause',
-        totalDonationAmount: { $sum: '$amount' },
+        totalDonationAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } },
         totalDonors: { $addToSet: '$donor' },
         totalDonations: { $sum: 1 }, // Count total number of donations
       },

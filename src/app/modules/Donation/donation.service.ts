@@ -34,12 +34,13 @@ import {
   calculateStreaks,
   formatCurrency,
   getDateRanges,
+  amountBaseField,
 } from '../../lib/filter-helper';
 import { IAuth } from '../Auth/auth.interface';
 import Cause from '../Causes/causes.model';
 import { CAUSE_STATUS_TYPE } from '../Causes/causes.constant';
 import {
-  calculateAustralianFees,
+  calculateDonationFees,
   monthAbbreviations,
   REFUND_WINDOW_DAYS,
 } from './donation.constant';
@@ -48,6 +49,11 @@ import { RoundUpModel } from '../RoundUp/roundUp.model';
 import { StripeAccount } from '../OrganizationAccount/stripe-account.model';
 import { Subscription } from '../Subscription/subscription.model';
 import { SubscriptionService } from '../Subscription/subscription.service';
+import {
+  buildBaseMoneyFields,
+  getCurrencyForCountry,
+  normalizeCurrency,
+} from '../../utils/currency.utils';
 
 // Helper function to generate unique idempotency key
 const generateIdempotencyKey = (): string => {
@@ -120,15 +126,36 @@ const createOneTimeDonation = async (
     throw new AppError(httpStatus.BAD_REQUEST, 'Payment method is not active!');
   }
 
-  // 6. Calculate Fees
-  const financials = calculateAustralianFees(amount, coverFees);
+  // 6. Resolve org currency + calculate Fees
+  const currency = normalizeCurrency(
+    organization.defaultCurrency || getCurrencyForCountry(organization.country)
+  );
+  const financials = calculateDonationFees(amount, coverFees, {
+    country: organization.country,
+  });
   const applicationFee = financials.platformFeeWithStripe;
+  const baseMoney = await buildBaseMoneyFields({
+    currency,
+    amount: financials.baseAmount,
+    totalAmount: financials.totalCharge,
+    netAmount: financials.netToOrg,
+    platformFee: financials.platformFee,
+    gstOnFee: financials.gstOnFee,
+    stripeFee: financials.stripeFee,
+  });
+
   console.log(`💰 Donation Breakdown (Destination Charge):`);
-  console.log(`   Base: $${financials.baseAmount.toFixed(2)}`);
-  console.log(`   App Fee: $${applicationFee.toFixed(2)}`);
-  console.log(`   Stripe Fee: $${financials.stripeFee.toFixed(2)}`);
-  console.log(`   Total Charged: $${financials.totalCharge.toFixed(2)}`);
-  console.log(`   Net To Org: $${financials.netToOrg.toFixed(2)}`);
+  console.log(`   Currency: ${currency}`);
+  console.log(`   Base: ${financials.baseAmount.toFixed(2)} ${currency}`);
+  console.log(`   App Fee: ${applicationFee.toFixed(2)} ${currency}`);
+  console.log(`   Stripe Fee: ${financials.stripeFee.toFixed(2)} ${currency}`);
+  console.log(
+    `   Total Charged: ${financials.totalCharge.toFixed(2)} ${currency}`
+  );
+  console.log(`   Net To Org: ${financials.netToOrg.toFixed(2)} ${currency}`);
+  console.log(
+    `   Base (USD): ${baseMoney.amountBase.toFixed(2)} @ rate ${baseMoney.exchangeRate}`
+  );
   // Generate idempotency key
   const idempotencyKey = generateIdempotencyKey();
 
@@ -155,10 +182,13 @@ const createOneTimeDonation = async (
       netAmount: financials.netToOrg,
       totalAmount: financials.totalCharge,
 
-      currency: 'USD',
+      currency,
+      ...baseMoney,
+
       status: 'pending',
       specialMessage,
-      pointsEarned: Math.floor(financials.baseAmount * 100),
+      // Points always from platform base so AUD ≠ USD in leaderboards
+      pointsEarned: Math.floor(baseMoney.amountBase * 100),
 
       stripeCustomerId: paymentMethod.stripeCustomerId,
       stripePaymentMethodId: paymentMethod.stripePaymentMethodId,
@@ -182,7 +212,7 @@ const createOneTimeDonation = async (
       stripeFee: financials.stripeFee,
       netToOrg: financials.netToOrg,
 
-      currency: 'USD',
+      currency: currency.toLowerCase(),
       customerId: paymentMethod.stripeCustomerId,
       paymentMethodId: paymentMethod.stripePaymentMethodId,
       donationId: donationUniqueId.toString(),
@@ -548,7 +578,7 @@ const getDonationStatistics = async (
       $group: {
         _id: null,
         totalDonations: { $sum: 1 },
-        totalAmount: { $sum: '$amount' }, // Summing Base Amount
+        totalAmount: { $sum: amountBaseField }, // Summing Base Amount
         completedDonations: {
           $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] },
         },
@@ -565,7 +595,7 @@ const getDonationStatistics = async (
           $sum: { $cond: [{ $eq: ['$status', 'canceled'] }, 1, 0] },
         },
         totalPointsEarned: { $sum: '$pointsEarned' },
-        averageDonationAmount: { $avg: '$amount' },
+        averageDonationAmount: { $avg: amountBaseField },
       },
     },
   ]);
@@ -687,10 +717,23 @@ const retryFailedPayment = async (
   }
 
   //  Recalculate fees to ensure consistency
-  const financials = calculateAustralianFees(
-    donation.amount,
-    donation.coverFees
+  const currency = normalizeCurrency(
+    donation.currency ||
+      organization.defaultCurrency ||
+      getCurrencyForCountry(organization.country)
   );
+  const financials = calculateDonationFees(donation.amount, donation.coverFees, {
+    country: organization.country,
+  });
+  const baseMoney = await buildBaseMoneyFields({
+    currency,
+    amount: financials.baseAmount,
+    totalAmount: financials.totalCharge,
+    netAmount: financials.netToOrg,
+    platformFee: financials.platformFee,
+    gstOnFee: financials.gstOnFee,
+    stripeFee: financials.stripeFee,
+  });
 
   // Platform Fee = Platform Revenue + GST + Stripe Fee
   const applicationFee = financials.platformFeeWithStripe;
@@ -711,7 +754,7 @@ const retryFailedPayment = async (
     stripeFee: financials.stripeFee,
     netToOrg: financials.netToOrg,
 
-    currency: 'usd',
+    currency: currency.toLowerCase(),
     customerId: donation.stripeCustomerId,
     paymentMethodId: donation.stripePaymentMethodId,
     donationId: String(donation._id),
@@ -723,6 +766,14 @@ const retryFailedPayment = async (
   donation.stripePaymentIntentId = paymentIntent.payment_intent_id;
   donation.status = 'processing';
   donation.stripeSessionId = undefined;
+  donation.currency = currency;
+  donation.platformFee = financials.platformFee;
+  donation.gstOnFee = financials.gstOnFee;
+  donation.stripeFee = financials.stripeFee;
+  donation.netAmount = financials.netToOrg;
+  donation.totalAmount = financials.totalCharge;
+  Object.assign(donation, baseMoney);
+  donation.pointsEarned = Math.floor(baseMoney.amountBase * 100);
   await donation.save();
 
   return {
@@ -1564,7 +1615,7 @@ const getOrganizationYearlyTrends = async (
     {
       $group: {
         _id: { $month: '$donationDate' },
-        totalAmount: { $sum: '$amount' },
+        totalAmount: { $sum: amountBaseField },
         totalCount: { $sum: 1 },
         oneTimeCount: {
           $sum: { $cond: [{ $eq: ['$donationType', 'one-time'] }, 1, 0] },
@@ -1657,32 +1708,41 @@ const getClientStats = async (
           {
             $group: {
               _id: null,
-              totalAmount: { $sum: '$amount' }, // Using base amount (tax deductible)
+              totalAmount: { $sum: amountBaseField }, // Using base amount (tax deductible)
               count: { $sum: 1 },
               roundUpAmount: {
                 $sum: {
-                  $cond: [{ $eq: ['$donationType', 'round-up'] }, '$amount', 0],
+                  $cond: [
+                    { $eq: ['$donationType', 'round-up'] },
+                    amountBaseField,
+                    0,
+                  ],
                 },
               },
               recurringAmount: {
                 $sum: {
                   $cond: [
                     { $eq: ['$donationType', 'recurring'] },
-                    '$amount',
+                    amountBaseField,
                     0,
                   ],
                 },
               },
               oneTimeAmount: {
                 $sum: {
-                  $cond: [{ $eq: ['$donationType', 'one-time'] }, '$amount', 0],
+                  $cond: [
+                    { $eq: ['$donationType', 'one-time'] },
+                    amountBaseField,
+                    0,
+                  ],
                 },
               },
               dates: { $push: '$donationDate' }, // For streak calc
               donationList: {
                 $push: {
                   date: '$donationDate',
-                  amount: '$amount',
+                  amount: amountBaseField,
+                  currency: '$currency',
                   type: '$donationType',
                 },
               },
@@ -1696,7 +1756,7 @@ const getClientStats = async (
               _id: {
                 $dateToString: { format: '%Y-%m-%d', date: '$donationDate' },
               },
-              totalAmount: { $sum: '$amount' },
+              totalAmount: { $sum: amountBaseField },
               count: { $sum: 1 },
             },
           },

@@ -264,6 +264,31 @@ export const formatCurrency = (value: number): number => {
 };
 
 /**
+ * Mongo aggregation expression: sum donation amounts in platform base currency.
+ * Falls back to original `amount` when amountBase is missing OR zero-with-positive-amount
+ * (avoids undercounting if a doc was saved with default 0 before backfill).
+ */
+export const amountBaseField = {
+  $cond: [
+    {
+      $or: [
+        { $eq: [{ $type: '$amountBase' }, 'missing'] },
+        { $eq: ['$amountBase', null] },
+        {
+          $and: [{ $eq: ['$amountBase', 0] }, { $gt: ['$amount', 0] }],
+        },
+      ],
+    },
+    '$amount',
+    '$amountBase',
+  ],
+};
+
+export const sumAmountBase = {
+  $sum: amountBaseField,
+};
+
+/**
  * Get period label for display
  */
 /**

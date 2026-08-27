@@ -35,6 +35,7 @@
     "build": "tsc",
     "generate": "node generate",
     "create-module": "npx ts-node src/scripts/createModule.ts",
+    "backfill:currency": "npx ts-node src/scripts/backfillCurrencyBase.ts",
     "deploy": "yarn build && vercel && vercel --prod"
   },
   "dependencies": {

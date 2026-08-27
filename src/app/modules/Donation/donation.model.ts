@@ -63,7 +63,40 @@ const donationSchema = new Schema<IDonationModel>(
     currency: {
       type: String,
       default: DEFAULT_CURRENCY,
+      uppercase: true,
     },
+
+    // Platform base currency fields (analytics / rankings)
+    baseCurrency: {
+      type: String,
+      default: DEFAULT_CURRENCY,
+      uppercase: true,
+    },
+    exchangeRate: {
+      type: Number,
+      default: 1,
+      min: 0,
+    },
+    // No default: 0 — missing means "not backfilled"; aggregations use $ifNull → amount
+    amountBase: {
+      type: Number,
+    },
+    totalAmountBase: {
+      type: Number,
+    },
+    netAmountBase: {
+      type: Number,
+    },
+    platformFeeBase: {
+      type: Number,
+    },
+    gstOnFeeBase: {
+      type: Number,
+    },
+    stripeFeeBase: {
+      type: Number,
+    },
+
     status: {
       type: String,
       enum: DONATION_STATUS,
@@ -157,6 +190,8 @@ donationSchema.index({ idempotencyKey: 1, donor: 1 }, { unique: true });
 donationSchema.index({ lastPaymentAttempt: 1 });
 donationSchema.index({ totalAmount: 1 });
 donationSchema.index({ netAmount: 1 });
+donationSchema.index({ amountBase: 1 });
+donationSchema.index({ organization: 1, currency: 1, donationDate: -1 });
 
 export const Donation = model<IDonationModel>('Donation', donationSchema);
 export default Donation;

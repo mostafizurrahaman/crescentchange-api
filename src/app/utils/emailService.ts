@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import config from '../config';
+import { normalizeCurrency } from './currency.utils';
 
 interface IReceiptEmailData {
   to: string;
@@ -9,6 +10,7 @@ interface IReceiptEmailData {
   receiptNumber: string;
   donationAmount: number;
   donationDate: Date;
+  currency?: string;
 }
 
 // Create email transporter
@@ -29,9 +31,9 @@ export const sendReceiptEmail = async (
   try {
     const transporter = createTransporter();
 
-    const formattedAmount = new Intl.NumberFormat('en-AU', {
+    const formattedAmount = new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: 'usd',
+      currency: normalizeCurrency(data.currency),
     }).format(data.donationAmount);
 
     const formattedDate = data.donationDate.toLocaleDateString('en-AU', {

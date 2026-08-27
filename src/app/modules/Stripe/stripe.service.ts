@@ -127,7 +127,7 @@ const createPaymentIntent = async (
   // Create Stripe Payment Intent
   const paymentIntentParams: Stripe.PaymentIntentCreateParams = {
     amount: Math.round(totalAmount * 100),
-    currency: 'usd',
+    currency: (currency || 'usd').toLowerCase(),
     metadata: {
       donorId,
       organizationId,
@@ -556,6 +556,7 @@ const createRoundUpPaymentIntent = async (
       causeId,
       amount, // Base amount
       totalAmount, // Total charge
+      currency = 'usd',
       month,
       year,
       specialMessage,
@@ -620,7 +621,7 @@ const createRoundUpPaymentIntent = async (
     // Create Stripe Payment Intent for off-session round-up donation
     const paymentIntentParams: Stripe.PaymentIntentCreateParams = {
       amount: Math.round(totalAmount * 100),
-      currency: 'usd', // Default to AUD for AU context
+      currency: currency.toLowerCase(),
 
       // Off-session settings
       confirm: true,

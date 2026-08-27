@@ -14,7 +14,7 @@ import { IPlaidTransaction } from '../BankConnection/bankConnection.interface';
 
 import { StripeService } from '../Stripe/stripe.service';
 import { Donation } from '../Donation/donation.model';
-import { calculateAustralianFees } from '../Donation/donation.constant';
+import { calculateDonationFees } from '../Donation/donation.constant';
 
 import Cause from '../Causes/causes.model';
 import { CAUSE_STATUS_TYPE } from '../Causes/causes.constant';
@@ -25,6 +25,11 @@ import { OrganizationModel } from '../Organization/organization.model';
 import { StripeAccount } from '../OrganizationAccount/stripe-account.model';
 import { createNotification } from '../Notification/notification.service';
 import { NOTIFICATION_TYPE } from '../Notification/notification.constant';
+import {
+  buildBaseMoneyFields,
+  getCurrencyForCountry,
+  normalizeCurrency,
+} from '../../utils/currency.utils';
 
 // Check and reset monthly total at the beginning of each month
 const checkAndResetMonthlyTotal = async (
@@ -97,19 +102,36 @@ const triggerDonation = async (
 
     if (baseAmount <= 0) throw new Error('Invalid donation amount');
 
-    // 3.  Calculate Fees (Destination Charge Logic)
-    const financials = calculateAustralianFees(
-      baseAmount,
-      roundUpConfig.coverFees || false
+    const currency = normalizeCurrency(
+      organization.defaultCurrency || getCurrencyForCountry(organization.country)
     );
+
+    // 3.  Calculate Fees (Destination Charge Logic)
+    const financials = calculateDonationFees(
+      baseAmount,
+      roundUpConfig.coverFees || false,
+      { country: organization.country }
+    );
+    const baseMoney = await buildBaseMoneyFields({
+      currency,
+      amount: financials.baseAmount,
+      totalAmount: financials.totalCharge,
+      netAmount: financials.netToOrg,
+      platformFee: financials.platformFee,
+      gstOnFee: financials.gstOnFee,
+      stripeFee: financials.stripeFee,
+    });
 
     // Platform Fee + GST
     const applicationFee = financials.platformFeeWithStripe;
 
     console.log(`\n🎯 Triggering RoundUp Donation (Destination Charge):`);
-    console.log(`   Base: $${financials.baseAmount.toFixed(2)}`);
-    console.log(`   App Fee: $${applicationFee.toFixed(2)}`);
-    console.log(`   Total Charged: $${financials.totalCharge.toFixed(2)}`);
+    console.log(`   Currency: ${currency}`);
+    console.log(`   Base: ${financials.baseAmount.toFixed(2)} ${currency}`);
+    console.log(`   App Fee: ${applicationFee.toFixed(2)} ${currency}`);
+    console.log(
+      `   Total Charged: ${financials.totalCharge.toFixed(2)} ${currency}`
+    );
     console.log(`   Destination: ${stripeAccount.stripeAccountId}`);
 
     // 4. Validate Donor & Cause
@@ -139,12 +161,13 @@ const triggerDonation = async (
       netAmount: financials.netToOrg,
       totalAmount: financials.totalCharge,
 
-      currency: 'USD',
+      currency,
+      ...baseMoney,
       status: 'pending',
       donationDate: new Date(),
       specialMessage:
         roundUpConfig.specialMessage || `Round-up donation for ${currentMonth}`,
-      pointsEarned: Math.round(financials.baseAmount * 100),
+      pointsEarned: Math.round(baseMoney.amountBase * 100),
       roundUpId: roundUpConfig._id,
       roundUpTransactionIds: pendingTransactions.map((t) => t._id),
       receiptGenerated: false,
@@ -166,6 +189,7 @@ const triggerDonation = async (
 
         amount: financials.baseAmount,
         totalAmount: financials.totalCharge,
+        currency: currency.toLowerCase(),
 
         //  Destination Charge Params
         applicationFee: applicationFee,
@@ -713,26 +737,12 @@ const processMonthlyDonation = async (
     0
   );
 
-  // 5. ✅ Calculate Australian Fees & Split
-  const financials = calculateAustralianFees(
-    baseAmount,
-    roundUpConfig.coverFees || false
-  );
-
-  // applicationFee = Platform Revenue + GST component
-  const applicationFee = financials.platformFeeWithStripe;
-
-  Logger.info(`\n💰 Manual RoundUp Breakdown (Destination Charge):`);
-  Logger.info(`   Base: $${financials.baseAmount.toFixed(2)}`);
-  Logger.info(`   App Fee: $${applicationFee.toFixed(2)}`);
-  Logger.info(`   Total: $${financials.totalCharge.toFixed(2)}`);
-
   const session = await mongoose.startSession();
 
   try {
     await session.startTransaction();
 
-    // 6. Fetch Org & Validate Stripe Connection
+    // 5. Fetch Org & Validate Stripe Connection
     const organization = await OrganizationModel.findById(
       roundUpConfig.organization
     ).session(session);
@@ -746,6 +756,35 @@ const processMonthlyDonation = async (
         data: null,
       };
     }
+
+    const currency = normalizeCurrency(
+      organization.defaultCurrency || getCurrencyForCountry(organization.country)
+    );
+
+    // 6. Calculate fees (country-aware) + base currency snapshot
+    const financials = calculateDonationFees(
+      baseAmount,
+      roundUpConfig.coverFees || false,
+      { country: organization.country }
+    );
+    const baseMoney = await buildBaseMoneyFields({
+      currency,
+      amount: financials.baseAmount,
+      totalAmount: financials.totalCharge,
+      netAmount: financials.netToOrg,
+      platformFee: financials.platformFee,
+      gstOnFee: financials.gstOnFee,
+      stripeFee: financials.stripeFee,
+    });
+
+    // applicationFee = Platform Revenue + GST component
+    const applicationFee = financials.platformFeeWithStripe;
+
+    Logger.info(`\n💰 Manual RoundUp Breakdown (Destination Charge):`);
+    Logger.info(`   Currency: ${currency}`);
+    Logger.info(`   Base: ${financials.baseAmount.toFixed(2)} ${currency}`);
+    Logger.info(`   App Fee: ${applicationFee.toFixed(2)} ${currency}`);
+    Logger.info(`   Total: ${financials.totalCharge.toFixed(2)} ${currency}`);
 
     // check is stripe account exists :
     const stripeAccount = await StripeAccount.findOne({
@@ -806,11 +845,12 @@ const processMonthlyDonation = async (
       netAmount: financials.netToOrg,
       totalAmount: financials.totalCharge,
 
-      currency: 'USD',
+      currency,
+      ...baseMoney,
       status: 'pending',
       specialMessage:
         specialMessage || `Manual round-up donation - ${currentMonth}`,
-      pointsEarned: Math.round(baseAmount * 100),
+      pointsEarned: Math.round(baseMoney.amountBase * 100),
       roundUpId: roundUpConfig._id,
       roundUpTransactionIds: eligibleTransactions.map(
         (t: IRoundUpTransaction) => t.transactionId
@@ -830,6 +870,7 @@ const processMonthlyDonation = async (
 
       amount: financials.baseAmount,
       totalAmount: financials.totalCharge,
+      currency: currency.toLowerCase(),
 
       // Pass Destination Params
       applicationFee,

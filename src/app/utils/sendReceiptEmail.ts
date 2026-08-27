@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import config from '../config';
+import { currencySymbol as resolveCurrencySymbol } from './currency.utils';
 
 interface ISendReceiptEmailPayload {
   donorEmail: string;
@@ -64,7 +65,7 @@ const sendReceiptEmail = async (payload: ISendReceiptEmailPayload) => {
   });
 
   // Calculate Display Values
-  const currencySymbol = currency.toUpperCase() === 'USD' ? '$' : 'A$';
+  const currencySymbol = resolveCurrencySymbol(currency);
 
   // ---------------------------------------------------------
   // 💡 DYNAMIC HTML GENERATION FOR FEES

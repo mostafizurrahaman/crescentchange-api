@@ -1,5 +1,6 @@
 import PDFDocument from 'pdfkit';
 import { IReceiptPDFData } from '../modules/Receipt/receipt.interface';
+import { currencySymbol as resolveCurrencySymbol } from './currency.utils';
 
 /**
  * Generates a PDF Receipt Buffer with Australian Fee Breakdown
@@ -57,7 +58,7 @@ export const generateReceiptPDF = (data: IReceiptPDFData): Promise<Buffer> => {
 
     // --- FINANCIAL TABLE ---
     let tableTop = 260;
-    const currencySymbol = data.currency.toUpperCase() === 'USD' ? '$' : 'A$';
+    const currencySymbol = resolveCurrencySymbol(data.currency);
 
     doc.font('Helvetica-Bold');
     generateTableRow(doc, tableTop, 'Description', 'Amount');

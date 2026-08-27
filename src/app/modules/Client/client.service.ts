@@ -248,7 +248,7 @@ const getOnetimeDonationStats = async (userId: string) => {
           {
             $group: {
               _id: null,
-              total: { $sum: '$amount' },
+              total: { $sum: { $ifNull: ['$amountBase', '$amount'] } },
             },
           },
         ],
@@ -263,7 +263,7 @@ const getOnetimeDonationStats = async (userId: string) => {
           {
             $group: {
               _id: null,
-              total: { $sum: '$amount' },
+              total: { $sum: { $ifNull: ['$amountBase', '$amount'] } },
             },
           },
         ],
@@ -410,7 +410,7 @@ export const getRecurringDonationStats = async (userId: string) => {
       $facet: {
         todaysRecurringAmount: [
           { $match: { donationDate: { $gte: startOfToday } } },
-          { $group: { _id: null, totalAmount: { $sum: '$amount' } } },
+          { $group: { _id: null, totalAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } } } },
         ],
       },
     },
@@ -434,7 +434,7 @@ export const getRecurringDonationStats = async (userId: string) => {
     {
       $facet: {
         totalWeeklyRecurringAmount: [
-          { $group: { _id: null, totalAmount: { $sum: '$amount' } } },
+          { $group: { _id: null, totalAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } } } },
         ],
         orgCount: [
           { $group: { _id: '$organization' } },

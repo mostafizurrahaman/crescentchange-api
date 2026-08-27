@@ -19,6 +19,10 @@ import { StripeAccount } from '../OrganizationAccount/stripe-account.model';
 import { getS3KeyFromUrl } from '../../utils/s3.utils';
 import { CAUSE_STATUS_TYPE } from '../Causes/causes.constant';
 import { SubscriptionService } from '../Subscription/subscription.service';
+import {
+  getCurrencyForCountry,
+  normalizeCountry,
+} from '../../utils/currency.utils';
 
 /**
  * Start Stripe Connect onboarding for an organization
@@ -57,11 +61,31 @@ const startStripeConnectOnboarding = async (
   } else {
     console.log(`🆕 Creating new Stripe Connected Account...`);
 
+    // Stripe Connect country must match where the org is legally based
+    const connectCountry = normalizeCountry(organization.country) || 'US';
+    // Stripe expects 2-letter ISO; map common variants
+    const stripeCountry =
+      connectCountry === 'USA' || connectCountry === 'UNITED STATES'
+        ? 'US'
+        : connectCountry === 'AUS' || connectCountry === 'AUSTRALIA'
+          ? 'AU'
+          : connectCountry === 'CAN' || connectCountry === 'CANADA'
+            ? 'CA'
+            : connectCountry.length === 2
+              ? connectCountry
+              : 'US';
+
+    // Ensure org currency is set before onboarding
+    if (!organization.defaultCurrency) {
+      organization.defaultCurrency = getCurrencyForCountry(organization.country);
+      await organization.save();
+    }
+
     // Call Stripe API to create the Express account
     const stripeResponse = await StripeService.createConnectAccount(
       user.email,
       organization.name || 'Organization',
-      'US'
+      stripeCountry
     );
 
     // Save the new ID to our dedicated StripeAccount model
@@ -69,7 +93,6 @@ const startStripeConnectOnboarding = async (
       organization: organization._id,
       stripeAccountId: stripeResponse.accountId,
       status: 'pending',
-      country: 'US',
       requirements: {
         currently_due: [],
         eventually_due: [],
@@ -307,10 +330,17 @@ const editProfileOrgDetailsIntoDB = async (
     throw new AppError(httpStatus.NOT_FOUND, 'Organization not found!');
   }
 
+  const updatePayload: TEditProfileOrgDetails & { defaultCurrency?: string } = {
+    ...payload,
+  };
+  if (payload.country !== undefined) {
+    updatePayload.defaultCurrency = getCurrencyForCountry(payload.country);
+  }
+
   // Update organization
   const updatedOrganization = await Organization.findOneAndUpdate(
     { auth: userId },
-    { $set: payload },
+    { $set: updatePayload },
     { new: true, runValidators: true }
   ).populate({
     path: 'auth',
@@ -553,7 +583,7 @@ const getOrganizationDetailsById = async (organizationId: string) => {
           {
             $group: {
               _id: null,
-              totalAmount: { $sum: '$amount' },
+              totalAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } },
             },
           },
         ],

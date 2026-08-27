@@ -13,6 +13,8 @@ export interface IORGANIZATION extends Document {
   serviceType: 'non-profit' | 'charity' | 'mosque';
   address: string;
   country?: string;
+  /** Charge / payout currency derived from country (USD | AUD | CAD) */
+  defaultCurrency?: string;
   state: string;
   postalCode: string;
   website: string;

@@ -10,9 +10,14 @@ import { cronJobTracker } from './cronJobTracker';
 import { StripeService } from '../modules/Stripe/stripe.service';
 import { RoundUpTransactionModel } from '../modules/RoundUpTransaction/roundUpTransaction.model';
 import Donation from '../modules/Donation/donation.model';
-import { calculateAustralianFees } from '../modules/Donation/donation.constant'; // ✅ Fixed Import
+import { calculateDonationFees } from '../modules/Donation/donation.constant'; // ✅ Fixed Import
 import { IAuth } from '../modules/Auth/auth.interface';
 import Client from '../modules/Client/client.model';
+import {
+  buildBaseMoneyFields,
+  getCurrencyForCountry,
+  normalizeCurrency,
+} from '../utils/currency.utils';
 import { OrganizationModel } from '../modules/Organization/organization.model';
 import { StripeAccount } from '../modules/OrganizationAccount/stripe-account.model';
 import { AppError } from '../utils';
@@ -64,28 +69,18 @@ const processEndOfMonthDonations = async () => {
     }
 
     const session = await mongoose.startSession();
+    session.startTransaction();
 
     try {
       const totalAmount = config.currentMonthTotal;
       const coverFees = config.coverFees || false;
-
-      //  Calculate Fees (Australian Logic)
-      const financials = calculateAustralianFees(totalAmount, coverFees);
-      const applicationFee = financials.platformFeeWithStripe;
 
       const now = new Date();
       const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       const monthStr = String(lastMonth.getMonth() + 1).padStart(2, '0');
       const year = lastMonth.getFullYear();
 
-      console.log(
-        `   Initiating month-end donation of $${totalAmount} for user ${userId}...`
-      );
-      console.log(`   Base Amount: $${financials.baseAmount.toFixed(2)}`);
-      console.log(`   Total Charged: $${financials.totalCharge.toFixed(2)}`);
-
-      // ✅ Fetch Organization to get Stripe Connect ID
-      // We need this for the Destination Charge
+      // ✅ Fetch Organization to get Stripe Connect ID + currency
       const organizationDoc = await OrganizationModel.findById(
         config.organization
       ).session(session);
@@ -93,6 +88,36 @@ const processEndOfMonthDonations = async () => {
       if (!organizationDoc) {
         throw new Error(`Organization ${config.organization} not found!`);
       }
+
+      const currency = normalizeCurrency(
+        organizationDoc.defaultCurrency ||
+          getCurrencyForCountry(organizationDoc.country)
+      );
+
+      //  Calculate Fees (country-aware)
+      const financials = calculateDonationFees(totalAmount, coverFees, {
+        country: organizationDoc.country,
+      });
+      const applicationFee = financials.platformFeeWithStripe;
+      const baseMoney = await buildBaseMoneyFields({
+        currency,
+        amount: financials.baseAmount,
+        totalAmount: financials.totalCharge,
+        netAmount: financials.netToOrg,
+        platformFee: financials.platformFee,
+        gstOnFee: financials.gstOnFee,
+        stripeFee: financials.stripeFee,
+      });
+
+      console.log(
+        `   Initiating month-end donation of ${totalAmount} ${currency} for user ${userId}...`
+      );
+      console.log(
+        `   Base Amount: ${financials.baseAmount.toFixed(2)} ${currency}`
+      );
+      console.log(
+        `   Total Charged: ${financials.totalCharge.toFixed(2)} ${currency}`
+      );
 
       const stripeAccount = await StripeAccount.findOne({
         organization: organizationDoc._id,
@@ -119,6 +144,8 @@ const processEndOfMonthDonations = async () => {
         console.warn(
           `   ⚠️ No transactions found for RoundUp ${config._id} in ${monthStr}/${year}`
         );
+        await session.abortTransaction();
+        await session.endSession();
         failureCount++;
         continue;
       }
@@ -130,46 +157,53 @@ const processEndOfMonthDonations = async () => {
           `   ❌ Donor not found for user ${userId} in RoundUp ${config._id}`
         );
         await session.abortTransaction();
+        await session.endSession();
         failureCount++;
         continue;
       }
 
       // STEP 1: Create Donation record
-      const donation = await Donation.create({
-        donor: donor._id,
-        organization: config.organization,
-        cause: config.cause,
-        donationType: 'round-up',
+      const [donation] = await Donation.create(
+        [
+          {
+            donor: donor._id,
+            organization: config.organization,
+            cause: config.cause,
+            donationType: 'round-up',
 
-        //  Store Financial Breakdown
-        amount: financials.baseAmount,
-        coverFees: financials.coverFees,
-        platformFee: financials.platformFee,
-        gstOnFee: financials.gstOnFee,
-        stripeFee: financials.stripeFee,
-        netAmount: financials.netToOrg,
-        totalAmount: financials.totalCharge,
+            //  Store Financial Breakdown
+            amount: financials.baseAmount,
+            coverFees: financials.coverFees,
+            platformFee: financials.platformFee,
+            gstOnFee: financials.gstOnFee,
+            stripeFee: financials.stripeFee,
+            netAmount: financials.netToOrg,
+            totalAmount: financials.totalCharge,
 
-        currency: 'USD', // Australian Context
-        status: 'pending',
-        donationDate: new Date(),
-        specialMessage:
-          config.specialMessage ||
-          `Automatic monthly round-up for ${monthStr}/${year}`,
-        pointsEarned: Math.round(financials.baseAmount * 100),
-        roundUpId: config._id,
-        roundUpTransactionIds: monthTransactions.map((t) => t._id),
-        receiptGenerated: false,
-        metadata: {
-          userId: String(userId),
-          roundUpId: String(config._id),
-          month: `${year}-${monthStr}`,
-          year: year.toString(),
-          type: 'roundup_donation',
-          isMonthEnd: true,
-          transactionCount: monthTransactions.length,
-        },
-      });
+            currency,
+            ...baseMoney,
+            status: 'pending',
+            donationDate: new Date(),
+            specialMessage:
+              config.specialMessage ||
+              `Automatic monthly round-up for ${monthStr}/${year}`,
+            pointsEarned: Math.round(baseMoney.amountBase * 100),
+            roundUpId: config._id,
+            roundUpTransactionIds: monthTransactions.map((t) => t._id),
+            receiptGenerated: false,
+            metadata: {
+              userId: String(userId),
+              roundUpId: String(config._id),
+              month: `${year}-${monthStr}`,
+              year: year.toString(),
+              type: 'roundup_donation',
+              isMonthEnd: true,
+              transactionCount: monthTransactions.length,
+            },
+          },
+        ],
+        { session }
+      );
 
       console.log(`   ✅ Donation record created: ${donation._id}`);
 
@@ -182,6 +216,7 @@ const processEndOfMonthDonations = async () => {
 
         amount: financials.baseAmount,
         totalAmount: financials.totalCharge,
+        currency: currency.toLowerCase(),
 
         // Destination Charge
         applicationFee: applicationFee,
@@ -202,21 +237,25 @@ const processEndOfMonthDonations = async () => {
 
       // STEP 3: Update Donation to PROCESSING
       const donationDoc = donation.toObject();
-      await Donation.findByIdAndUpdate(donation._id, {
-        status: 'processing',
-        stripePaymentIntentId: paymentResult.payment_intent_id,
-        metadata: {
-          ...(donationDoc.metadata || {}),
-          paymentInitiatedAt: new Date(),
+      await Donation.findByIdAndUpdate(
+        donation._id,
+        {
+          status: 'processing',
+          stripePaymentIntentId: paymentResult.payment_intent_id,
+          metadata: {
+            ...(donationDoc.metadata || {}),
+            paymentInitiatedAt: new Date(),
+          },
         },
-      });
+        { session }
+      );
 
       // STEP 4: Update RoundUp config
       config.status = 'processing';
       config.lastDonationAttempt = new Date();
       config.currentMonthTotal = 0; // Reset balance for the new month
       config.lastMonthReset = new Date();
-      await config.save();
+      await config.save({ session });
 
       // STEP 5: Update transactions
       await RoundUpTransactionModel.updateMany(
@@ -228,15 +267,21 @@ const processEndOfMonthDonations = async () => {
           stripePaymentIntentId: paymentResult.payment_intent_id,
           donation: donation._id,
           donationAttemptedAt: new Date(),
-        }
+        },
+        { session }
       );
 
+      await session.commitTransaction();
       console.log(
         `   ✅ Month-end donation initiated for RoundUp ${config._id}`
       );
       successCount++;
     } catch (error) {
-      await session.abortTransaction();
+      try {
+        await session.abortTransaction();
+      } catch {
+        // session may already be aborted
+      }
       failureCount++;
       console.error(
         `❌ Error processing month-end donation for RoundUp ${config._id}:`,

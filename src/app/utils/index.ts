@@ -11,13 +11,22 @@ import sendReceiptEmail from './sendReceiptEmail';
 import sendResponse from './sendResponse';
 import { generateReceiptPDF } from './pdf.utils';
 
-// S3 utils :`
+// S3 utils :
 import {
   uploadToS3,
   verifyS3Connection,
   deleteFromS3,
   getSignedS3Url,
 } from './s3.utils';
+
+import {
+  PLATFORM_BASE_CURRENCY,
+  getCurrencyForCountry,
+  convertToBaseCurrency,
+  buildBaseMoneyFields,
+  normalizeCurrency,
+  currencySymbol,
+} from './currency.utils';
 
 // JWT configuration
 const options = {
@@ -50,5 +59,11 @@ export {
   // PDF Utils:
   generateReceiptPDF,
 
-  // Logger
+  // Currency
+  PLATFORM_BASE_CURRENCY,
+  getCurrencyForCountry,
+  convertToBaseCurrency,
+  buildBaseMoneyFields,
+  normalizeCurrency,
+  currencySymbol,
 };

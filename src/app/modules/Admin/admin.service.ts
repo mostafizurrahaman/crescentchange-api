@@ -193,7 +193,7 @@ const getAdminStatesFromDb = async (params?: AdminStatesParams) => {
         createdAt: { $gte: currentPeriodStart, $lt: currentPeriodEnd },
       },
     },
-    { $group: { _id: null, totalAmount: { $sum: '$amount' } } },
+    { $group: { _id: null, totalAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } } } },
   ]);
   const previousPeriodAmountAgg = await Donation.aggregate([
     {
@@ -201,7 +201,7 @@ const getAdminStatesFromDb = async (params?: AdminStatesParams) => {
         createdAt: { $gte: previousPeriodStart, $lt: previousPeriodEnd },
       },
     },
-    { $group: { _id: null, totalAmount: { $sum: '$amount' } } },
+    { $group: { _id: null, totalAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } } } },
   ]);
   const currentPeriodAmount = (currentPeriodAmountAgg[0]?.totalAmount ??
     0) as number;
@@ -287,7 +287,7 @@ const getAdminStatesFromDb = async (params?: AdminStatesParams) => {
 
   // total donations by cause (all time) + month-over-month change per cause
   const donationsByCause = await Donation.aggregate([
-    { $group: { _id: '$cause', totalAmount: { $sum: '$amount' } } },
+    { $group: { _id: '$cause', totalAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } } } },
     {
       $lookup: {
         from: 'causes',
@@ -329,7 +329,7 @@ const getAdminStatesFromDb = async (params?: AdminStatesParams) => {
         createdAt: { $gte: currentPeriodStart, $lt: currentPeriodEnd },
       },
     },
-    { $group: { _id: '$cause', totalAmount: { $sum: '$amount' } } },
+    { $group: { _id: '$cause', totalAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } } } },
     {
       $lookup: {
         from: 'causes',
@@ -348,7 +348,7 @@ const getAdminStatesFromDb = async (params?: AdminStatesParams) => {
         createdAt: { $gte: previousPeriodStart, $lt: previousPeriodEnd },
       },
     },
-    { $group: { _id: '$cause', totalAmount: { $sum: '$amount' } } },
+    { $group: { _id: '$cause', totalAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } } } },
     {
       $lookup: {
         from: 'causes',
@@ -394,7 +394,7 @@ const getAdminStatesFromDb = async (params?: AdminStatesParams) => {
 
   // top 5 donors (all time) + month-over-month change per donor (by name)
   const topDonors = await Donation.aggregate([
-    { $group: { _id: '$donor', totalAmount: { $sum: '$amount' } } },
+    { $group: { _id: '$donor', totalAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } } } },
     {
       $lookup: {
         from: 'clients',
@@ -424,7 +424,7 @@ const getAdminStatesFromDb = async (params?: AdminStatesParams) => {
         createdAt: { $gte: currentPeriodStart, $lt: currentPeriodEnd },
       },
     },
-    { $group: { _id: '$donor', totalAmount: { $sum: '$amount' } } },
+    { $group: { _id: '$donor', totalAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } } } },
     {
       $lookup: {
         from: 'clients',
@@ -450,7 +450,7 @@ const getAdminStatesFromDb = async (params?: AdminStatesParams) => {
         createdAt: { $gte: previousPeriodStart, $lt: previousPeriodEnd },
       },
     },
-    { $group: { _id: '$donor', totalAmount: { $sum: '$amount' } } },
+    { $group: { _id: '$donor', totalAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } } } },
     {
       $lookup: {
         from: 'clients',
@@ -668,7 +668,7 @@ const getDonationsReportFromDb = async (params?: DonationsReportParams) => {
         createdAt: { $gte: currentPeriodStart, $lt: currentPeriodEnd },
       },
     },
-    { $group: { _id: null, totalAmount: { $sum: '$amount' } } },
+    { $group: { _id: null, totalAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } } } },
   ]);
   const previousMonthDonationAgg = await Donation.aggregate([
     {
@@ -677,7 +677,7 @@ const getDonationsReportFromDb = async (params?: DonationsReportParams) => {
         createdAt: { $gte: previousPeriodStart, $lt: previousPeriodEnd },
       },
     },
-    { $group: { _id: null, totalAmount: { $sum: '$amount' } } },
+    { $group: { _id: null, totalAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } } } },
   ]);
   const currentMonthDonation = (currentMonthDonationAgg[0]?.totalAmount ??
     0) as number;
@@ -693,7 +693,7 @@ const getDonationsReportFromDb = async (params?: DonationsReportParams) => {
   // average donation amount
   const avgDonationAgg = await Donation.aggregate([
     { $match: { amount: { $gt: 0 } } },
-    { $group: { _id: null, avgAmount: { $avg: '$amount' } } },
+    { $group: { _id: null, avgAmount: { $avg: { $ifNull: ['$amountBase', '$amount'] } } } },
   ]);
   const avgDonationAmount = (avgDonationAgg[0]?.avgAmount ?? 0) as number;
 
@@ -705,7 +705,7 @@ const getDonationsReportFromDb = async (params?: DonationsReportParams) => {
         createdAt: { $gte: currentPeriodStart, $lt: currentPeriodEnd },
       },
     },
-    { $group: { _id: null, avgAmount: { $avg: '$amount' } } },
+    { $group: { _id: null, avgAmount: { $avg: { $ifNull: ['$amountBase', '$amount'] } } } },
   ]);
   const previousMonthAvgAgg = await Donation.aggregate([
     {
@@ -714,7 +714,7 @@ const getDonationsReportFromDb = async (params?: DonationsReportParams) => {
         createdAt: { $gte: previousPeriodStart, $lt: previousPeriodEnd },
       },
     },
-    { $group: { _id: null, avgAmount: { $avg: '$amount' } } },
+    { $group: { _id: null, avgAmount: { $avg: { $ifNull: ['$amountBase', '$amount'] } } } },
   ]);
   const currentMonthAvg = (currentMonthAvgAgg[0]?.avgAmount ?? 0) as number;
   const previousMonthAvg = (previousMonthAvgAgg[0]?.avgAmount ?? 0) as number;
@@ -1731,7 +1731,7 @@ const getDonationsEngagementReportFromDb = async (
     {
       $group: {
         _id: { donationType: '$donationType', month: { $month: '$createdAt' } },
-        totalAmount: { $sum: '$amount' },
+        totalAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } },
         count: { $sum: 1 },
       },
     },
@@ -1800,7 +1800,7 @@ const getClauseWisePercentagesReportFromDb = async () => {
   // percentages of donations of each cause wise (lookup cause details)
   const clauseAgg = await Donation.aggregate([
     { $match: { amount: { $gt: 0 } } },
-    { $group: { _id: '$cause', totalAmount: { $sum: '$amount' } } },
+    { $group: { _id: '$cause', totalAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } } } },
     {
       $lookup: {
         from: 'causes',
@@ -2635,7 +2635,7 @@ export const getDonorsFromDB = async (query: Record<string, unknown>) => {
       as: 'totalDonationAmount',
       pipeline: [
         { $match: { status: 'completed' } },
-        { $group: { _id: null, total: { $sum: '$amount' } } },
+        { $group: { _id: null, total: { $sum: { $ifNull: ['$amountBase', '$amount'] } } } },
       ],
     },
   });

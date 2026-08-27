@@ -12,6 +12,7 @@ import {
 } from './badge.constant';
 import { AppError, uploadToS3 } from '../../utils';
 import httpStatus from 'http-status';
+import { currencySymbol as resolveCurrencySymbol } from '../../utils/currency.utils';
 import {
   isRamadan,
   isDhulHijjah,
@@ -586,7 +587,7 @@ const getBadgeHistory = async (userId: string, badgeId: string) => {
       orgName: item.orgName,
       orgLogo: item.orgLogo,
       timeAgo: timeAgo,
-      amount: `+${item.currency === 'USD' ? '$' : ''}${item.amount}`,
+      amount: `+${resolveCurrencySymbol(item.currency)}${item.amount}`,
       tierUnlocked: item.tierUnlocked,
     };
 
@@ -759,7 +760,8 @@ const checkAndUpdateBadgesForDonation = async (
       matchesCondition = true;
     // Donation Size
     else if (badge.unlockType === BADGE_UNLOCK_TYPE.DONATION_SIZE) {
-      if (badge.maxDonationAmount && donation.amount < badge.maxDonationAmount)
+      const sizeAmount = donation.amountBase ?? donation.amount;
+      if (badge.maxDonationAmount && sizeAmount < badge.maxDonationAmount)
         matchesCondition = true;
     }
 
@@ -796,7 +798,8 @@ const updateUserBadgeProgress = async (
   // 1. Prepare Atomic Update Operations
   const updateOps: any = {
     $inc: {
-      progressAmount: donation.amount,
+      // Always track progress in platform base (USD) so AUD/CAD don't inflate badges
+      progressAmount: donation.amountBase ?? donation.amount,
     },
     $set: {
       lastDonationDate: date,

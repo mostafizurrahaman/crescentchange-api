@@ -94,6 +94,7 @@ export interface ICreateRoundUpPaymentIntentRequest {
   charityId: string;
   causeId?: string;
   amount: number; // Base Amount
+  currency?: string;
   month: string;
   year: number;
   specialMessage: string;

@@ -1,4 +1,8 @@
 import config from '../../config';
+import {
+  PLATFORM_BASE_CURRENCY,
+  countryAppliesGst,
+} from '../../utils/currency.utils';
 
 export const DONATION_STATUS = [
   'pending',
@@ -13,7 +17,8 @@ export const DONATION_STATUS = [
 
 export const DONATION_TYPE = ['one-time', 'recurring', 'round-up'] as const;
 
-export const DEFAULT_CURRENCY = 'USD';
+/** @deprecated Prefer PLATFORM_BASE_CURRENCY — kept for existing imports */
+export const DEFAULT_CURRENCY = PLATFORM_BASE_CURRENCY;
 
 // Recurring donation frequency options
 export const RECURRING_FREQUENCY = [
@@ -63,95 +68,85 @@ export const monthAbbreviations = [
   'DEC',
 ];
 
+export type TFeeCountryOptions = {
+  /** Org country — GST applied only for AU */
+  country?: string | null;
+};
+
 /**
- * Calculate Australian Fees
+ * Calculate donation fees for the org's country.
  *
  * Logic:
  * 1. Donation itself is GST-Free.
- * 2. Platform Fee (5%) attracts 10% GST.
- * 3. Stripe Fee is ALWAYS paid by the donor (added on top).
- * 4. coverFees flag determines if Platform Fee + GST are also added on top or deducted.
- *
- * If coverFees = true:
- *    Donor pays: Base + Stripe Fee + Platform Fee + GST
- *    Org receives: Base Amount
- *
- * If coverFees = false:
- *    Donor pays: Base + Stripe Fee
- *    Org receives: Base - Platform Fee - GST
- *
- * @param baseAmount - The intended donation amount (e.g., $100)
- * @param coverFees - Whether the donor wants to cover the platform fees (not Stripe fees)
+ * 2. Platform Fee attracts GST only for AU orgs.
+ * 3. Stripe Fee is always paid by the donor (added on top).
+ * 4. coverFees determines if Platform Fee (+ GST) are added on top or deducted.
  */
-
-export const calculateAustralianFees = (
+export const calculateDonationFees = (
   baseAmount: number,
-  coverFees: boolean
+  coverFees: boolean,
+  options: TFeeCountryOptions = {}
 ) => {
   const platformFeePercent =
     Number(config.paymentSetting.platformFeePercent) || 0.05;
-  const gstRate = Number(config.paymentSetting.gstPercentage) || 0.1;
+  const gstRate = countryAppliesGst(options.country)
+    ? Number(config.paymentSetting.gstPercentage) || 0.1
+    : 0;
   const stripeFeePercent =
     Number(config.paymentSetting.stripeFeePercent) || 0.029;
   const stripeFixedFee = Number(config.paymentSetting.stripeFixedFee) || 0.3;
 
-  // 1. Calculate Platform Fee + GST (based on baseAmount)
   const platformFee = Number((baseAmount * platformFeePercent).toFixed(2));
   const gstOnFee = Number((platformFee * gstRate).toFixed(2));
-  const applicationFee = platformFee + gstOnFee; // This is what the Platform keeps
+  const applicationFee = platformFee + gstOnFee;
 
   let totalCharge = 0;
   let stripeFee = 0;
   let netToOrg = 0;
 
   if (coverFees) {
-    // Scenario A: Donor covers ALL fees (Stripe + Platform + GST)
-    // Total = (Base + AppFee + StripeFixed) / (1 - StripePercent)
     const numerator = baseAmount + applicationFee + stripeFixedFee;
     const denominator = 1 - stripeFeePercent;
     totalCharge = Number((numerator / denominator).toFixed(2));
 
-    // Calculate actual Stripe Fee on the total
     stripeFee = Number(
       (totalCharge * stripeFeePercent + stripeFixedFee).toFixed(2)
     );
 
-    // Org receives the full base amount
     netToOrg = Number((totalCharge - stripeFee - applicationFee).toFixed(2));
   } else {
-    // Scenario B: Donor ONLY pays Stripe Fee (Platform Fee + GST deducted)
-    // First calculate what amount + stripe fee equals baseAmount
-    // Formula: baseWithoutPlatform = Base - ApplicationFee
-    // Then: Total = (baseWithoutPlatform + StripeFixed) / (1 - StripePercent)
     const numerator = baseAmount + stripeFixedFee;
     const denominator = 1 - stripeFeePercent;
     totalCharge = Number((numerator / denominator).toFixed(2));
 
-    // Calculate Stripe Fee on the total
     stripeFee = Number(
       (totalCharge * stripeFeePercent + stripeFixedFee).toFixed(2)
     );
 
-    // Org receives: Base - Application Fee (Platform + GST deducted)
     netToOrg = Number((totalCharge - stripeFee - applicationFee).toFixed(2));
   }
 
   const platformFeeWithStripe = Number((stripeFee + applicationFee).toFixed(2));
-
-  
 
   return {
     baseAmount,
     platformFee,
     gstOnFee,
     stripeFee,
-    totalCharge, // Amount to charge the card
-    applicationFee, // Amount passed to Stripe as application_fee_amount
+    totalCharge,
+    applicationFee,
     netToOrg,
     coverFees,
-    platformFeeWithStripe, // platformFee + Application Fee
+    platformFeeWithStripe,
   };
 };
+
+/** @deprecated Use calculateDonationFees — kept so existing call sites keep compiling during migration */
+export const calculateAustralianFees = (
+  baseAmount: number,
+  coverFees: boolean,
+  options: TFeeCountryOptions = {}
+) => calculateDonationFees(baseAmount, coverFees, options);
 
 /**
  * Get current GST rate as a percentage string

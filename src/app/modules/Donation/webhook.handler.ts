@@ -344,8 +344,10 @@ const handlePaymentIntentSucceeded = async (
       return;
     }
 
-    // Update points earned
-    donation.pointsEarned = Math.floor(donation.amount * 100);
+    // Update points earned from platform-base amount (fallback to original)
+    donation.pointsEarned = Math.floor(
+      (donation.amountBase ?? donation.amount) * 100
+    );
     await donation.save();
 
     console.log(`✅ Payment succeeded for donation: ${donation._id}`);
