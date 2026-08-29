@@ -383,15 +383,7 @@ const createOneTimeDonationSchema = z.object({
       .min(1, { message: 'Amount must be at least $1!' })
       .max(10000, { message: 'Amount cannot exceed $10,000!' }),
 
-    // ✅ NEW: Cover Fees checkbox (default true for AU)
     coverFees: z.boolean().optional().default(false),
-
-    currency: z
-      .string()
-      .min(3, { message: 'Currency must be 3 characters (e.g., USD)!' })
-      .max(3, { message: 'Currency must be 3 characters (e.g., USD)!' })
-      .default('usd')
-      .transform((val) => val.toLowerCase()),
 
     organizationId: z
       .string({
@@ -414,6 +406,23 @@ const createOneTimeDonationSchema = z.object({
       .max(500, { message: 'Message must be less than 500 characters!' })
       .transform((message) => message?.trim())
       .optional(),
+  }),
+});
+
+const getDonationQuoteSchema = z.object({
+  query: z.object({
+    organizationId: z.string().min(1, 'Organization ID is required'),
+    amount: z
+      .string()
+      .regex(/^\d+(\.\d{1,2})?$/, 'Amount must be a valid number')
+      .transform((val) => parseFloat(val))
+      .refine((val) => val >= 1 && val <= 10000, {
+        message: 'Amount must be between 1 and 10000',
+      }),
+    coverFees: z
+      .string()
+      .optional()
+      .transform((val) => val === 'true' || val === '1'),
   }),
 });
 
@@ -513,6 +522,7 @@ export const DonationValidation = {
   cancelDonationSchema,
   refundDonationSchema,
   getDonationAnalyticsSchema,
+  getDonationQuoteSchema,
   getOrganizationDonationYearlyTrends,
   getClientStatsSchema,
 };

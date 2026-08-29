@@ -54,6 +54,10 @@ import {
   getCurrencyForCountry,
   normalizeCurrency,
 } from '../../utils/currency.utils';
+import {
+  buildOrganizationCurrencyDisplay,
+  buildOrganizationDonationPricing,
+} from '../../utils/donation-pricing.utils';
 
 // Helper function to generate unique idempotency key
 const generateIdempotencyKey = (): string => {
@@ -126,33 +130,37 @@ const createOneTimeDonation = async (
     throw new AppError(httpStatus.BAD_REQUEST, 'Payment method is not active!');
   }
 
-  // 6. Resolve org currency + calculate Fees
-  const currency = normalizeCurrency(
-    organization.defaultCurrency || getCurrencyForCountry(organization.country)
-  );
-  const financials = calculateDonationFees(amount, coverFees, {
-    country: organization.country,
+  // 6. Pricing in organization currency only
+  const pricing = buildOrganizationDonationPricing({
+    amount,
+    coverFees,
+    organizationCountry: organization.country,
+    organizationDefaultCurrency: organization.defaultCurrency,
   });
-  const applicationFee = financials.platformFeeWithStripe;
+
+  const currencyDisplay = buildOrganizationCurrencyDisplay(
+    pricing.organizationCurrency
+  );
+
   const baseMoney = await buildBaseMoneyFields({
-    currency,
-    amount: financials.baseAmount,
-    totalAmount: financials.totalCharge,
-    netAmount: financials.netToOrg,
-    platformFee: financials.platformFee,
-    gstOnFee: financials.gstOnFee,
-    stripeFee: financials.stripeFee,
+    currency: pricing.organizationCurrency,
+    amount: pricing.baseAmount,
+    totalAmount: pricing.totalCharge,
+    netAmount: pricing.netToOrg,
+    platformFee: pricing.platformFee,
+    gstOnFee: pricing.gstOnFee,
+    stripeFee: pricing.stripeFee,
   });
 
   console.log(`💰 Donation Breakdown (Destination Charge):`);
-  console.log(`   Currency: ${currency}`);
-  console.log(`   Base: ${financials.baseAmount.toFixed(2)} ${currency}`);
-  console.log(`   App Fee: ${applicationFee.toFixed(2)} ${currency}`);
-  console.log(`   Stripe Fee: ${financials.stripeFee.toFixed(2)} ${currency}`);
+  console.log(`   Organization currency: ${pricing.organizationCurrency}`);
+  console.log(`   Base: ${pricing.baseAmount.toFixed(2)} ${pricing.organizationCurrency}`);
   console.log(
-    `   Total Charged: ${financials.totalCharge.toFixed(2)} ${currency}`
+    `   Total charge: ${pricing.totalCharge.toFixed(2)} ${pricing.organizationCurrency}`
   );
-  console.log(`   Net To Org: ${financials.netToOrg.toFixed(2)} ${currency}`);
+  console.log(
+    `   Net to org: ${pricing.netToOrg.toFixed(2)} ${pricing.organizationCurrency}`
+  );
   console.log(
     `   Base (USD): ${baseMoney.amountBase.toFixed(2)} @ rate ${baseMoney.exchangeRate}`
   );
@@ -174,15 +182,15 @@ const createOneTimeDonation = async (
       cause: cause ? new Types.ObjectId(cause._id) : undefined,
       donationType: 'one-time',
 
-      amount: financials.baseAmount,
-      coverFees: financials.coverFees,
-      platformFee: financials.platformFee,
-      gstOnFee: financials.gstOnFee,
-      stripeFee: financials.stripeFee,
-      netAmount: financials.netToOrg,
-      totalAmount: financials.totalCharge,
+      amount: pricing.baseAmount,
+      coverFees: pricing.coverFees,
+      platformFee: pricing.platformFee,
+      gstOnFee: pricing.gstOnFee,
+      stripeFee: pricing.stripeFee,
+      netAmount: pricing.netToOrg,
+      totalAmount: pricing.totalCharge,
 
-      currency,
+      currency: pricing.organizationCurrency,
       ...baseMoney,
 
       status: 'pending',
@@ -200,19 +208,20 @@ const createOneTimeDonation = async (
 
     // 8. Create Payment Intent (Destination Charge)
     const paymentIntent = await StripeService.createPaymentIntentWithMethod({
-      amount: financials.baseAmount,
-      totalAmount: financials.totalCharge,
-      applicationFee: applicationFee,
+      amount: pricing.baseAmount,
+      totalAmount: pricing.totalCharge,
+      applicationFee: pricing.applicationFee,
 
       orgStripeAccountId: stripeAccount.stripeAccountId,
+      connectedAccountCountry: organization.country,
 
-      coverFees: financials.coverFees,
-      platformFee: financials.platformFee,
-      gstOnFee: financials.gstOnFee,
-      stripeFee: financials.stripeFee,
-      netToOrg: financials.netToOrg,
+      coverFees: pricing.coverFees,
+      platformFee: pricing.platformFee,
+      gstOnFee: pricing.gstOnFee,
+      stripeFee: pricing.stripeFee,
+      netToOrg: pricing.netToOrg,
 
-      currency: currency.toLowerCase(),
+      currency: pricing.organizationCurrency.toLowerCase(),
       customerId: paymentMethod.stripeCustomerId,
       paymentMethodId: paymentMethod.stripePaymentMethodId,
       donationId: donationUniqueId.toString(),
@@ -230,6 +239,7 @@ const createOneTimeDonation = async (
     return {
       donation: savedDonation,
       paymentIntent,
+      ...currencyDisplay,
     };
   } catch (error: unknown) {
     await session.abortTransaction();
@@ -716,45 +726,36 @@ const retryFailedPayment = async (
     );
   }
 
-  //  Recalculate fees to ensure consistency
-  const currency = normalizeCurrency(
-    donation.currency ||
-      organization.defaultCurrency ||
-      getCurrencyForCountry(organization.country)
-  );
-  const financials = calculateDonationFees(donation.amount, donation.coverFees, {
-    country: organization.country,
+  // Recalculate fees in organization currency
+  const pricing = buildOrganizationDonationPricing({
+    amount: donation.amount,
+    coverFees: donation.coverFees,
+    organizationCountry: organization.country,
+    organizationDefaultCurrency: organization.defaultCurrency,
   });
+
   const baseMoney = await buildBaseMoneyFields({
-    currency,
-    amount: financials.baseAmount,
-    totalAmount: financials.totalCharge,
-    netAmount: financials.netToOrg,
-    platformFee: financials.platformFee,
-    gstOnFee: financials.gstOnFee,
-    stripeFee: financials.stripeFee,
+    currency: pricing.organizationCurrency,
+    amount: pricing.baseAmount,
+    totalAmount: pricing.totalCharge,
+    netAmount: pricing.netToOrg,
+    platformFee: pricing.platformFee,
+    gstOnFee: pricing.gstOnFee,
+    stripeFee: pricing.stripeFee,
   });
 
-  // Platform Fee = Platform Revenue + GST + Stripe Fee
-  const applicationFee = financials.platformFeeWithStripe;
-
-  // Create a new payment intent for retry (Destination Charge)
   const paymentIntent = await StripeService.createPaymentIntentWithMethod({
-    amount: financials.baseAmount,
-    totalAmount: financials.totalCharge,
-
-    // Fee Params for Destination Charge
-    applicationFee: applicationFee,
+    amount: pricing.baseAmount,
+    totalAmount: pricing.totalCharge,
+    applicationFee: pricing.applicationFee,
     orgStripeAccountId: stripeAccount.stripeAccountId,
-
-    // Pass existing metadata + Fee Breakdown
-    coverFees: financials.coverFees,
-    platformFee: financials.platformFee,
-    gstOnFee: financials.gstOnFee,
-    stripeFee: financials.stripeFee,
-    netToOrg: financials.netToOrg,
-
-    currency: currency.toLowerCase(),
+    connectedAccountCountry: organization.country,
+    coverFees: pricing.coverFees,
+    platformFee: pricing.platformFee,
+    gstOnFee: pricing.gstOnFee,
+    stripeFee: pricing.stripeFee,
+    netToOrg: pricing.netToOrg,
+    currency: pricing.organizationCurrency.toLowerCase(),
     customerId: donation.stripeCustomerId,
     paymentMethodId: donation.stripePaymentMethodId,
     donationId: String(donation._id),
@@ -766,12 +767,12 @@ const retryFailedPayment = async (
   donation.stripePaymentIntentId = paymentIntent.payment_intent_id;
   donation.status = 'processing';
   donation.stripeSessionId = undefined;
-  donation.currency = currency;
-  donation.platformFee = financials.platformFee;
-  donation.gstOnFee = financials.gstOnFee;
-  donation.stripeFee = financials.stripeFee;
-  donation.netAmount = financials.netToOrg;
-  donation.totalAmount = financials.totalCharge;
+  donation.currency = pricing.organizationCurrency;
+  donation.platformFee = pricing.platformFee;
+  donation.gstOnFee = pricing.gstOnFee;
+  donation.stripeFee = pricing.stripeFee;
+  donation.netAmount = pricing.netToOrg;
+  donation.totalAmount = pricing.totalCharge;
   Object.assign(donation, baseMoney);
   donation.pointsEarned = Math.floor(baseMoney.amountBase * 100);
   await donation.save();
@@ -1890,8 +1891,40 @@ const getClientStats = async (
   } as any;
 };
 
+/** Donation quote — all amounts in organization currency for frontend UI. */
+const getDonationQuote = async (query: {
+  organizationId: string;
+  amount: number;
+  coverFees?: boolean;
+}) => {
+  const organization = await Organization.findById(query.organizationId);
+  if (!organization) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Organization not found!');
+  }
+
+  const pricing = buildOrganizationDonationPricing({
+    amount: query.amount,
+    coverFees: query.coverFees ?? false,
+    organizationCountry: organization.country,
+    organizationDefaultCurrency: organization.defaultCurrency,
+  });
+
+  const currencyDisplay = buildOrganizationCurrencyDisplay(
+    pricing.organizationCurrency
+  );
+
+  return {
+    organizationId: query.organizationId,
+    organizationName: organization.name,
+    ...currencyDisplay,
+    message: `All donation amounts are in ${pricing.organizationCurrency}`,
+    pricing,
+  };
+};
+
 export const DonationService = {
   createOneTimeDonation,
+  getDonationQuote,
   getDonationById,
   getDonationFullStatus,
   retryFailedPayment,

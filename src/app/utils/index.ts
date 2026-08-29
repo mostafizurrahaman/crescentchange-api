@@ -22,10 +22,15 @@ import {
 import {
   PLATFORM_BASE_CURRENCY,
   getCurrencyForCountry,
+  getStripeCountryCode,
   convertToBaseCurrency,
   buildBaseMoneyFields,
   normalizeCurrency,
   currencySymbol,
+  STRIPE_CONNECT_COUNTRIES,
+  isSupportedStripeCountry,
+  resolveStripeCountry,
+  toStripeAmount,
 } from './currency.utils';
 
 // JWT configuration
@@ -62,8 +67,13 @@ export {
   // Currency
   PLATFORM_BASE_CURRENCY,
   getCurrencyForCountry,
+  getStripeCountryCode,
   convertToBaseCurrency,
   buildBaseMoneyFields,
   normalizeCurrency,
   currencySymbol,
+  STRIPE_CONNECT_COUNTRIES,
+  isSupportedStripeCountry,
+  resolveStripeCountry,
+  toStripeAmount,
 };

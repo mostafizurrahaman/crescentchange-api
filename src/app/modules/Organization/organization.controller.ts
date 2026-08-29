@@ -162,10 +162,21 @@ const getOrganizationDetails = asyncHandler(
   }
 );
 
+const getSupportedStripeCountries = asyncHandler(async (_req, res) => {
+  const countries = OrganizationService.getSupportedStripeCountries();
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    message: 'Supported Stripe Connect countries retrieved successfully',
+    data: countries,
+  });
+});
+
 export const OrganizationController = {
   startStripeConnectOnboarding,
   getStripeConnectStatus,
   refreshStripeConnectOnboarding,
+  getSupportedStripeCountries,
   editProfileOrgDetails,
   editOrgTaxDetails,
   updateLogoImage,

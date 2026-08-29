@@ -14,6 +14,7 @@ let server: Server | null = null;
 
 // bootstrap function
 async function bootstrap() {
+  
   try {
     // Connect to MongoDB
     await mongoose.connect(config.dbUrl as string);

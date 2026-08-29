@@ -2,11 +2,8 @@ import dotenv from 'dotenv';
 import path from 'path';
 
 dotenv.config({
-  path: path.join(process.cwd(), '.env.local')
+  path: path.join(process.cwd(), '.env.local'),
 });
-
-
-
 
 interface IConfig {
   port: number;
@@ -76,6 +73,8 @@ interface IConfig {
     orgYearlyPriceId: string;
     bizMonthlyPriceId: string;
     bizYearlyPriceId: string;
+    /** Platform Stripe account country (ISO), used for cross-border Connect charges. */
+    platformCountry: string;
   };
   plaid: {
     clientId: string;
@@ -174,6 +173,7 @@ const config: IConfig = {
     orgYearlyPriceId: process.env.STRIPE_ORG_YEARLY_PRICE_ID || '',
     bizMonthlyPriceId: process.env.STRIPE_BIZ_MONTHLY_PRICE_ID || '',
     bizYearlyPriceId: process.env.STRIPE_BIZ_YEARLY_PRICE_ID || '',
+    platformCountry: (process.env.STRIPE_PLATFORM_COUNTRY || 'US').toUpperCase(),
   },
   plaid: {
     clientId: process.env.PLAID_CLIENT_ID || '',
@@ -202,6 +202,5 @@ const config: IConfig = {
     secret: process.env.REVENUE_CAT_SECRET!,
   },
 };
-
 
 export default config;

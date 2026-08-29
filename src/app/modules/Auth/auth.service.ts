@@ -14,6 +14,7 @@ import {
 } from '../../lib';
 import { TDeactiveAccountPayload, TProfileFileFields } from '../../types';
 import { AppError, sendOtpEmail, uploadToS3 } from '../../utils';
+import { resolveOrganizationCountryFields } from '../../utils/organization-country.utils';
 import Business, {
   BusinessView,
   BusinessWebsiteView,
@@ -1944,13 +1945,17 @@ const organizationSignupWithProfile = async (
     }
 
     // 5. Create Organization Profile
+    const { country: resolvedCountry, defaultCurrency } =
+      resolveOrganizationCountryFields(orgData.country);
+
     const organizationPayload = {
       auth: newAuth._id,
       name: orgData.name,
       serviceType: orgData.serviceType,
       address: orgData.address,
       state: orgData.state,
-      country: orgData.country,
+      country: resolvedCountry,
+      defaultCurrency,
       postalCode: orgData.postalCode,
       website: orgData.website,
       phoneNumber: orgData.phoneNumber,
@@ -2053,6 +2058,8 @@ const organizationSignupWithProfile = async (
       data: {
         email: newAuth.email,
         organizationName: newOrganization.name,
+        country: newOrganization.country,
+        defaultCurrency: newOrganization.defaultCurrency,
         requiresVerification: true,
       },
     };

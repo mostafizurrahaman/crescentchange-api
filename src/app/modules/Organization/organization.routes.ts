@@ -8,6 +8,12 @@ import { upload } from '../../lib';
 
 const router = express.Router();
 
+// Public: Stripe Connect country/currency list for org signup & profile
+router.get(
+  '/supported-countries',
+  OrganizationController.getSupportedStripeCountries
+);
+
 // Edit Organization Profile Details (Tab 1 - Text fields)
 router.patch(
   '/profile-details',

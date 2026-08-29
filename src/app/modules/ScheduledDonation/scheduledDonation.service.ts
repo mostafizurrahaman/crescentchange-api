@@ -24,11 +24,11 @@ import { createNotification } from '../Notification/notification.service';
 import { NOTIFICATION_TYPE } from '../Notification/notification.constant';
 import { IORGANIZATION } from '../Organization/organization.interface';
 import { SubscriptionService } from '../Subscription/subscription.service';
+import { buildBaseMoneyFields } from '../../utils/currency.utils';
 import {
-  buildBaseMoneyFields,
-  getCurrencyForCountry,
-  normalizeCurrency,
-} from '../../utils/currency.utils';
+  buildOrganizationDonationPricing,
+  getOrganizationCurrencyMeta,
+} from '../../utils/donation-pricing.utils';
 
 // Helper function to calculate next donation date
 export const calculateNextDonationDate = (
@@ -88,7 +88,7 @@ export const calculateNextDonationDate = (
 const createScheduledDonation = async (
   userId: string,
   payload: TCreateScheduledDonation
-): Promise<IScheduledDonationModel> => {
+): Promise<Record<string, unknown>> => {
   const {
     organizationId,
     causeId,
@@ -111,19 +111,18 @@ const createScheduledDonation = async (
     throw new AppError(httpStatus.NOT_FOUND, 'Organization not found!');
   }
 
-  const currency = normalizeCurrency(
-    organization.defaultCurrency || getCurrencyForCountry(organization.country)
-  );
-
-  //  Validate Financials (Log only, execution happens later)
-  const financials = calculateDonationFees(amount, coverFees, {
-    country: organization.country,
+  const pricing = buildOrganizationDonationPricing({
+    amount,
+    coverFees,
+    organizationCountry: organization.country,
+    organizationDefaultCurrency: organization.defaultCurrency,
   });
+
   console.log(`💰 Scheduled Donation Template Created:`);
-  console.log(`   Currency: ${currency}`);
-  console.log(`   Base: ${financials.baseAmount.toFixed(2)} ${currency}`);
+  console.log(`   Currency: ${pricing.organizationCurrency}`);
+  console.log(`   Base: ${pricing.baseAmount.toFixed(2)} ${pricing.organizationCurrency}`);
   console.log(
-    `   Total per Run: ${financials.totalCharge.toFixed(2)} ${currency}`
+    `   Total per Run: ${pricing.totalCharge.toFixed(2)} ${pricing.organizationCurrency}`
   );
 
   // check subscription status of organization
@@ -179,10 +178,10 @@ const createScheduledDonation = async (
     organization: new Types.ObjectId(organizationId),
     cause: new Types.ObjectId(causeId),
 
-    amount: financials.baseAmount, // Store Base Amount
-    coverFees, // Store Preference
+    amount: pricing.baseAmount,
+    coverFees,
 
-    currency,
+    currency: pricing.organizationCurrency,
     frequency,
     customInterval,
     startDate: startDateTime,
@@ -216,7 +215,11 @@ const createScheduledDonation = async (
     console.error('Notification Error:', error);
   }
 
-  return scheduledDonation;
+  return {
+    scheduledDonation,
+    ...getOrganizationCurrencyMeta(organization),
+    message: `Recurring donations will be processed in ${pricing.organizationCurrency}`,
+  };
 };
 const getUserScheduledDonations = async (
   userId: string,
@@ -560,55 +563,42 @@ const executeScheduledDonation = async (
       );
     }
 
-    // 4. Recalculate Fees (country-aware)
-    const currency = normalizeCurrency(
-      scheduledDonation.currency ||
-        organization.defaultCurrency ||
-        getCurrencyForCountry(organization.country)
-    );
-    const financials = calculateDonationFees(
-      scheduledDonation.amount,
-      scheduledDonation.coverFees,
-      { country: organization.country }
-    );
-    const baseMoney = await buildBaseMoneyFields({
-      currency,
-      amount: financials.baseAmount,
-      totalAmount: financials.totalCharge,
-      netAmount: financials.netToOrg,
-      platformFee: financials.platformFee,
-      gstOnFee: financials.gstOnFee,
-      stripeFee: financials.stripeFee,
+    const pricing = buildOrganizationDonationPricing({
+      amount: scheduledDonation.amount,
+      coverFees: scheduledDonation.coverFees,
+      organizationCountry: organization.country,
+      organizationDefaultCurrency: organization.defaultCurrency,
     });
 
-    // Calculate Application Fee (Platform + GST)
-    const applicationFee = financials.platformFeeWithStripe;
+    const baseMoney = await buildBaseMoneyFields({
+      currency: pricing.organizationCurrency,
+      amount: pricing.baseAmount,
+      totalAmount: pricing.totalCharge,
+      netAmount: pricing.netToOrg,
+      platformFee: pricing.platformFee,
+      gstOnFee: pricing.gstOnFee,
+      stripeFee: pricing.stripeFee,
+    });
 
     console.log(`🔄 Executing Recurring Donation (${scheduledDonationId}):`);
-    console.log(`   Currency: ${currency}`);
-    console.log(`   Base: ${financials.baseAmount}`);
-    console.log(`   Total Charge: ${financials.totalCharge}`);
-    console.log(`   App Fee: ${applicationFee}`);
+    console.log(`   Currency: ${pricing.organizationCurrency}`);
+    console.log(`   Base: ${pricing.baseAmount}`);
+    console.log(`   Total Charge: ${pricing.totalCharge}`);
+    console.log(`   App Fee: ${pricing.applicationFee}`);
     console.log(`   Destination: ${stripeAccount.stripeAccountId}`);
 
-    // 5. Execute Stripe Payment (Destination Charge)
-
     const paymentIntent = await StripeService.createPaymentIntentWithMethod({
-      amount: financials.baseAmount,
-      totalAmount: financials.totalCharge,
-
-      // Destination Charge Params
-      applicationFee: applicationFee,
+      amount: pricing.baseAmount,
+      totalAmount: pricing.totalCharge,
+      applicationFee: pricing.applicationFee,
       orgStripeAccountId: stripeAccount.stripeAccountId,
-
-      // Metadata Breakdown
-      coverFees: financials.coverFees,
-      platformFee: financials.platformFee,
-      gstOnFee: financials.gstOnFee,
-      stripeFee: financials.stripeFee,
-      netToOrg: financials.netToOrg,
-
-      currency: currency.toLowerCase(),
+      connectedAccountCountry: organization.country,
+      coverFees: pricing.coverFees,
+      platformFee: pricing.platformFee,
+      gstOnFee: pricing.gstOnFee,
+      stripeFee: pricing.stripeFee,
+      netToOrg: pricing.netToOrg,
+      currency: pricing.organizationCurrency.toLowerCase(),
       customerId: scheduledDonation.stripeCustomerId,
       paymentMethodId: paymentMethod.stripePaymentMethodId,
       donationId: '',
@@ -627,15 +617,15 @@ const executeScheduledDonation = async (
       donationType: 'recurring',
 
       //  Store Financial Breakdown
-      amount: financials.baseAmount,
-      coverFees: financials.coverFees,
-      platformFee: financials.platformFee,
-      gstOnFee: financials.gstOnFee,
-      stripeFee: financials.stripeFee,
-      netAmount: financials.netToOrg,
-      totalAmount: financials.totalCharge,
+      amount: pricing.baseAmount,
+      coverFees: pricing.coverFees,
+      platformFee: pricing.platformFee,
+      gstOnFee: pricing.gstOnFee,
+      stripeFee: pricing.stripeFee,
+      netAmount: pricing.netToOrg,
+      totalAmount: pricing.totalCharge,
 
-      currency,
+      currency: pricing.organizationCurrency,
       ...baseMoney,
       pointsEarned: Math.floor(baseMoney.amountBase * 100),
 

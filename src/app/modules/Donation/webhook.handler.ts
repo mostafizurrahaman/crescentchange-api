@@ -20,6 +20,7 @@ import { PAYOUT_STATUS } from '../Payout/payout.constant';
 import { Payout } from '../Payout/payout.model';
 import { BalanceTransaction } from '../Balance/balance.model';
 import { calculateNextDonationDate } from '../ScheduledDonation/scheduledDonation.service';
+import { buildStripeAccountSyncPayload } from '../OrganizationAccount/stripe-account.sync';
 import { StripeAccount } from '../OrganizationAccount/stripe-account.model';
 import { createNotification } from '../Notification/notification.service';
 import { NOTIFICATION_TYPE } from '../Notification/notification.constant';
@@ -832,45 +833,16 @@ const handleAccountUpdated = async (stripeAccountData: Stripe.Account) => {
   console.log(`\n👤 [STRIPE WEBHOOK] account.updated - ID: ${accountId}`);
 
   try {
-    let internalStatus: 'active' | 'pending' | 'restricted' | 'rejected' =
-      'pending';
-
-    const requirements = stripeAccountData.requirements;
-    const isChargesEnabled = stripeAccountData.charges_enabled;
-    const isPayoutsEnabled = stripeAccountData.payouts_enabled;
-    const isDisabled = !!requirements?.disabled_reason;
-    const hasOverdueRequirements =
-      (requirements?.currently_due || []).length > 0;
-
-    if (isDisabled) {
-      internalStatus = 'rejected';
-    } else if (isChargesEnabled && isPayoutsEnabled) {
-      internalStatus = 'active';
-    } else if (hasOverdueRequirements) {
-      internalStatus = 'restricted';
-    } else if (stripeAccountData.details_submitted) {
-      internalStatus = 'pending';
-    }
+    const syncPayload = buildStripeAccountSyncPayload(stripeAccountData);
+    const internalStatus = syncPayload.status;
 
     console.log(`   Mapped Status: ${internalStatus}`);
-    console.log(`   Charges Enabled: ${isChargesEnabled}`);
-    console.log(`   Payouts Enabled: ${isPayoutsEnabled}`);
+    console.log(`   Charges Enabled: ${syncPayload.chargesEnabled}`);
+    console.log(`   Payouts Enabled: ${syncPayload.payoutsEnabled}`);
 
     const updatedAccount = await StripeAccount.findOneAndUpdate(
       { stripeAccountId: accountId },
-      {
-        $set: {
-          status: internalStatus,
-          chargesEnabled: isChargesEnabled,
-          payoutsEnabled: isPayoutsEnabled,
-          detailsSubmitted: stripeAccountData.details_submitted,
-          requirements: {
-            currently_due: requirements?.currently_due || [],
-            eventually_due: requirements?.eventually_due || [],
-            disabled_reason: requirements?.disabled_reason || null,
-          },
-        },
-      },
+      { $set: syncPayload },
       { new: true }
     );
 

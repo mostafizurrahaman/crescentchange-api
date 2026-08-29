@@ -8,8 +8,7 @@ import { PAYOUT_STATUS } from './payout.constant';
 import QueryBuilder from '../../builders/QueryBuilder';
 import { StripeService } from '../Stripe/stripe.service';
 import Organization from '../Organization/organization.model';
-import { STRIPE_ACCOUNT_STATUS } from '../Organization/organization.constants';
-import { StripeAccount } from '../OrganizationAccount/stripe-account.model';
+import { syncStripeAccountForOrganization } from '../OrganizationAccount/stripe-account.sync';
 import { pipe } from 'pdfkit';
 
 const generatePayoutNumber = () => {
@@ -38,11 +37,8 @@ const requestPayout = async (
       throw new AppError(httpStatus.NOT_FOUND, 'Organization not found');
     }
 
-    // 1. Find Stripe Account
-    const stripeAccount = await StripeAccount.findOne({
-      organization: organizationId,
-      status: 'active',
-    }).session(session);
+    // 1. Sync Stripe flags from API (DB can be stale if Connect webhooks were missed)
+    const stripeAccount = await syncStripeAccountForOrganization(organizationId);
 
     if (!stripeAccount || !stripeAccount.payoutsEnabled) {
       throw new AppError(

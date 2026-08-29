@@ -15,7 +15,13 @@ export interface IDonation {
   netAmount: number; // The clean amount credited to the Organization
   totalAmount: number; // The actual charge to the card
 
-  currency: string; // Charge currency (org defaultCurrency)
+  currency: string; // Org settlement currency (org accounting)
+
+  /** Donor card currency when adaptive presentment is used */
+  presentmentCurrency?: string;
+  presentmentTotalAmount?: number;
+  /** settlement amount × rate ≈ presentment amount */
+  settlementToPresentmentRate?: number;
 
   // Platform base currency snapshot (locked at payment time)
   baseCurrency?: string; // Always USD for reporting

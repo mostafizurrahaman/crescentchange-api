@@ -4,6 +4,7 @@ import { organizationServiceTypeValues } from './organization.constants';
 import {
   PLATFORM_BASE_CURRENCY,
   getCurrencyForCountry,
+  resolveStripeCountry,
 } from '../../utils/currency.utils';
 
 const organizationSchema = new Schema<IORGANIZATION>(
@@ -101,10 +102,18 @@ organizationSchema.virtual('stripeAccount', {
   justOne: true,
 });
 
-// Keep defaultCurrency in sync with country on create/update
+// Keep country (ISO) + defaultCurrency in sync with Stripe Connect matrix
 organizationSchema.pre('save', function (next) {
-  if (this.isModified('country') || this.isNew || !this.defaultCurrency) {
-    this.defaultCurrency = getCurrencyForCountry(this.country);
+  if (this.country) {
+    const resolved = resolveStripeCountry(this.country);
+    if (resolved) {
+      this.country = resolved.countryCode;
+      this.defaultCurrency = resolved.currency;
+    } else if (this.isModified('country') || this.isNew || !this.defaultCurrency) {
+      this.defaultCurrency = getCurrencyForCountry(this.country);
+    }
+  } else if (this.isNew || !this.defaultCurrency) {
+    this.defaultCurrency = PLATFORM_BASE_CURRENCY;
   }
   next();
 });

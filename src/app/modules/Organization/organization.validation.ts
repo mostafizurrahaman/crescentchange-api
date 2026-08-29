@@ -4,25 +4,28 @@ import {
   organizationServiceTypeValues,
 } from './organization.constants';
 import { authStatusValues } from '../Auth/auth.constant';
+import { optionalStripeCountrySchema } from '../../validation/stripe-country.validation';
 
 // Tab 1: Organization Details (without images)
 const editProfileOrgDetailsSchema = z.object({
-  body: z.object({
-    name: z.string().optional(),
-    dateOfEstablishment: z
-      .string()
-      .or(z.date())
-      .transform((val) => (typeof val === 'string' ? new Date(val) : val))
-      .optional(),
-    address: z.string().optional(),
-    website: z.string().url('Invalid website URL!').optional(),
-    phoneNumber: z.string().optional(),
-    country: z.string().optional(),
-    state: z.string().optional(),
-    postalCode: z.string().optional(),
-    isProfileVisible: z.boolean().optional(),
-    aboutUs: z.string().optional(),
-  }),
+  body: z
+    .object({
+      name: z.string().optional(),
+      dateOfEstablishment: z
+        .string()
+        .or(z.date())
+        .transform((val) => (typeof val === 'string' ? new Date(val) : val))
+        .optional(),
+      address: z.string().optional(),
+      website: z.string().url('Invalid website URL!').optional(),
+      phoneNumber: z.string().optional(),
+      country: optionalStripeCountrySchema,
+      state: z.string().optional(),
+      postalCode: z.string().optional(),
+      isProfileVisible: z.boolean().optional(),
+      aboutUs: z.string().optional(),
+    })
+    .strict(),
 });
 
 // Tab 2: Tax Details

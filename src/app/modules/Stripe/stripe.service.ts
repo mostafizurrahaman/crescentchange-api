@@ -2,6 +2,8 @@ import { Stripe } from 'stripe';
 import { stripe } from '../../lib/stripeHelper';
 import config from '../../config';
 import { AppError } from '../../utils';
+import { toStripeAmount, normalizeCurrency } from '../../utils/currency.utils';
+import { applyDestinationChargeConnectParams } from '../../utils/stripe-connect-charges.utils';
 import httpStatus from 'http-status';
 import { OrganizationModel } from '../Organization/organization.model';
 import {
@@ -126,7 +128,7 @@ const createPaymentIntent = async (
 
   // Create Stripe Payment Intent
   const paymentIntentParams: Stripe.PaymentIntentCreateParams = {
-    amount: Math.round(totalAmount * 100),
+    amount: toStripeAmount(totalAmount, currency),
     currency: (currency || 'usd').toLowerCase(),
     metadata: {
       donorId,
@@ -303,26 +305,23 @@ const detachPaymentMethod = async (
 // 10. Create payment intent with saved payment method (for direct charges)
 const createPaymentIntentWithMethod = async (
   payload: ICreatePaymentIntentWithMethodRequest & {
-    applicationFee: number; // Platform Revenue + GST
-    orgStripeAccountId: string; // The Org's Connect ID
+    applicationFee: number;
+    orgStripeAccountId: string;
   }
 ): Promise<IPaymentIntentResponse> => {
   const {
-    amount, // Base amount
-    totalAmount, // Total to charge the donor
-    currency = 'usd', // Default to AUD
+    amount,
+    totalAmount,
+    currency = 'usd',
     customerId,
     paymentMethodId,
     donationId,
     organizationId,
     causeId,
     specialMessage,
-
-    // Fee Logic inputs
     applicationFee,
     orgStripeAccountId,
-
-    // Metadata Breakdown
+    connectedAccountCountry,
     coverFees = false,
     platformFee = 0,
     gstOnFee = 0,
@@ -330,7 +329,8 @@ const createPaymentIntentWithMethod = async (
     netToOrg = 0,
   } = payload;
 
-  // Validate amount
+  const stripeCurrency = normalizeCurrency(currency).toLowerCase();
+
   if (totalAmount < 1 || totalAmount > 10000) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
@@ -346,25 +346,23 @@ const createPaymentIntentWithMethod = async (
   }
 
   console.log(`💳 Creating Payment Intent (Destination Charge):`);
-  console.log(`   Base: $${amount.toFixed(2)}`);
-  console.log(`   Total Charge: $${totalAmount.toFixed(2)}`);
-  console.log(`   App Fee (Platform + GST): $${applicationFee.toFixed(2)}`);
+  console.log(`   Organization currency: ${normalizeCurrency(currency)}`);
+  console.log(`   Base: ${amount.toFixed(2)} ${normalizeCurrency(currency)}`);
+  console.log(`   Total charge: ${totalAmount.toFixed(2)} ${normalizeCurrency(currency)}`);
+  console.log(`   App fee: ${applicationFee.toFixed(2)} ${normalizeCurrency(currency)}`);
   console.log(`   Destination Account: ${orgStripeAccountId}`);
+  if (connectedAccountCountry) {
+    console.log(`   Connected Account Country: ${connectedAccountCountry}`);
+  }
 
   try {
-    // Create payment intent with Destination Charge
-    const paymentIntentParams: Stripe.PaymentIntentCreateParams = {
-      amount: Math.round(totalAmount * 100),
-      currency: currency.toLowerCase(),
+    const baseParams: Stripe.PaymentIntentCreateParams = {
+      amount: toStripeAmount(totalAmount, stripeCurrency),
+      currency: stripeCurrency,
       customer: customerId,
       payment_method: paymentMethodId,
       confirm: true, // Automatically confirm the payment
       return_url: config.stripe.stripeSuccessUrl,
-
-      application_fee_amount: Math.round(applicationFee * 100),
-      transfer_data: {
-        destination: orgStripeAccountId,
-      },
 
       metadata: {
         donationId,
@@ -381,8 +379,19 @@ const createPaymentIntentWithMethod = async (
         netToOrg: netToOrg.toString(),
         coverFees: coverFees.toString(),
         destinationAccount: orgStripeAccountId,
+        connectedAccountCountry: connectedAccountCountry || '',
+        organizationCurrency: normalizeCurrency(currency),
       },
     };
+
+    const paymentIntentParams = applyDestinationChargeConnectParams(
+      baseParams,
+      toStripeAmount(applicationFee, stripeCurrency),
+      {
+        orgStripeAccountId,
+        connectedAccountCountry,
+      }
+    );
 
     const paymentIntent = await stripe.paymentIntents.create(
       paymentIntentParams
@@ -619,8 +628,8 @@ const createRoundUpPaymentIntent = async (
     }
 
     // Create Stripe Payment Intent for off-session round-up donation
-    const paymentIntentParams: Stripe.PaymentIntentCreateParams = {
-      amount: Math.round(totalAmount * 100),
+    const baseParams: Stripe.PaymentIntentCreateParams = {
+      amount: toStripeAmount(totalAmount, currency),
       currency: currency.toLowerCase(),
 
       // Off-session settings
@@ -630,12 +639,6 @@ const createRoundUpPaymentIntent = async (
       // Must specify customer + saved PM for off-session
       customer: paymentMethod.stripeCustomerId,
       payment_method: paymentMethod.stripePaymentMethodId,
-
-      //  Destination Charge
-      application_fee_amount: Math.round(applicationFee * 100),
-      transfer_data: {
-        destination: stripeAccount.stripeAccountId,
-      },
 
       metadata: {
         donationId: String(donationId || ''),
@@ -659,8 +662,18 @@ const createRoundUpPaymentIntent = async (
         netToOrg: netToOrg.toString(),
         coverFees: coverFees.toString(),
         destinationAccount: stripeAccount.stripeAccountId,
+        connectedAccountCountry: charity.country || '',
       },
     };
+
+    const paymentIntentParams = applyDestinationChargeConnectParams(
+      baseParams,
+      toStripeAmount(applicationFee, currency),
+      {
+        orgStripeAccountId: stripeAccount.stripeAccountId,
+        connectedAccountCountry: charity.country,
+      }
+    );
 
     const paymentIntent = await stripe.paymentIntents.create(
       paymentIntentParams
@@ -717,7 +730,7 @@ const transferFundsToConnectedAccount = async (
   try {
     // Create a Transfer from the Platform to the Connected Account
     const transfer = await stripe.transfers.create({
-      amount: Math.round(amount * 100), // Convert to cents
+      amount: toStripeAmount(amount, currency), // Stripe smallest unit
       currency,
       destination: destinationAccountId,
       metadata,
@@ -753,7 +766,7 @@ const createPayout = async (
     // Perform payout ON BEHALF OF the connected account
     const payout = await stripe.payouts.create(
       {
-        amount: Math.round(amount * 100), // Convert to cents
+        amount: toStripeAmount(amount, currency), // Stripe smallest unit
         currency: currency.toLowerCase(),
       },
       {

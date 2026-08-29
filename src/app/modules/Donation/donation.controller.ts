@@ -39,12 +39,39 @@ const createOneTimeDonation = asyncHandler(
       message: 'Donation created and payment initiated successfully',
       data: {
         donation: result.donation,
+        organizationCurrency: result.organizationCurrency,
+        currencySymbol: result.currencySymbol,
+        stripeCurrency: result.stripeCurrency,
+        amountLabel: result.amountLabel,
         payment: {
           clientSecret: result.paymentIntent.client_secret,
           paymentIntentId: result.paymentIntent.payment_intent_id,
           status: result.donation.status,
         },
       },
+    });
+  }
+);
+
+const getDonationQuote = asyncHandler(
+  async (req: ExtendedRequest, res: Response) => {
+    const query = (req as ExtendedRequest & { validatedQuery?: Record<string, unknown> })
+      .validatedQuery as {
+      organizationId: string;
+      amount: number;
+      coverFees?: boolean;
+    };
+
+    const result = await DonationService.getDonationQuote({
+      organizationId: query.organizationId,
+      amount: query.amount,
+      coverFees: query.coverFees,
+    });
+
+    sendResponse(res, {
+      statusCode: httpStatus.OK,
+      message: 'Donation quote retrieved successfully',
+      data: result,
     });
   }
 );
@@ -474,6 +501,7 @@ const getClientStats = asyncHandler(
 
 export const DonationController = {
   createOneTimeDonation,
+  getDonationQuote,
 
   getDonationFullStatus,
   retryFailedPayment,

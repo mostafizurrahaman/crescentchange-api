@@ -21,8 +21,21 @@ import { CAUSE_STATUS_TYPE } from '../Causes/causes.constant';
 import { SubscriptionService } from '../Subscription/subscription.service';
 import {
   getCurrencyForCountry,
-  normalizeCountry,
+  getStripeCountryCode,
+  STRIPE_CONNECT_COUNTRIES,
 } from '../../utils/currency.utils';
+import {
+  buildOrganizationCurrencyDisplay,
+  resolveOrganizationChargeCurrency,
+} from '../../utils/donation-pricing.utils';
+import {
+  assertOrganizationCountryMutable,
+  isOrganizationCountryLocked,
+  resolveOrganizationCountryFields,
+} from '../../utils/organization-country.utils';
+import {
+  syncStripeAccountFromStripe,
+} from '../OrganizationAccount/stripe-account.sync';
 
 /**
  * Start Stripe Connect onboarding for an organization
@@ -46,6 +59,13 @@ const startStripeConnectOnboarding = async (
     );
   }
 
+  if (!organization.country || !getStripeCountryCode(organization.country)) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'A supported country is required in your profile before connecting Stripe.'
+    );
+  }
+
   // 3. Check if a Stripe Account ALREADY exists for this org
   let stripeAccount = await StripeAccount.findOne({
     organization: organization._id,
@@ -58,22 +78,17 @@ const startStripeConnectOnboarding = async (
       `♻️ Reusing existing Stripe Account: ${stripeAccount.stripeAccountId}`
     );
     accountId = stripeAccount.stripeAccountId;
+    await syncStripeAccountFromStripe(accountId);
   } else {
     console.log(`🆕 Creating new Stripe Connected Account...`);
 
-    // Stripe Connect country must match where the org is legally based
-    const connectCountry = normalizeCountry(organization.country) || 'US';
-    // Stripe expects 2-letter ISO; map common variants
-    const stripeCountry =
-      connectCountry === 'USA' || connectCountry === 'UNITED STATES'
-        ? 'US'
-        : connectCountry === 'AUS' || connectCountry === 'AUSTRALIA'
-          ? 'AU'
-          : connectCountry === 'CAN' || connectCountry === 'CANADA'
-            ? 'CA'
-            : connectCountry.length === 2
-              ? connectCountry
-              : 'US';
+    const stripeCountry = getStripeCountryCode(organization.country);
+    if (!stripeCountry) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        'Organization country is not supported for Stripe Connect. Please set a supported country in your profile.'
+      );
+    }
 
     // Ensure org currency is set before onboarding
     if (!organization.defaultCurrency) {
@@ -126,6 +141,9 @@ const getStripeConnectStatus = async (
   detailsSubmitted: boolean;
   requirements: string[];
   status: string;
+  country: string;
+  defaultCurrency: string;
+  isCountryLocked: boolean;
 }> => {
   // 1. Find Organization
   const organization = await Organization.findOne({ auth: userId });
@@ -139,6 +157,12 @@ const getStripeConnectStatus = async (
   });
 
   // 3. Return early if no account exists
+  const defaultCurrency =
+    organization.defaultCurrency || getCurrencyForCountry(organization.country);
+  const countryLocked = await isOrganizationCountryLocked(
+    organization._id.toString()
+  );
+
   if (!stripeAccount) {
     return {
       hasAccount: false,
@@ -148,46 +172,37 @@ const getStripeConnectStatus = async (
       detailsSubmitted: false,
       requirements: [],
       status: 'not_connected',
+      country: organization.country || '',
+      defaultCurrency,
+      isCountryLocked: countryLocked,
     };
   }
 
-  // 4. Fetch LATEST details directly from Stripe API (Source of Truth)
+  // 4. Sync latest Connect account state from Stripe into MongoDB
   try {
-    const account = await StripeService.getConnectAccount(
+    const syncedAccount = await syncStripeAccountFromStripe(
       stripeAccount.stripeAccountId
     );
 
-    // 5. Determine Database Status based on Stripe Flags
-    let newStatus = 'pending';
-    if (account.requirements?.disabled_reason) {
-      newStatus = 'rejected';
-    } else if (account.charges_enabled && account.payouts_enabled) {
-      newStatus = 'active';
-    } else if ((account.requirements?.currently_due || []).length > 0) {
-      newStatus = 'restricted';
+    if (!syncedAccount) {
+      throw new AppError(
+        httpStatus.NOT_FOUND,
+        'Stripe Connect account record not found after sync.'
+      );
     }
-
-    // 6. SYNC: Update local database with fresh data (Self-healing)
-    stripeAccount.chargesEnabled = account.charges_enabled;
-    stripeAccount.payoutsEnabled = account.payouts_enabled;
-    stripeAccount.detailsSubmitted = account.details_submitted;
-    stripeAccount.status = newStatus as any;
-    stripeAccount.requirements = {
-      currently_due: account.requirements?.currently_due || [],
-      eventually_due: account.requirements?.eventually_due || [],
-      disabled_reason: account.requirements?.disabled_reason! || null,
-    };
-    await stripeAccount.save();
 
     return {
       hasAccount: true,
-      accountId: account.id,
-      isActive: account.charges_enabled && account.payouts_enabled,
-      chargesEnabled: account.charges_enabled,
-      payoutsEnabled: account.payouts_enabled,
-      detailsSubmitted: account.details_submitted,
-      requirements: account.requirements?.currently_due || [],
-      status: newStatus,
+      accountId: syncedAccount.stripeAccountId,
+      isActive: syncedAccount.chargesEnabled && syncedAccount.payoutsEnabled,
+      chargesEnabled: syncedAccount.chargesEnabled,
+      payoutsEnabled: syncedAccount.payoutsEnabled,
+      detailsSubmitted: syncedAccount.detailsSubmitted,
+      requirements: syncedAccount.requirements?.currently_due || [],
+      status: syncedAccount.status,
+      country: organization.country || '',
+      defaultCurrency,
+      isCountryLocked: countryLocked,
     };
   } catch (error) {
     throw new AppError(
@@ -222,7 +237,9 @@ const refreshStripeConnectOnboarding = async (
     );
   }
 
-  // 3. Create new account link using the existing ID
+  // 3. Sync latest flags from Stripe, then create a fresh onboarding link
+  await syncStripeAccountFromStripe(stripeAccount.stripeAccountId);
+
   const { onboardingUrl } = await StripeService.createAccountLink(
     stripeAccount.stripeAccountId
   );
@@ -333,9 +350,22 @@ const editProfileOrgDetailsIntoDB = async (
   const updatePayload: TEditProfileOrgDetails & { defaultCurrency?: string } = {
     ...payload,
   };
+
   if (payload.country !== undefined) {
-    updatePayload.defaultCurrency = getCurrencyForCountry(payload.country);
+    await assertOrganizationCountryMutable(
+      organization._id.toString(),
+      organization.country,
+      payload.country
+    );
+
+    const resolved = resolveOrganizationCountryFields(payload.country);
+    updatePayload.country = resolved.country;
+    updatePayload.defaultCurrency = resolved.defaultCurrency;
   }
+
+  const countryLocked = await isOrganizationCountryLocked(
+    organization._id.toString()
+  );
 
   // Update organization
   const updatedOrganization = await Organization.findOneAndUpdate(
@@ -356,6 +386,11 @@ const editProfileOrgDetailsIntoDB = async (
 
   return {
     organization: updatedOrganization,
+    country: updatedOrganization.country,
+    defaultCurrency:
+      updatedOrganization.defaultCurrency ||
+      getCurrencyForCountry(updatedOrganization.country),
+    isCountryLocked: countryLocked,
   };
 };
 
@@ -557,7 +592,7 @@ const getOrganizationDetailsById = async (organizationId: string) => {
   // Find organization by ID
   const organization = await Organization.findById(organizationId)
     .select(
-      'name registeredCharityName logoImage coverImage aboutUs serviceType address state postalCode website phoneNumber'
+      'name registeredCharityName logoImage coverImage aboutUs serviceType address state country postalCode defaultCurrency website phoneNumber'
     )
     .populate('auth', 'email role isActive status');
 
@@ -635,8 +670,16 @@ const getOrganizationDetailsById = async (organizationId: string) => {
     organizationStats?.totalDonationAmount?.[0]?.totalAmount || 0;
   const recentDonors = organizationStats?.recentDonors || [];
 
+  const organizationCurrency = resolveOrganizationChargeCurrency(
+    organization.country,
+    organization.defaultCurrency
+  );
+  const currencyDisplay = buildOrganizationCurrencyDisplay(organizationCurrency);
+
   return {
     ...organization.toObject(),
+    ...currencyDisplay,
+    message: `Donations to this organization are processed in ${organizationCurrency}`,
     totalDonation,
     totalDonationAmount,
     recentDonors,
@@ -647,10 +690,22 @@ const getOrganizationDetailsById = async (organizationId: string) => {
   };
 };
 
+/**
+ * List Stripe Connect countries enabled on this platform (for signup/profile dropdowns).
+ */
+const getSupportedStripeCountries = () =>
+  STRIPE_CONNECT_COUNTRIES.map((c) => ({
+    countryCode: c.countryCode,
+    name: c.name,
+    currency: c.currency,
+    stripeCurrency: c.currency.toLowerCase(),
+  }));
+
 export const OrganizationService = {
   startStripeConnectOnboarding,
   getStripeConnectStatus,
   refreshStripeConnectOnboarding,
+  getSupportedStripeCountries,
   editProfileOrgDetailsIntoDB,
   updateLogoImageIntoDB,
   editOrgTaxDetailsIntoDB,

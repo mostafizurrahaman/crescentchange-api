@@ -1,26 +1,31 @@
 import { Convert } from 'easy-currencies';
+import {
+  getCurrencyForCountry as getCurrencyForStripeCountry,
+  getStripeCountryCode,
+  getStripeCurrencyForCountry,
+  isSupportedStripeCountry,
+  isZeroDecimalStripeCurrency,
+  resolveStripeCountry,
+  STRIPE_COUNTRY_CODES,
+  STRIPE_CONNECT_COUNTRIES,
+  STRIPE_SETTLEMENT_CURRENCIES,
+  STRIPE_ZERO_DECIMAL_CURRENCIES,
+} from '../config/stripe-countries.config';
 
 /** Platform reporting currency — all analytics sum amounts in this unit. */
 export const PLATFORM_BASE_CURRENCY = 'USD';
 
-/** Supported charge currencies (ISO 4217 uppercase). */
-export const SUPPORTED_CURRENCIES = ['USD', 'AUD', 'CAD'] as const;
-export type TSupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
-
-/**
- * Map ISO country codes (and common names) → default currency.
- * Stripe Connect country is typically a 2-letter ISO code.
- */
-const COUNTRY_TO_CURRENCY: Record<string, TSupportedCurrency> = {
-  US: 'USD',
-  USA: 'USD',
-  'UNITED STATES': 'USD',
-  AU: 'AUD',
-  AUS: 'AUD',
-  AUSTRALIA: 'AUD',
-  CA: 'CAD',
-  CAN: 'CAD',
-  CANADA: 'CAD',
+/** Re-export Stripe country registry for API/controllers */
+export {
+  getStripeCountryCode,
+  getStripeCurrencyForCountry,
+  isSupportedStripeCountry,
+  isZeroDecimalStripeCurrency,
+  resolveStripeCountry,
+  STRIPE_COUNTRY_CODES,
+  STRIPE_CONNECT_COUNTRIES,
+  STRIPE_SETTLEMENT_CURRENCIES,
+  STRIPE_ZERO_DECIMAL_CURRENCIES,
 };
 
 export const normalizeCurrency = (currency?: string | null): string =>
@@ -30,31 +35,43 @@ export const normalizeCountry = (country?: string | null): string =>
   (country || '').trim().toUpperCase();
 
 /**
- * Resolve an organization's charge currency from country.
- * Falls back to USD when country is unknown/empty.
+ * Resolve org charge currency from country (Stripe Connect matrix).
+ * Unknown country → USD fallback.
  */
-export const getCurrencyForCountry = (
-  country?: string | null
-): TSupportedCurrency => {
-  const key = normalizeCountry(country);
-  if (!key) return PLATFORM_BASE_CURRENCY;
-  return COUNTRY_TO_CURRENCY[key] || PLATFORM_BASE_CURRENCY;
+export const getCurrencyForCountry = (country?: string | null): string =>
+  getCurrencyForStripeCountry(country);
+
+/** True when GST applies (Australia only for now). */
+export const countryAppliesGst = (country?: string | null): boolean => {
+  const code = getStripeCountryCode(country);
+  return code === 'AU';
 };
 
-/** True when GST (or equivalent platform-fee tax) applies for this country. */
-export const countryAppliesGst = (country?: string | null): boolean => {
-  const key = normalizeCountry(country);
-  return key === 'AU' || key === 'AUS' || key === 'AUSTRALIA';
+/**
+ * Stripe amount in smallest currency unit (cents), respecting zero-decimal currencies.
+ */
+export const toStripeAmount = (
+  amount: number,
+  currency?: string | null
+): number => {
+  const cur = normalizeCurrency(currency);
+  if (isZeroDecimalStripeCurrency(cur)) {
+    return Math.round(amount);
+  }
+  return Math.round(amount * 100);
 };
 
 /**
  * Convert amount from `fromCurrency` into platform base (USD).
- * Same-currency → rate 1. Uses easy-currencies (already in the project).
  */
 export const convertToBaseCurrency = async (
   amount: number,
   fromCurrency?: string | null
-): Promise<{ amountBase: number; exchangeRate: number; baseCurrency: string }> => {
+): Promise<{
+  amountBase: number;
+  exchangeRate: number;
+  baseCurrency: string;
+}> => {
   const from = normalizeCurrency(fromCurrency);
   const baseCurrency = PLATFORM_BASE_CURRENCY;
 
@@ -90,18 +107,32 @@ export const convertToBaseCurrency = async (
   }
 };
 
-/**
- * Apply a locked exchange rate to an amount (for fee fields after rate is known).
- */
 export const applyExchangeRate = (
   amount: number,
   exchangeRate: number
 ): number => Number((amount * exchangeRate).toFixed(2));
 
-/**
- * Build base-currency money snapshot from original-currency financials.
- * Call once at payment time and persist — do not recompute on read.
- */
+/** Convert between any two ISO currencies (presentment ↔ settlement). */
+export const convertBetweenCurrencies = async (
+  amount: number,
+  fromCurrency?: string | null,
+  toCurrency?: string | null
+): Promise<number> => {
+  const from = normalizeCurrency(fromCurrency);
+  const to = normalizeCurrency(toCurrency);
+
+  if (!Number.isFinite(amount)) return 0;
+  if (from === to) return Number(amount.toFixed(2));
+
+  try {
+    const converted = await Convert(amount).from(from).to(to);
+    return Number(Number(converted).toFixed(2));
+  } catch (error) {
+    console.error(`FX conversion failed (${from} → ${to}).`, error);
+    throw error;
+  }
+};
+
 export const buildBaseMoneyFields = async (input: {
   currency: string;
   amount: number;
@@ -126,14 +157,19 @@ export const buildBaseMoneyFields = async (input: {
   };
 };
 
+/** Display symbol via Intl (works for all Stripe settlement currencies). */
 export const currencySymbol = (currency?: string | null): string => {
-  switch (normalizeCurrency(currency)) {
-    case 'AUD':
-      return 'A$';
-    case 'CAD':
-      return 'C$';
-    case 'USD':
-    default:
-      return '$';
+  const code = normalizeCurrency(currency);
+  try {
+    const part = new Intl.NumberFormat('en', {
+      style: 'currency',
+      currency: code,
+      currencyDisplay: 'narrowSymbol',
+    })
+      .formatToParts(0)
+      .find((p) => p.type === 'currency');
+    return part?.value ?? code;
+  } catch {
+    return code;
   }
 };

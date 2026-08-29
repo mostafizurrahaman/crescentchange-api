@@ -20,6 +20,7 @@ import { ICause } from '../Causes/causes.interface';
 import { SubscriptionService } from '../Subscription/subscription.service';
 import { StripeAccount } from '../OrganizationAccount/stripe-account.model';
 import Client from '../Client/client.model';
+import { getOrganizationCurrencyMeta } from '../../utils/donation-pricing.utils';
 
 const savePlaidConsent = async (
   userId: string,
@@ -196,10 +197,16 @@ const savePlaidConsent = async (
 
   await roundUpConfig.save();
 
+  const currencyMeta = getOrganizationCurrencyMeta(organization);
+
   return {
     success: true,
     message: 'Plaid consent saved and round-up configuration created',
-    data: roundUpConfig,
+    data: {
+      roundUpConfig,
+      ...currencyMeta,
+      message: `Round-up donations will be processed in ${currencyMeta.organizationCurrency}`,
+    },
     statusCode: StatusCodes.CREATED,
   };
 };
@@ -465,6 +472,10 @@ const getUserDashboard = async (userId: string) => {
     },
   };
 
+  const currencyMeta = organization
+    ? getOrganizationCurrencyMeta(organization)
+    : null;
+
   return {
     success: true,
     message: 'User dashboard retrieved successfully',
@@ -475,6 +486,7 @@ const getUserDashboard = async (userId: string) => {
       bankConnection,
       organization,
       cause,
+      ...(currencyMeta || {}),
     },
     statusCode: StatusCodes.OK,
   };
@@ -510,13 +522,17 @@ const getActiveRoundup = async (userId: string, roundupId: string) => {
     )
     .populate<{ organization: IORGANIZATION }>(
       'organization',
-      'name registeredCharityName  logoImage coverImage'
+      'name registeredCharityName logoImage coverImage country defaultCurrency'
     )
     .populate<{ cause: ICause }>('cause', 'name category status');
 
   if (!roundupConfig) {
     throw new AppError(httpStatus.NOT_FOUND, 'No Round Config exists');
   }
+
+  const currencyMeta = roundupConfig.organization
+    ? getOrganizationCurrencyMeta(roundupConfig.organization)
+    : {};
 
   return {
     // Base fields
@@ -527,6 +543,7 @@ const getActiveRoundup = async (userId: string, roundupId: string) => {
     specialMessage: roundupConfig.specialMessage,
     status: roundupConfig.status,
     isActive: roundupConfig.isActive,
+    ...currencyMeta,
 
     // Organization
     organizationId: roundupConfig.organization?._id,

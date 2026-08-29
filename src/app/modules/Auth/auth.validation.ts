@@ -1,6 +1,7 @@
 /* eslint-disable no-useless-escape */
 import { z } from 'zod';
 import { roleValues, ROLE } from './auth.constant';
+import { stripeCountrySchema } from '../../validation/stripe-country.validation';
 
 // Email regex
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -357,7 +358,8 @@ const createProfileSchema = z.object({
 });
 
 const organizationSignupWithProfileSchema = z.object({
-  body: z.object({
+  body: z
+    .object({
     // Auth fields (Required)
     email: z
       .string()
@@ -402,9 +404,10 @@ const organizationSignupWithProfileSchema = z.object({
       .min(1, 'Board member phone is required!'),
 
     aboutUs: z.string().optional().nullable(),
-    country: z.string().optional().nullable(),
+    country: stripeCountrySchema,
     dateOfEstablishment: z.string().optional().nullable(), // Expecting ISO date string
-  }),
+  })
+    .strict(),
 });
 
 // 6. changePasswordSchema

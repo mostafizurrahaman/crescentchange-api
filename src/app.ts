@@ -32,11 +32,12 @@ app.use(
       'http://10.0.2.2:3001',
       'https://crescent-dashboard-eta.vercel.app',
       'https://org.crescentchange.com',
-      "http://10.10.28.83:5173",
-      "http://10.10.28.83:5174",
+      'http://10.10.28.83:5173',
+      'http://10.10.28.83:5174',
       'https://admin.crescentchange.com',
+      'http://10.10.28.84:3000',
     ],
-  })
+  }),
 );
 
 //parser
@@ -64,7 +65,7 @@ app.use(
       }
       next();
     });
-  }
+  },
 );
 
 // TODO: REMOVE LATER
@@ -95,11 +96,11 @@ app.post(
       {
         name: 'mostafizur rahaman',
         email: 'test@gmail.com',
-      }
+      },
     );
 
     res.json({ success: true, message: 'Notification triggered' });
-  }
+  },
 );
 
 // Add webhook routes after the raw body middleware

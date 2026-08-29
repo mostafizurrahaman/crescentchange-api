@@ -7,7 +7,14 @@ import { ROLE } from '../Auth/auth.constant';
 
 const router = Router();
 
-// 1. Create one-time donation with PaymentIntent
+// 1. Create one-time donation with Payment Intent
+router.get(
+  '/quote',
+  auth(ROLE.CLIENT, ROLE.GUEST),
+  validateRequest(DonationValidation.getDonationQuoteSchema),
+  DonationController.getDonationQuote
+);
+
 router.post(
   '/one-time/create',
   auth(ROLE.CLIENT),

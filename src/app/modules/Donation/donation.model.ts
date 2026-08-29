@@ -65,6 +65,18 @@ const donationSchema = new Schema<IDonationModel>(
       default: DEFAULT_CURRENCY,
       uppercase: true,
     },
+    presentmentCurrency: {
+      type: String,
+      uppercase: true,
+    },
+    presentmentTotalAmount: {
+      type: Number,
+      min: 0,
+    },
+    settlementToPresentmentRate: {
+      type: Number,
+      min: 0,
+    },
 
     // Platform base currency fields (analytics / rankings)
     baseCurrency: {

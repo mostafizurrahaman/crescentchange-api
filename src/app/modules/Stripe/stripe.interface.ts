@@ -75,6 +75,8 @@ export interface ICreatePaymentIntentWithMethodRequest {
   donationId: string;
   organizationId: string;
   causeId: string;
+  /** Org country (ISO) — required for cross-border Connect settlement via on_behalf_of */
+  connectedAccountCountry?: string;
   specialMessage?: string;
 
   // ✅ Financial Breakdown for Metadata
