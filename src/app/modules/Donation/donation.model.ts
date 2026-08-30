@@ -186,6 +186,9 @@ const donationSchema = new Schema<IDonationModel>(
     lastPaymentAttempt: {
       type: Date,
     },
+    stripeReconciledAt: {
+      type: Date,
+    },
   },
   {
     timestamps: true,

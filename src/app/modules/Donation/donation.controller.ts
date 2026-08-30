@@ -182,7 +182,14 @@ const getOrganizationDonations = asyncHandler(
     sendResponse(res, {
       statusCode: httpStatus.OK,
       message: 'Organization donations retrieved successfully',
-      data: result.donations,
+      data: {
+        donations: result.donations,
+        organizationCurrency: result.organizationCurrency,
+        currencySymbol: result.currencySymbol,
+        stripeCurrency: result.stripeCurrency,
+        amountLabel: result.amountLabel,
+        message: result.message,
+      },
       meta: result.meta,
     });
   }
@@ -306,7 +313,14 @@ const retryFailedPayment = asyncHandler(
     sendResponse(res, {
       statusCode: httpStatus.OK,
       message: 'Payment retry session created successfully',
-      data: result,
+      data: {
+        donation: result.donation,
+        organizationCurrency: result.organizationCurrency,
+        currencySymbol: result.currencySymbol,
+        stripeCurrency: result.stripeCurrency,
+        amountLabel: result.amountLabel,
+        session: result.session,
+      },
     });
   }
 );

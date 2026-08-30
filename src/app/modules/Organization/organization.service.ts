@@ -28,6 +28,7 @@ import {
   buildOrganizationCurrencyDisplay,
   resolveOrganizationChargeCurrency,
 } from '../../utils/donation-pricing.utils';
+import { PLATFORM_BASE_CURRENCY } from '../../utils/currency.utils';
 import {
   assertOrganizationCountryMutable,
   isOrganizationCountryLocked,
@@ -618,6 +619,14 @@ const getOrganizationDetailsById = async (organizationId: string) => {
           {
             $group: {
               _id: null,
+              totalAmount: { $sum: '$amount' },
+            },
+          },
+        ],
+        totalDonationAmountBase: [
+          {
+            $group: {
+              _id: null,
               totalAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } },
             },
           },
@@ -668,6 +677,8 @@ const getOrganizationDetailsById = async (organizationId: string) => {
   const totalDonation = organizationStats?.totalDonations?.[0]?.count || 0;
   const totalDonationAmount =
     organizationStats?.totalDonationAmount?.[0]?.totalAmount || 0;
+  const totalDonationAmountBase =
+    organizationStats?.totalDonationAmountBase?.[0]?.totalAmount || 0;
   const recentDonors = organizationStats?.recentDonors || [];
 
   const organizationCurrency = resolveOrganizationChargeCurrency(
@@ -682,6 +693,8 @@ const getOrganizationDetailsById = async (organizationId: string) => {
     message: `Donations to this organization are processed in ${organizationCurrency}`,
     totalDonation,
     totalDonationAmount,
+    totalDonationAmountBase,
+    reportingCurrency: PLATFORM_BASE_CURRENCY,
     recentDonors,
     causes,
     isOnetime: true,

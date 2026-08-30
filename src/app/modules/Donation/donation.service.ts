@@ -57,8 +57,10 @@ import {
 import {
   buildOrganizationCurrencyDisplay,
   buildOrganizationDonationPricing,
+  enrichDonationWithCurrencyDisplay,
+  enrichDonationsWithCurrencyDisplay,
+  resolveOrganizationChargeCurrency,
 } from '../../utils/donation-pricing.utils';
-
 // Helper function to generate unique idempotency key
 const generateIdempotencyKey = (): string => {
   return `don-${new Types.ObjectId().toString()}-${Date.now()}`;
@@ -68,7 +70,7 @@ const generateIdempotencyKey = (): string => {
 const createOneTimeDonation = async (
   payload: TCreateOneTimeDonationPayload & {
     userId: string;
-  }
+  },
 ) => {
   const {
     amount,
@@ -101,7 +103,7 @@ const createOneTimeDonation = async (
   if (!stripeAccount || !stripeAccount.chargesEnabled) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'This organization is not set up to receive payments (Stripe account inactive).'
+      'This organization is not set up to receive payments (Stripe account inactive).',
     );
   }
 
@@ -115,7 +117,7 @@ const createOneTimeDonation = async (
     if (cause.status !== CAUSE_STATUS_TYPE.VERIFIED) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        `Cannot create donation for cause with status: ${cause.status}.`
+        `Cannot create donation for cause with status: ${cause.status}.`,
       );
     }
   }
@@ -123,7 +125,7 @@ const createOneTimeDonation = async (
   // 5. Validate Payment Method
   const paymentMethod = await PaymentMethodService.getPaymentMethodById(
     paymentMethodId,
-    userId
+    userId,
   );
 
   if (!paymentMethod.isActive) {
@@ -139,7 +141,7 @@ const createOneTimeDonation = async (
   });
 
   const currencyDisplay = buildOrganizationCurrencyDisplay(
-    pricing.organizationCurrency
+    pricing.organizationCurrency,
   );
 
   const baseMoney = await buildBaseMoneyFields({
@@ -154,15 +156,17 @@ const createOneTimeDonation = async (
 
   console.log(`💰 Donation Breakdown (Destination Charge):`);
   console.log(`   Organization currency: ${pricing.organizationCurrency}`);
-  console.log(`   Base: ${pricing.baseAmount.toFixed(2)} ${pricing.organizationCurrency}`);
   console.log(
-    `   Total charge: ${pricing.totalCharge.toFixed(2)} ${pricing.organizationCurrency}`
+    `   Base: ${pricing.baseAmount.toFixed(2)} ${pricing.organizationCurrency}`,
   );
   console.log(
-    `   Net to org: ${pricing.netToOrg.toFixed(2)} ${pricing.organizationCurrency}`
+    `   Total charge: ${pricing.totalCharge.toFixed(2)} ${pricing.organizationCurrency}`,
   );
   console.log(
-    `   Base (USD): ${baseMoney.amountBase.toFixed(2)} @ rate ${baseMoney.exchangeRate}`
+    `   Net to org: ${pricing.netToOrg.toFixed(2)} ${pricing.organizationCurrency}`,
+  );
+  console.log(
+    `   Base (USD): ${baseMoney.amountBase.toFixed(2)} @ rate ${baseMoney.exchangeRate}`,
   );
   // Generate idempotency key
   const idempotencyKey = generateIdempotencyKey();
@@ -247,7 +251,7 @@ const createOneTimeDonation = async (
       error instanceof Error ? error.message : 'Unknown error';
     throw new AppError(
       httpStatus.INTERNAL_SERVER_ERROR,
-      `Failed to create donation: ${errorMessage}`
+      `Failed to create donation: ${errorMessage}`,
     );
   } finally {
     await session.endSession();
@@ -273,11 +277,11 @@ const getDonationById = async (donationId: string): Promise<IDonation> => {
   if (!donation.donor) {
     throw new AppError(
       httpStatus.INTERNAL_SERVER_ERROR,
-      'Donor information not available.'
+      'Donor information not available.',
     );
   }
 
-  return donation as IDonation;
+  return enrichDonationWithCurrencyDisplay(donation) as IDonation;
 };
 
 // 3. Update donation status
@@ -285,7 +289,7 @@ const updateDonationStatus = async (
   donationId: string,
   status: 'completed' | 'failed' | 'refunded',
   stripePaymentIntentId?: string,
-  stripeCustomerId?: string
+  stripeCustomerId?: string,
 ): Promise<IDonation> => {
   const updateData: Record<string, unknown> = { status };
 
@@ -300,7 +304,7 @@ const updateDonationStatus = async (
   const donation = await Donation.findByIdAndUpdate(
     donationId,
     { $set: updateData },
-    { new: true }
+    { new: true },
   )
     .populate('donor', 'name email')
     .populate('organization', 'name')
@@ -315,7 +319,7 @@ const updateDonationStatus = async (
 
 // 4. Find donation by payment intent ID
 const findDonationByPaymentIntentId = async (
-  paymentIntentId: string
+  paymentIntentId: string,
 ): Promise<IDonation | null> => {
   const donation = await Donation.findOne({
     stripePaymentIntentId: paymentIntentId,
@@ -330,7 +334,7 @@ const findDonationByPaymentIntentId = async (
 // 5. Update donation status by payment intent ID
 const updateDonationStatusByPaymentIntent = async (
   paymentIntentId: string,
-  status: 'completed' | 'failed' | 'refunded'
+  status: 'completed' | 'failed' | 'refunded',
 ): Promise<IDonation | null> => {
   const donation = await findDonationByPaymentIntentId(paymentIntentId);
 
@@ -342,7 +346,7 @@ const updateDonationStatusByPaymentIntent = async (
   return await Donation.findOneAndUpdate(
     { stripePaymentIntentId: paymentIntentId },
     { $set: updateData },
-    { new: true }
+    { new: true },
   )
     .populate('donor', 'name email')
     .populate('organization', 'name')
@@ -352,7 +356,7 @@ const updateDonationStatusByPaymentIntent = async (
 // 6. Get donations by user with filters
 const getDonationsByUser = async (
   userId: string,
-  query: Record<string, unknown>
+  query: Record<string, unknown>,
 ) => {
   if (!userId || userId.trim() === '') {
     throw new AppError(httpStatus.BAD_REQUEST, 'User ID is required!');
@@ -376,7 +380,7 @@ const getDonationsByUser = async (
 
     const donationQuery = new QueryBuilder<IDonationModel>(
       baseQuery,
-      modifiedQuery
+      modifiedQuery,
     )
       .search(donationSearchFields)
       .filter()
@@ -387,13 +391,16 @@ const getDonationsByUser = async (
     const donations = await donationQuery.modelQuery;
     const meta = await donationQuery.countTotal();
 
-    return { donations, meta };
+    return {
+      donations: enrichDonationsWithCurrencyDisplay(donations),
+      meta,
+    };
   } catch (error: unknown) {
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown error occurred';
     throw new AppError(
       httpStatus.INTERNAL_SERVER_ERROR,
-      `Failed to retrieve donations: ${errorMessage}`
+      `Failed to retrieve donations: ${errorMessage}`,
     );
   }
 };
@@ -401,7 +408,7 @@ const getDonationsByUser = async (
 // 7. Get donations by organization with filters
 const getDonationsByOrganization = async (
   organizationId: string,
-  query: Record<string, unknown>
+  query: Record<string, unknown>,
 ) => {
   if (!organizationId || organizationId.trim() === '') {
     throw new AppError(httpStatus.BAD_REQUEST, 'Organization ID is required!');
@@ -454,9 +461,7 @@ const getDonationsByOrganization = async (
           localField: 'donorData.auth',
           foreignField: '_id',
           as: 'authData',
-          pipeline: [
-            { $match: { isDeleted: { $ne: true } } },
-          ],
+          pipeline: [{ $match: { isDeleted: { $ne: true } } }],
         },
       },
       { $unwind: { path: '$authData', preserveNullAndEmptyArrays: true } },
@@ -552,9 +557,17 @@ const getDonationsByOrganization = async (
 
     const donations = aggregationResult[0]?.data || [];
     const total = aggregationResult[0]?.metadata[0]?.total || 0;
+    const currencyDisplay = buildOrganizationCurrencyDisplay(
+      resolveOrganizationChargeCurrency(
+        organization.country,
+        organization.defaultCurrency
+      )
+    );
 
     return {
-      donations,
+      donations: enrichDonationsWithCurrencyDisplay(donations),
+      ...currencyDisplay,
+      message: `All amounts are in ${currencyDisplay.organizationCurrency}`,
       meta: {
         page,
         limit,
@@ -567,7 +580,7 @@ const getDonationsByOrganization = async (
       error instanceof Error ? error.message : 'Unknown error occurred';
     throw new AppError(
       httpStatus.INTERNAL_SERVER_ERROR,
-      `Failed to retrieve organization donations: ${errorMessage}`
+      `Failed to retrieve organization donations: ${errorMessage}`,
     );
   }
 };
@@ -575,7 +588,7 @@ const getDonationsByOrganization = async (
 // 8. Get donation statistics
 const getDonationStatistics = async (
   userId?: string,
-  organizationId?: string
+  organizationId?: string,
 ) => {
   const matchStage: Record<string, unknown> = {};
   if (userId) matchStage.donor = new Types.ObjectId(userId);
@@ -632,7 +645,7 @@ const updateDonationPaymentStatus = async (
     customerId?: string;
     failureReason?: string;
     failureCode?: string;
-  }
+  },
 ): Promise<IDonation | null> => {
   const donation = await findDonationByPaymentIntentId(paymentIntentId);
 
@@ -665,7 +678,7 @@ const updateDonationPaymentStatus = async (
   return (await Donation.findByIdAndUpdate(
     String(donationWithTracking._id),
     { $set: updateData },
-    { new: true }
+    { new: true },
   )
     .populate('donor', 'name email')
     .populate('organization', 'name')
@@ -674,8 +687,15 @@ const updateDonationPaymentStatus = async (
 
 // 10. Retry failed payment (Refactored for Destination Charge)
 const retryFailedPayment = async (
-  donationId: string
-): Promise<{ donation: IDonation; session: ICheckoutSessionResponse }> => {
+  donationId: string,
+): Promise<{
+  donation: IDonation;
+  organizationCurrency: string;
+  currencySymbol: string;
+  stripeCurrency: string;
+  amountLabel: string;
+  session: ICheckoutSessionResponse;
+}> => {
   const donation = await Donation.findById(donationId);
 
   if (!donation) {
@@ -685,7 +705,7 @@ const retryFailedPayment = async (
   if (donation.status !== 'failed') {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'Can only retry failed donations!'
+      'Can only retry failed donations!',
     );
   }
 
@@ -694,14 +714,14 @@ const retryFailedPayment = async (
   if (donationWithTracking.paymentAttempts >= maxRetries) {
     throw new AppError(
       httpStatus.TOO_MANY_REQUESTS,
-      'Maximum payment retries reached!'
+      'Maximum payment retries reached!',
     );
   }
 
   if (!donation.stripeCustomerId || !donation.stripePaymentMethodId) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'No payment method associated. Create a new donation.'
+      'No payment method associated. Create a new donation.',
     );
   }
 
@@ -710,7 +730,7 @@ const retryFailedPayment = async (
   if (!organization) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'Organization not found. Cannot process retry.'
+      'Organization not found. Cannot process retry.',
     );
   }
 
@@ -722,7 +742,7 @@ const retryFailedPayment = async (
   if (!stripeAccount) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'Stripe Account either not connected or exist!'
+      'Stripe Account either not connected or exist!',
     );
   }
 
@@ -777,8 +797,13 @@ const retryFailedPayment = async (
   donation.pointsEarned = Math.floor(baseMoney.amountBase * 100);
   await donation.save();
 
+  const currencyDisplay = buildOrganizationCurrencyDisplay(
+    pricing.organizationCurrency
+  );
+
   return {
-    donation,
+    donation: enrichDonationWithCurrencyDisplay(donation),
+    ...currencyDisplay,
     session: {
       sessionId: paymentIntent.payment_intent_id,
       url: '',
@@ -788,7 +813,7 @@ const retryFailedPayment = async (
 
 // 11. Get donation full status
 const getDonationFullStatus = async (
-  donationId: string
+  donationId: string,
 ): Promise<{
   donation: IDonation;
   paymentStatus: {
@@ -814,13 +839,16 @@ const getDonationFullStatus = async (
     paymentIntentId: donation.stripePaymentIntentId,
   };
 
-  return { donation, paymentStatus };
+  return {
+    donation: enrichDonationWithCurrencyDisplay(donation),
+    paymentStatus,
+  };
 };
 
 // 12. Cancel donation
 const cancelDonation = async (
   donationId: string,
-  userId: string
+  userId: string,
 ): Promise<IDonation> => {
   if (!donationId) {
     throw new AppError(httpStatus.BAD_REQUEST, 'Donation ID required!');
@@ -843,7 +871,7 @@ const cancelDonation = async (
   if (!['pending', 'processing'].includes(donation.status)) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      `Cannot cancel donation with status: ${donation.status}`
+      `Cannot cancel donation with status: ${donation.status}`,
     );
   }
 
@@ -854,7 +882,7 @@ const cancelDonation = async (
       // eslint-disable-next-line no-console
       console.error(
         `Failed to cancel payment intent ${donation.stripePaymentIntentId}:`,
-        error
+        error,
       );
     }
   }
@@ -869,7 +897,7 @@ const cancelDonation = async (
 const refundDonation = async (
   donationId: string,
   userId: string,
-  reason?: string
+  reason?: string,
 ): Promise<IDonation> => {
   if (!donationId) {
     throw new AppError(httpStatus.BAD_REQUEST, 'Donation ID required!');
@@ -899,7 +927,7 @@ const refundDonation = async (
   if (donation.status !== 'completed') {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'Only completed donations can be refunded.'
+      'Only completed donations can be refunded.',
     );
   }
 
@@ -915,7 +943,7 @@ const refundDonation = async (
   if (diffInDays > REFUND_WINDOW_DAYS) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      `Refund period expired. Refunds are only allowed within ${REFUND_WINDOW_DAYS} days of donation.`
+      `Refund period expired. Refunds are only allowed within ${REFUND_WINDOW_DAYS} days of donation.`,
     );
   }
 
@@ -940,7 +968,7 @@ const refundDonation = async (
       error instanceof Error ? error.message : 'Unknown error occurred';
     throw new AppError(
       httpStatus.INTERNAL_SERVER_ERROR,
-      `Failed to process refund: ${errorMessage}`
+      `Failed to process refund: ${errorMessage}`,
     );
   }
 };
@@ -950,7 +978,7 @@ const getTotalDonatedAmount = async (
   current: IAnalyticsPeriod,
   previous: IAnalyticsPeriod,
   organizationId?: string,
-  donationType?: string
+  donationType?: string,
 ): Promise<IPercentageChange> => {
   const baseQuery = buildBaseQuery(organizationId, donationType);
 
@@ -989,7 +1017,7 @@ const getAverageDonationPerUser = async (
   current: IAnalyticsPeriod,
   previous: IAnalyticsPeriod,
   organizationId?: string,
-  donationType?: string
+  donationType?: string,
 ): Promise<IPercentageChange> => {
   const baseQuery = buildBaseQuery(organizationId, donationType);
 
@@ -1062,7 +1090,7 @@ const getTotalDonors = async (
   current: IAnalyticsPeriod,
   previous: IAnalyticsPeriod,
   organizationId?: string,
-  donationType?: string
+  donationType?: string,
 ): Promise<IPercentageChange> => {
   const baseQuery = buildBaseQuery(organizationId, donationType);
 
@@ -1101,7 +1129,7 @@ const getTotalDonors = async (
 
 const getTopCause = async (
   current: IAnalyticsPeriod,
-  organizationId?: string
+  organizationId?: string,
 ) => {
   const baseQuery = buildBaseQuery(organizationId);
 
@@ -1145,7 +1173,7 @@ const getTopCause = async (
 const getDonationTypeBreakdown = async (
   current: IAnalyticsPeriod,
   previous: IAnalyticsPeriod,
-  organizationId?: string
+  organizationId?: string,
 ) => {
   const baseQuery = buildBaseQuery(organizationId);
 
@@ -1209,7 +1237,7 @@ const getTopDonors = async (
   current: IAnalyticsPeriod,
   previous: IAnalyticsPeriod,
   organizationId?: string,
-  limit: number = 10
+  limit: number = 10,
 ): Promise<ITopDonor[]> => {
   const baseQuery = buildBaseQuery(organizationId);
 
@@ -1248,13 +1276,13 @@ const getTopDonors = async (
   ]);
 
   const previousMap = new Map(
-    previousDonors.map((d) => [d._id.toString(), d.totalAmount])
+    previousDonors.map((d) => [d._id.toString(), d.totalAmount]),
   );
 
   const donorIds = currentDonors.map((d) => d._id);
   const clients = await Client.find({ _id: { $in: donorIds } }).populate(
     'auth',
-    'email'
+    'email',
   );
 
   const clientMap = new Map(clients.map((c) => [c._id.toString(), c]));
@@ -1283,7 +1311,7 @@ const getTopDonors = async (
 const getRecentDonors = async (
   current?: IAnalyticsPeriod,
   organizationId?: string,
-  limit: number = 10
+  limit: number = 10,
 ): Promise<IRecentDonor[]> => {
   const baseQuery = buildBaseQuery(organizationId);
 
@@ -1320,7 +1348,7 @@ const getRecentDonors = async (
   const donorIds = recentDonations.map((d) => d._id);
   const clients = await Client.find({ _id: { $in: donorIds } }).populate(
     'auth',
-    'email'
+    'email',
   );
 
   const clientMap = new Map(clients.map((c) => [c._id.toString(), c]));
@@ -1343,7 +1371,7 @@ const getRecentDonors = async (
 };
 
 const getOrganizationCauseStats = async (
-  organizationId: string
+  organizationId: string,
 ): Promise<IOrganizationStatsResponse> => {
   const organization = await Organization.findById(organizationId);
   if (!organization) {
@@ -1378,7 +1406,7 @@ const getOrganizationCauseStats = async (
     {
       $match: {
         'causeDetails.organization': new mongoose.Types.ObjectId(
-          organizationId
+          organizationId,
         ),
       },
     },
@@ -1423,7 +1451,7 @@ const getOrganizationCauseStats = async (
       category: category.category,
       totalDonationAmount: parseFloat(category.totalDonationAmount.toFixed(2)),
       causes: category.causes.sort(
-        (a, b) => b.totalDonationAmount - a.totalDonationAmount
+        (a, b) => b.totalDonationAmount - a.totalDonationAmount,
       ),
     }))
     .sort((a, b) => b.totalDonationAmount - a.totalDonationAmount);
@@ -1442,12 +1470,12 @@ type CauseMonthlyAggregateResult = {
 const getOrganizationCauseMonthlyStats = async (
   organizationId: string,
   causeId: string,
-  year: number
+  year: number,
 ): Promise<ICauseMonthlyStat[]> => {
   if (!Number.isInteger(year) || year < 1970 || year > 2100) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'Year must be a valid integer between 1970 and 2100!'
+      'Year must be a valid integer between 1970 and 2100!',
     );
   }
 
@@ -1467,7 +1495,7 @@ const getOrganizationCauseMonthlyStats = async (
   if (cause.organization.toString() !== organization._id.toString()) {
     throw new AppError(
       httpStatus.FORBIDDEN,
-      'Cause does not belong to the specified organization'
+      'Cause does not belong to the specified organization',
     );
   }
 
@@ -1510,7 +1538,7 @@ const getDonationAnalytics = async (
   filter: 'today' | 'this_week' | 'this_month',
   organizationId?: string,
   year?: number,
-  donationType: 'all' | 'one-time' | 'recurring' | 'roundup' = 'all'
+  donationType: 'all' | 'one-time' | 'recurring' | 'roundup' = 'all',
 ): Promise<IDonationAnalytics> => {
   const { current, previous } = getDateRanges(filter, year);
 
@@ -1518,22 +1546,22 @@ const getDonationAnalytics = async (
     donationType === 'all'
       ? undefined
       : donationType === 'roundup'
-      ? 'round-up'
-      : donationType;
+        ? 'round-up'
+        : donationType;
 
   if (
     ['round-up', 'recurring'].includes(
-      donationTypeFilter as 'round-up' | 'recurring'
+      donationTypeFilter as 'round-up' | 'recurring',
     )
   ) {
     const hasSubscription = await SubscriptionService.checkHasSubscription(
-      organizationId!
+      organizationId!,
     );
 
     if (!hasSubscription) {
       throw new AppError(
         httpStatus.PAYMENT_REQUIRED,
-        'This organization is not eligible for RoundUp or recurring donations because it has no active subscription.'
+        'This organization is not eligible for RoundUp or recurring donations because it has no active subscription.',
       );
     }
   }
@@ -1552,13 +1580,13 @@ const getDonationAnalytics = async (
       current,
       previous,
       organizationId,
-      donationTypeFilter
+      donationTypeFilter,
     ),
     getAverageDonationPerUser(
       current,
       previous,
       organizationId,
-      donationTypeFilter
+      donationTypeFilter,
     ),
     getTotalDonors(current, previous, organizationId, donationTypeFilter),
     getTopCause(current, organizationId),
@@ -1582,13 +1610,13 @@ const getDonationAnalytics = async (
 
 const getOrganizationYearlyTrends = async (
   year: number,
-  organizationId: string
+  organizationId: string,
 ): Promise<MonthlyTrend[]> => {
   const currentYear = new Date().getFullYear();
   if (year < 2020 || year > currentYear + 1) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'Invalid year. Please provide a year between 2020 and next year'
+      'Invalid year. Please provide a year between 2020 and next year',
     );
   }
 
@@ -1681,7 +1709,7 @@ const getOrganizationYearlyTrends = async (
 const getClientStats = async (
   userId: string,
   roundupId: string,
-  timeFilter: TTimeFilter
+  timeFilter: TTimeFilter,
 ): Promise<IClientDonationStats> => {
   // 1. Get User
   const donor = await Client.findOne({ auth: userId });
@@ -1800,7 +1828,7 @@ const getClientStats = async (
     .populate('cause', 'name')
     .populate(
       'organization',
-      'name registeredCharityName logoImage coverImage country postalCode address state'
+      'name registeredCharityName logoImage coverImage country postalCode address state',
     )
     .sort({ nextDonationDate: 1 })
     .limit(5)
@@ -1872,16 +1900,16 @@ const getClientStats = async (
     // Detailed list sorted descending
     donationDates: result.donationList.sort(
       (a: any, b: any) =>
-        new Date(b.date).getTime() - new Date(a.date).getTime()
+        new Date(b.date).getTime() - new Date(a.date).getTime(),
     ),
 
     // Unique dates set
     uniqueDonationDates: Array.from(
       new Set(
         result.donationList.map(
-          (d: any) => new Date(d.date).toISOString().split('T')[0]
-        )
-      )
+          (d: any) => new Date(d.date).toISOString().split('T')[0],
+        ),
+      ),
     ).sort((a: any, b: any) => (a > b ? -1 : 1)),
 
     dailyStats: dailyStats,
@@ -1910,7 +1938,7 @@ const getDonationQuote = async (query: {
   });
 
   const currencyDisplay = buildOrganizationCurrencyDisplay(
-    pricing.organizationCurrency
+    pricing.organizationCurrency,
   );
 
   return {

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Request, Response } from 'express';
 import { Stripe } from 'stripe';
 import { stripe, STRIPE_EVENTS } from '../lib/stripeHelper';
@@ -25,7 +26,7 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
     event = stripe.webhooks.constructEvent(
       req.body,
       sig,
-      config.stripe.webhookSecret
+      config.stripe.webhookSecret as string
     );
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : 'Unknown error';
@@ -68,6 +69,7 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
 
     res.status(200).json({ received: true });
   } catch (error: unknown) {
+    console.log(error)
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     logger.error(`Error processing webhook: ${errorMessage}`);
     res.status(500).send('Webhook processing failed');

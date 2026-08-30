@@ -61,6 +61,7 @@ export interface IDonation {
   idempotencyKey?: string;
   paymentAttempts?: number;
   lastPaymentAttempt?: Date;
+  stripeReconciledAt?: Date;
   metadata?: Record<string, unknown>;
 }
 

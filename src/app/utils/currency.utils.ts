@@ -61,6 +61,19 @@ export const toStripeAmount = (
   return Math.round(amount * 100);
 };
 
+/** Convert Stripe smallest currency unit back to major units. */
+export const fromStripeAmount = (
+  amount: number,
+  currency?: string | null
+): number => {
+  const cur = normalizeCurrency(currency);
+  if (!Number.isFinite(amount)) return 0;
+  if (isZeroDecimalStripeCurrency(cur)) {
+    return Number(amount.toFixed(2));
+  }
+  return Number((amount / 100).toFixed(2));
+};
+
 /**
  * Convert amount from `fromCurrency` into platform base (USD).
  */

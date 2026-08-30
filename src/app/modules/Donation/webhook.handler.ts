@@ -34,6 +34,7 @@ import {
   SUBSCRIPTION_STATUS,
   TPlanType,
 } from '../Subscription/subscription.constant';
+import { reconcileDonationFromStripePaymentIntent } from '../../utils/stripe-payment-reconciliation.utils';
 
 // ========================================
 // SCHEDULED DONATION: Success Handler
@@ -305,36 +306,19 @@ const handlePaymentIntentSucceeded = async (
   console.log(`========================================\n`);
 
   try {
-    // Try to find donation by payment intent ID
-    let donation = await Donation.findOneAndUpdate(
-      {
-        stripePaymentIntentId: paymentIntent.id,
-        status: { $in: ['pending', 'processing'] },
-      },
-      {
-        status: 'completed',
-        stripeChargeId: paymentIntent.latest_charge as string,
-      },
-      { new: true }
-    )
+    let donation = await Donation.findOne({
+      stripePaymentIntentId: paymentIntent.id,
+      status: { $in: ['pending', 'processing'] },
+    })
       .populate<{ donor: IClient }>('donor')
       .populate<{ organization: IORGANIZATION }>('organization')
       .populate<{ cuase: ICause }>('cause');
 
-    // Fallback: Try to find by metadata donation ID
     if (!donation && metadata?.donationId) {
-      donation = await Donation.findOneAndUpdate(
-        {
-          _id: new Types.ObjectId(metadata.donationId),
-          status: { $in: ['pending', 'processing'] },
-        },
-        {
-          status: 'completed',
-          stripePaymentIntentId: paymentIntent.id,
-          stripeChargeId: paymentIntent.latest_charge as string,
-        },
-        { new: true }
-      )
+      donation = await Donation.findOne({
+        _id: new Types.ObjectId(metadata.donationId),
+        status: { $in: ['pending', 'processing'] },
+      })
         .populate<{ donor: IClient }>('donor')
         .populate<{ organization: IORGANIZATION }>('organization')
         .populate<{ cuase: ICause }>('cause');
@@ -345,13 +329,51 @@ const handlePaymentIntentSucceeded = async (
       return;
     }
 
-    // Update points earned from platform-base amount (fallback to original)
-    donation.pointsEarned = Math.floor(
-      (donation.amountBase ?? donation.amount) * 100
+    const reconciled = await reconcileDonationFromStripePaymentIntent(
+      paymentIntent.id,
+      { ...metadata, ...(paymentIntent.metadata ?? {}) },
+      donation
     );
-    await donation.save();
+
+    donation = await Donation.findByIdAndUpdate(
+      donation._id,
+      {
+        status: 'completed',
+        stripePaymentIntentId: paymentIntent.id,
+        stripeChargeId: reconciled.stripeChargeId,
+        amount: reconciled.amount,
+        totalAmount: reconciled.totalAmount,
+        stripeFee: reconciled.stripeFee,
+        platformFee: reconciled.platformFee,
+        gstOnFee: reconciled.gstOnFee,
+        netAmount: reconciled.netAmount,
+        currency: reconciled.currency,
+        baseCurrency: reconciled.baseCurrency,
+        exchangeRate: reconciled.exchangeRate,
+        amountBase: reconciled.amountBase,
+        totalAmountBase: reconciled.totalAmountBase,
+        netAmountBase: reconciled.netAmountBase,
+        platformFeeBase: reconciled.platformFeeBase,
+        gstOnFeeBase: reconciled.gstOnFeeBase,
+        stripeFeeBase: reconciled.stripeFeeBase,
+        pointsEarned: Math.floor(reconciled.amountBase * 100),
+        stripeReconciledAt: new Date(),
+      },
+      { new: true }
+    )
+      .populate<{ donor: IClient }>('donor')
+      .populate<{ organization: IORGANIZATION }>('organization')
+      .populate<{ cuase: ICause }>('cause');
+
+    if (!donation) {
+      console.error('❌ Donation update failed after Stripe reconciliation');
+      return;
+    }
 
     console.log(`✅ Payment succeeded for donation: ${donation._id}`);
+    console.log(
+      `   Stripe actuals — charge: ${reconciled.totalAmount} ${reconciled.currency}, stripe fee: ${reconciled.stripeFee}, net to org: ${reconciled.netAmount}`
+    );
 
     // ========================================
     // POST-PAYMENT PROCESSING

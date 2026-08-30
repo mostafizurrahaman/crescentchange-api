@@ -166,7 +166,7 @@ const createRecurringDonationSchema = z.object({
       ['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'custom'],
       {
         error: 'Invalid frequency option!',
-      }
+      },
     ),
 
     startDate: z
@@ -419,10 +419,9 @@ const getDonationQuoteSchema = z.object({
       .refine((val) => val >= 1 && val <= 10000, {
         message: 'Amount must be between 1 and 10000',
       }),
-    coverFees: z
-      .string()
-      .optional()
-      .transform((val) => val === 'true' || val === '1'),
+    coverFees: z.coerce
+      .boolean({ error: 'Covers fees should be boolean.' })
+      .optional(),
   }),
 });
 
@@ -496,7 +495,7 @@ const getClientStatsSchema = z.object({
         {
           message:
             'Invalid time filter. Allowed: today, yesterday, this_week, last_week, this_month, last_month, this_year, last_year',
-        }
+        },
       )
       .optional()
       .default('this_month'),

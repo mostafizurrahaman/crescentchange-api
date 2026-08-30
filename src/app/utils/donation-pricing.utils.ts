@@ -56,6 +56,29 @@ export const getOrganizationCurrencyMeta = (organization: {
     )
   );
 
+/** Attach currency display fields to a donation record for frontend formatting. */
+export const enrichDonationWithCurrencyDisplay = <
+  T extends { currency?: string | null },
+>(
+  donation: T
+): T & ReturnType<typeof buildOrganizationCurrencyDisplay> => {
+  const maybeDoc = donation as T & { toObject?: () => T };
+  const plain =
+    typeof maybeDoc.toObject === 'function' ? maybeDoc.toObject() : donation;
+
+  return {
+    ...plain,
+    ...buildOrganizationCurrencyDisplay(plain.currency || 'USD'),
+  };
+};
+
+export const enrichDonationsWithCurrencyDisplay = <
+  T extends { currency?: string | null },
+>(
+  donations: T[]
+): Array<T & ReturnType<typeof buildOrganizationCurrencyDisplay>> =>
+  donations.map(enrichDonationWithCurrencyDisplay);
+
 /**
  * Donation pricing in organization currency only.
  * Organizations always receive charges/settlement in their local currency.

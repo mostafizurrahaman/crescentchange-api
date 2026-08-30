@@ -28,6 +28,7 @@ import { buildBaseMoneyFields } from '../../utils/currency.utils';
 import {
   buildOrganizationDonationPricing,
   getOrganizationCurrencyMeta,
+  buildOrganizationCurrencyDisplay,
 } from '../../utils/donation-pricing.utils';
 
 // Helper function to calculate next donation date
@@ -225,7 +226,9 @@ const getUserScheduledDonations = async (
   userId: string,
   query: Record<string, unknown>
 ): Promise<{
-  scheduledDonations: IScheduledDonationModel[];
+  scheduledDonations: Array<
+    Record<string, unknown> & ReturnType<typeof buildOrganizationCurrencyDisplay>
+  >;
   meta: {
     page: number;
     limit: number;
@@ -270,7 +273,13 @@ const getUserScheduledDonations = async (
   const meta = await scheduledDonationQuery.countTotal();
 
   return {
-    scheduledDonations,
+    scheduledDonations: scheduledDonations.map((item) => {
+      const plain = item.toObject();
+      return {
+        ...plain,
+        ...buildOrganizationCurrencyDisplay(plain.currency),
+      };
+    }),
     meta,
   };
 };
@@ -295,7 +304,11 @@ const getScheduledDonationById = async (
     throw new AppError(httpStatus.NOT_FOUND, 'Scheduled donation not found!');
   }
 
-  return scheduledDonation;
+  const plain = scheduledDonation.toObject();
+  return {
+    ...plain,
+    ...buildOrganizationCurrencyDisplay(plain.currency),
+  } as unknown as IScheduledDonationModel;
 };
 
 const updateScheduledDonation = async (
