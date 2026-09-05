@@ -8,6 +8,7 @@ import { PAYOUT_STATUS } from './payout.constant';
 import QueryBuilder from '../../builders/QueryBuilder';
 import { StripeService } from '../Stripe/stripe.service';
 import Organization from '../Organization/organization.model';
+import { getOrganizationCurrencyMeta } from '../../utils/donation-pricing.utils';
 import { syncStripeAccountForOrganization } from '../OrganizationAccount/stripe-account.sync';
 import { pipe } from 'pdfkit';
 
@@ -48,14 +49,16 @@ const requestPayout = async (
     }
 
     // 2. Check Stripe Balance using the correct Account ID
+    const currencyMeta = getOrganizationCurrencyMeta(organization);
     const stripeBalance = await StripeService.getAccountBalance(
-      stripeAccount.stripeAccountId
+      stripeAccount.stripeAccountId,
+      currencyMeta.stripeCurrency
     );
 
     if (stripeBalance.available < amount) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        `Insufficient funds. Available: $${stripeBalance.available}`
+        `Insufficient funds. Available: ${currencyMeta.organizationCurrency} ${stripeBalance.available}`
       );
     }
 
@@ -69,6 +72,7 @@ const requestPayout = async (
           payoutNumber: generatePayoutNumber(),
           requestedAmount: amount,
           netAmount: amount,
+          currency: currencyMeta.organizationCurrency,
           scheduledDate: payoutDate,
           status: PAYOUT_STATUS.PENDING,
           requestedBy: userId,

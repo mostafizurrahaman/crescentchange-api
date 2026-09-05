@@ -260,6 +260,10 @@ export interface IDonationAnalytics {
   topDonors: ITopDonor[];
   recentDonors: IRecentDonor[];
   breakDownByCause: IOrganizationStatsResponse;
+  organizationCurrency: string;
+  currencySymbol: string;
+  stripeCurrency: string;
+  amountLabel: string;
 }
 
 // Define the filter type for reuse

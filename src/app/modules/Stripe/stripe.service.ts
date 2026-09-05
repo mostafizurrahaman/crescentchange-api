@@ -2,7 +2,11 @@ import { Stripe } from 'stripe';
 import { stripe } from '../../lib/stripeHelper';
 import config from '../../config';
 import { AppError } from '../../utils';
-import { toStripeAmount, normalizeCurrency } from '../../utils/currency.utils';
+import {
+  fromStripeAmount,
+  toStripeAmount,
+  normalizeCurrency,
+} from '../../utils/currency.utils';
 import { applyDestinationChargeConnectParams } from '../../utils/stripe-connect-charges.utils';
 import httpStatus from 'http-status';
 import { OrganizationModel } from '../Organization/organization.model';
@@ -784,7 +788,10 @@ const createPayout = async (
 };
 
 // 21. Get Connected Account Balance
-const getAccountBalance = async (accountId: string) => {
+const getAccountBalance = async (
+  accountId: string,
+  preferredCurrency?: string
+) => {
   if (!accountId) {
     throw new AppError(httpStatus.BAD_REQUEST, 'Stripe Account ID is required');
   }
@@ -793,17 +800,29 @@ const getAccountBalance = async (accountId: string) => {
     const balance = await stripe.balance.retrieve({
       stripeAccount: accountId,
     });
+    const preferred = preferredCurrency
+      ? normalizeCurrency(preferredCurrency).toLowerCase()
+      : undefined;
 
-    // Convert cents to dollars (assuming USD/AUD standard 100 cents)
-    const available =
-      balance.available.reduce((acc, cur) => acc + cur.amount, 0) / 100;
-    const pending =
-      balance.pending.reduce((acc, cur) => acc + cur.amount, 0) / 100;
+    const pickBucket = (
+      entries: Stripe.Balance.Available[] | Stripe.Balance.Pending[]
+    ) => {
+      if (preferred) {
+        const match = entries.find((entry) => entry.currency === preferred);
+        if (match) return match;
+      }
+      return entries[0];
+    };
+
+    const availableEntry = pickBucket(balance.available);
+    const pendingEntry = pickBucket(balance.pending);
+    const currency =
+      availableEntry?.currency || pendingEntry?.currency || preferred || 'usd';
 
     return {
-      available,
-      pending,
-      currency: balance.available[0]?.currency || 'usd',
+      available: fromStripeAmount(availableEntry?.amount || 0, currency),
+      pending: fromStripeAmount(pendingEntry?.amount || 0, currency),
+      currency,
     };
   } catch (error: any) {
     throw new AppError(

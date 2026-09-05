@@ -3,6 +3,7 @@ import {
   currencySymbol,
   getCurrencyForCountry,
   normalizeCurrency,
+  resolveStripeCountry,
 } from './currency.utils';
 
 export interface IOrganizationDonationPricingInput {
@@ -28,10 +29,16 @@ export interface IOrganizationDonationPricing {
 export const resolveOrganizationChargeCurrency = (
   organizationCountry?: string | null,
   organizationDefaultCurrency?: string | null
-): string =>
-  normalizeCurrency(
+): string => {
+  const fromCountry = resolveStripeCountry(organizationCountry);
+  if (fromCountry) {
+    return normalizeCurrency(fromCountry.currency);
+  }
+
+  return normalizeCurrency(
     organizationDefaultCurrency || getCurrencyForCountry(organizationCountry)
   );
+};
 
 /** UI helper — show org currency beside amounts on frontend. */
 export const buildOrganizationCurrencyDisplay = (currency: string) => {

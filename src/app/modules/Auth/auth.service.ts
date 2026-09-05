@@ -73,6 +73,8 @@ import { RewardRedemption } from '../RewardRedeemtion/reward-redeemtion.model';
 import { RoundUpModel } from '../RoundUp/roundUp.model';
 import { RoundUpTransactionModel } from '../RoundUpTransaction/roundUpTransaction.model';
 import { ScheduledDonation } from '../ScheduledDonation/scheduledDonation.model';
+import { getOrganizationCurrencyMeta } from '../../utils/donation-pricing.utils';
+import { resolveStripeCountry } from '../../utils/currency.utils';
 const OTP_EXPIRY_MINUTES =
   Number.parseInt(config.jwt.otpSecretExpiresIn as string, 10) || 5;
 
@@ -1142,7 +1144,26 @@ const fetchProfileFromDB = async (user: IAuth) => {
       organization?._id!?.toString(),
     );
 
-    return { ...organization?.toObject(), isSubscribed };
+    if (organization?.country) {
+      const resolvedCountry = resolveStripeCountry(organization.country);
+      if (
+        resolvedCountry &&
+        organization.defaultCurrency !== resolvedCountry.currency
+      ) {
+        organization.defaultCurrency = resolvedCountry.currency;
+        await Organization.updateOne(
+          { _id: organization._id },
+          { $set: { defaultCurrency: resolvedCountry.currency } }
+        );
+      }
+    }
+
+    const organizationProfile = organization?.toObject();
+    const currencyDisplay = organizationProfile
+      ? getOrganizationCurrencyMeta(organizationProfile)
+      : {};
+
+    return { ...organizationProfile, ...currencyDisplay, isSubscribed };
   } else if (user?.role === ROLE.ADMIN) {
     const admin = await SuperAdmin.findOne({
       auth: user._id,

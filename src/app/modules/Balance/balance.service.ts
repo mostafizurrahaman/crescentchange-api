@@ -7,35 +7,45 @@ import { StripeService } from '../Stripe/stripe.service';
 import { startOfMonth, endOfMonth, subMonths } from 'date-fns';
 
 import { StripeAccount } from '../OrganizationAccount/stripe-account.model';
+import Organization from '../Organization/organization.model';
+import { getOrganizationCurrencyMeta } from '../../utils/donation-pricing.utils';
 
 /**
  * Get Balance Summary from Stripe (Single Source of Truth)
  */
 const getBalanceSummary = async (organizationId: string) => {
-  // 1. Find the Stripe Account linked to this org
+  const organization = await Organization.findById(organizationId)
+    .select('country defaultCurrency')
+    .lean();
+  const currencyMeta = organization
+    ? getOrganizationCurrencyMeta(organization)
+    : null;
+  const organizationCurrency = currencyMeta?.stripeCurrency || 'usd';
+
   const stripeAccount = await StripeAccount.findOne({
     organization: organizationId,
     status: 'active',
   });
 
-  // If no account or not enabled, return zero
   if (!stripeAccount || !stripeAccount.chargesEnabled) {
     return {
       availableBalance: 0,
       pendingBalance: 0,
-      currency: 'usd',
+      currency: organizationCurrency,
+      organizationCurrency: currencyMeta?.organizationCurrency || 'USD',
     };
   }
 
-  // 2. Fetch directly from Stripe l
   const stripeBalance = await StripeService.getAccountBalance(
-    stripeAccount.stripeAccountId
+    stripeAccount.stripeAccountId,
+    organizationCurrency
   );
 
   return {
     availableBalance: stripeBalance.available,
     pendingBalance: stripeBalance.pending,
-    currency: stripeBalance.currency,
+    currency: organizationCurrency,
+    organizationCurrency: currencyMeta?.organizationCurrency || 'USD',
   };
 };
 

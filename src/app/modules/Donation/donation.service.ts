@@ -59,6 +59,7 @@ import {
   buildOrganizationDonationPricing,
   enrichDonationWithCurrencyDisplay,
   enrichDonationsWithCurrencyDisplay,
+  getOrganizationCurrencyMeta,
   resolveOrganizationChargeCurrency,
 } from '../../utils/donation-pricing.utils';
 // Helper function to generate unique idempotency key
@@ -1596,6 +1597,15 @@ const getDonationAnalytics = async (
     getOrganizationCauseStats(organizationId!),
   ]);
 
+  const organization = organizationId
+    ? await Organization.findById(organizationId)
+        .select('country defaultCurrency')
+        .lean()
+    : null;
+  const currencyDisplay = organization
+    ? getOrganizationCurrencyMeta(organization)
+    : buildOrganizationCurrencyDisplay('USD');
+
   return {
     totalDonatedAmount,
     averageDonationPerUser,
@@ -1605,6 +1615,7 @@ const getDonationAnalytics = async (
     topDonors,
     recentDonors,
     breakDownByCause,
+    ...currencyDisplay,
   };
 };
 
