@@ -234,7 +234,7 @@ router.post(
   AuthController.socialLogin,
 );
 
-router.get(
+router.post(
   '/email-status',
   limiter,
   validateRequest(AuthValidation.emailStatusSchema),
