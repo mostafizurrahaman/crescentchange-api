@@ -1,7 +1,7 @@
-import httpStatus from 'http-status';
-import nodemailer from 'nodemailer';
-import config from '../config';
-import AppError from './AppError';
+import httpStatus from "http-status";
+import nodemailer from "nodemailer";
+import config from "../config";
+import AppError from "./AppError";
 
 export interface IContactMessage {
   email: string;
@@ -14,7 +14,7 @@ const sendContactUsEmail = async (payload: IContactMessage) => {
   try {
     // Create a transporter for sending emails
     const transporter = nodemailer.createTransport({
-      service: 'gmail',
+      service: "gmail",
       auth: {
         user: config.email.nodemailerEmail,
         pass: config.email.nodemailerPassword,
@@ -98,12 +98,31 @@ const sendContactUsEmail = async (payload: IContactMessage) => {
       </html>
     `;
 
+    const textTemplate = `
+You've Received a Message from Your Website
+
+Hello Admin,
+
+You have a new message from a user on your website's "Contact Us" page. Below are the details:
+
+Full Name: ${payload.fullName}
+Email: ${payload.email}
+Phone Number: ${payload.phoneNumber}
+
+Message:
+${payload.message}
+
+Thank you for your attention. If you have any questions or need assistance, feel free to reply to this email.
+`;
+
     // Email options: from, to, subject, and HTML body
     const mailOptions = {
-      from: config.email.nodemailerEmail, // Sender's email address
+      from: `"${config.preferredWebsite.name}" <${config.email.nodemailerEmail}>`,
       to: config.email.contactUsEmail, // Admin's email address
       subject: `New Contact Us Message from ${payload.fullName}`,
+      replyTo: config.email.contactUsEmail,
       html: htmlTemplate,
+      text: textTemplate,
     };
 
     // Send the email using Nodemailer
@@ -111,7 +130,7 @@ const sendContactUsEmail = async (payload: IContactMessage) => {
   } catch {
     throw new AppError(
       httpStatus.INTERNAL_SERVER_ERROR,
-      'Failed to send contact us message'
+      "Failed to send contact us message",
     );
   }
 };

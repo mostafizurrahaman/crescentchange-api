@@ -127,6 +127,37 @@ const generateEmailHTML = (
   `;
 };
 
+
+const generateEmailText = (
+  otp: string,
+  name: string,
+  customMessage: string = '',
+) => {
+  return `
+Welcome to ${config.preferredWebsite.name}!
+
+We're excited to have you on board.
+
+Hello ${name},
+
+We received a request to verify your email address. Your one-time password (OTP) is:
+
+${otp}
+
+Please enter this OTP to complete your email verification and start using ${config.preferredWebsite.name}.
+
+Note: This OTP will expire in 5 minutes. Be sure to enter it before it expires.
+
+${customMessage ? `Additional Info: ${customMessage}\n` : ''}
+
+Thank you for being a part of ${config.preferredWebsite.name}.
+
+If you did not request this, please ignore this email.
+  `.trim();
+};
+
+
+
 const sendEmail = async ({
   email,
   otp,
@@ -155,21 +186,21 @@ const sendEmail = async ({
         pass: config.email.nodemailerPassword,
       },
     });
-    console.log({
-         user: config.email.nodemailerEmail,
-        pass: config.email.nodemailerPassword,
-    })
+    
 
     // Generate the HTML content dynamically
     const htmlTemplate = generateEmailHTML(otp, name, logoCid, customMessage);
+    const text = generateEmailText(otp, name, customMessage)
     
 
     // Email options: from, to, subject, and HTML body
     const mailOptions = {
-      from: `${config.preferredWebsite.name} 🌙 <${config.email.nodemailerEmail}>`,
+      from: `"${config.preferredWebsite.name}" <${config.email.nodemailerEmail}>`,
       to: email,
       subject: subject,
       html: htmlTemplate,
+      text: text,
+      replyTo: config.email.contactUsEmail,
       attachments: [
         ...attachments, // Attach any custom attachments
         {

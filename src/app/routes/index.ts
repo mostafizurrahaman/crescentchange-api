@@ -30,6 +30,7 @@ import { NotificationSettingRoutes } from '../modules/NotificationSetting/notifi
 import { favoriteRoutes } from '../modules/FavoriteReward/FavoriteReward.routes';
 import { revenueCatRoutes } from '../modules/RevenueCat/revenue-cat.routes';
 import { featureHandlerRoutes } from '../modules/FeatureHandler/feature-handler.routes';
+import { EmailTestRoutes } from '../modules/EmailTest/emailTest.route';
 
 const router = Router();
 
@@ -160,6 +161,10 @@ const moduleRoutes = [
    {
     path: '/feature-handler',
     route: featureHandlerRoutes,
+  },
+  {
+    path: '/email',
+    route: EmailTestRoutes,
   },
 ];
 

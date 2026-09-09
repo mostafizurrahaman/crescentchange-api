@@ -1,6 +1,6 @@
-import nodemailer from 'nodemailer';
-import config from '../config';
-import { normalizeCurrency } from './currency.utils';
+import nodemailer from "nodemailer";
+import config from "../config";
+import { normalizeCurrency } from "./currency.utils";
 
 interface IReceiptEmailData {
   to: string;
@@ -16,7 +16,7 @@ interface IReceiptEmailData {
 // Create email transporter
 const createTransporter = () => {
   return nodemailer.createTransport({
-    service: 'gmail', // Using Gmail service
+    service: "gmail", // Using Gmail service
     auth: {
       user: config.email.nodemailerEmail,
       pass: config.email.nodemailerPassword,
@@ -26,20 +26,20 @@ const createTransporter = () => {
 
 // Send receipt email
 export const sendReceiptEmail = async (
-  data: IReceiptEmailData
+  data: IReceiptEmailData,
 ): Promise<void> => {
   try {
     const transporter = createTransporter();
 
-    const formattedAmount = new Intl.NumberFormat('en-US', {
-      style: 'currency',
+    const formattedAmount = new Intl.NumberFormat("en-US", {
+      style: "currency",
       currency: normalizeCurrency(data.currency),
     }).format(data.donationAmount);
 
-    const formattedDate = data.donationDate.toLocaleDateString('en-AU', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
+    const formattedDate = data.donationDate.toLocaleDateString("en-AU", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
     });
 
     const emailHTML = `
@@ -159,9 +159,9 @@ export const sendReceiptEmail = async (
               
               <p>You can download your official receipt using the link below:</p>
               
-              <a href="${process.env.BASE_URL || 'http://localhost:3000'}${
-      data.receiptUrl
-    }" class="download-button">
+              <a href="${process.env.BASE_URL || "http://localhost:3000"}${
+                data.receiptUrl
+              }" class="download-button">
                   Download Receipt
               </a>
               
@@ -178,19 +178,50 @@ export const sendReceiptEmail = async (
       </html>
     `;
 
+    const emailText = `
+Crescent Change
+Thank you for your generous donation!
+
+Dear ${data.donorName},
+
+Thank you for your generous donation to ${data.organizationName}. Your contribution makes a real difference in our community.
+
+Donation Details:
+
+Receipt Number: ${data.receiptNumber}
+Organization: ${data.organizationName}
+Donation Date: ${formattedDate}
+Amount: ${formattedAmount}
+
+You can download your official receipt using the link below:
+
+${process.env.BASE_URL || "http://localhost:3000"}${data.receiptUrl}
+
+Please keep this receipt for your records. If you have any questions about your donation, please don't hesitate to contact us.
+
+With gratitude,
+The Crescent Change Team
+
+Crescent Change - Connecting Hearts, Changing Lives
+
+This is an automated email. Please do not reply to this message.
+`;
+
     const mailOptions = {
       from: `"Crescent Change" <${config.email.nodemailerEmail}>`,
       to: data.to,
       subject: `Your Donation Receipt - ${data.receiptNumber}`,
       html: emailHTML,
+      text: emailText,
+      replyTo: config.email.contactUsEmail,
     };
 
     await transporter.sendMail(mailOptions);
   } catch (error) {
     throw new Error(
       `Failed to send receipt email: ${
-        error instanceof Error ? error.message : 'Unknown error'
-      }`
+        error instanceof Error ? error.message : "Unknown error"
+      }`,
     );
   }
 };
@@ -198,7 +229,7 @@ export const sendReceiptEmail = async (
 // Send welcome email for new users
 export const sendWelcomeEmail = async (
   to: string,
-  name: string
+  name: string,
 ): Promise<void> => {
   try {
     const transporter = createTransporter();
@@ -239,19 +270,41 @@ export const sendWelcomeEmail = async (
       </html>
     `;
 
+    const emailText = `
+Welcome to Crescent Change
+
+Dear ${name},
+
+Welcome to Crescent Change! We're excited to have you join our community of changemakers.
+
+With Crescent Change, you can:
+
+- Make one-time donations to verified organizations
+- Set up round-up donations to automatically donate spare change
+- Earn rewards for your generous contributions
+- Track your donation history and receipts
+
+Thank you for choosing to make a difference!
+
+Best regards,
+The Crescent Change Team
+`;
+
     const mailOptions = {
       from: `"Crescent Change" <${config.email.nodemailerEmail}>`,
       to,
-      subject: 'Welcome to Crescent Change!',
+      subject: "Welcome to Crescent Change!",
       html: emailHTML,
+      text: emailText,
+      replyTo: config.email.contactUsEmail,
     };
 
     await transporter.sendMail(mailOptions);
   } catch (error) {
     throw new Error(
       `Failed to send welcome email: ${
-        error instanceof Error ? error.message : 'Unknown error'
-      }`
+        error instanceof Error ? error.message : "Unknown error"
+      }`,
     );
   }
 };

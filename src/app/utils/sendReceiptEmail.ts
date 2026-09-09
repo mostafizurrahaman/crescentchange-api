@@ -1,6 +1,6 @@
-import nodemailer from 'nodemailer';
-import config from '../config';
-import { currencySymbol as resolveCurrencySymbol } from './currency.utils';
+import nodemailer from "nodemailer";
+import config from "../config";
+import { currencySymbol as resolveCurrencySymbol } from "./currency.utils";
 
 interface ISendReceiptEmailPayload {
   donorEmail: string;
@@ -16,7 +16,7 @@ interface ISendReceiptEmailPayload {
   coverFees?: boolean;
   platformFee?: number;
   gstOnFee?: number;
-  stripeFee?: number; 
+  stripeFee?: number;
 
   currency: string;
   donationDate: Date;
@@ -48,7 +48,7 @@ const sendReceiptEmail = async (payload: ISendReceiptEmailPayload) => {
   } = payload;
 
   const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com', // Or your SMTP host
+    host: "smtp.gmail.com", // Or your SMTP host
     port: 587,
     secure: false, // true for 465, false for other ports
     auth: {
@@ -58,10 +58,10 @@ const sendReceiptEmail = async (payload: ISendReceiptEmailPayload) => {
   });
 
   // Format Date
-  const formattedDate = new Date(donationDate).toLocaleDateString('en-AU', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
+  const formattedDate = new Date(donationDate).toLocaleDateString("en-AU", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
   });
 
   // Calculate Display Values
@@ -70,7 +70,7 @@ const sendReceiptEmail = async (payload: ISendReceiptEmailPayload) => {
   // ---------------------------------------------------------
   // 💡 DYNAMIC HTML GENERATION FOR FEES
   // ---------------------------------------------------------
-  let feeRows = '';
+  let feeRows = "";
 
   // Check if fees are covered and at least one fee exists
   if (coverFees && (platformFee > 0 || stripeFee > 0)) {
@@ -80,8 +80,8 @@ const sendReceiptEmail = async (payload: ISendReceiptEmailPayload) => {
       <tr style="border-bottom: 1px solid #eee;">
         <td style="padding: 10px 0; color: #666;">Platform & Service Fee</td>
         <td style="padding: 10px 0; text-align: right; color: #666;">${currencySymbol}${platformFee.toFixed(
-        2
-      )}</td>
+          2,
+        )}</td>
       </tr>`;
     }
 
@@ -91,8 +91,8 @@ const sendReceiptEmail = async (payload: ISendReceiptEmailPayload) => {
       <tr style="border-bottom: 1px solid #eee;">
         <td style="padding: 10px 0; color: #666;">Transaction Fee (Stripe)</td>
         <td style="padding: 10px 0; text-align: right; color: #666;">${currencySymbol}${stripeFee.toFixed(
-        2
-      )}</td>
+          2,
+        )}</td>
       </tr>`;
     }
 
@@ -102,8 +102,8 @@ const sendReceiptEmail = async (payload: ISendReceiptEmailPayload) => {
       <tr style="border-bottom: 1px solid #eee;">
         <td style="padding: 10px 0; color: #666;">GST (10% on Platform Fees)</td>
         <td style="padding: 10px 0; text-align: right; color: #666;">${currencySymbol}${gstOnFee.toFixed(
-        2
-      )}</td>
+          2,
+        )}</td>
       </tr>`;
     }
   }
@@ -144,8 +144,8 @@ const sendReceiptEmail = async (payload: ISendReceiptEmailPayload) => {
               <tr style="border-bottom: 1px solid #eee;">
                 <td style="padding: 10px 0;"><strong>Donation Amount (Tax Deductible)</strong></td>
                 <td style="padding: 10px 0; text-align: right;"><strong>${currencySymbol}${amount.toFixed(
-    2
-  )}</strong></td>
+                  2,
+                )}</strong></td>
               </tr>
               
               ${feeRows}
@@ -153,8 +153,8 @@ const sendReceiptEmail = async (payload: ISendReceiptEmailPayload) => {
               <tr>
                 <td style="padding: 15px 0; font-weight: bold; font-size: 16px;">Total Paid</td>
                 <td style="padding: 15px 0; text-align: right; font-weight: bold; font-size: 16px; color: #10B981;">${currencySymbol}${totalAmount.toFixed(
-    2
-  )}</td>
+                  2,
+                )}</td>
               </tr>
             </table>
           </div>
@@ -182,11 +182,56 @@ const sendReceiptEmail = async (payload: ISendReceiptEmailPayload) => {
     </html>
   `;
 
+  const textContent = `
+Payment Receipt
+
+Assalamu Alaikum ${donorName},
+
+Thank you for your generous contribution to ${organizationName}. Your support makes a real difference.
+
+Receipt #: ${receiptNumber}
+Date: ${formattedDate}
+
+Donation Amount (Tax Deductible): ${currencySymbol}${amount.toFixed(2)}
+${
+  coverFees && platformFee > 0
+    ? `Platform & Service Fee: ${currencySymbol}${platformFee.toFixed(2)}`
+    : ""
+}
+${
+  coverFees && stripeFee > 0
+    ? `Transaction Fee (Stripe): ${currencySymbol}${stripeFee.toFixed(2)}`
+    : ""
+}
+${
+  coverFees && gstOnFee > 0
+    ? `GST (10% on Platform Fees): ${currencySymbol}${gstOnFee.toFixed(2)}`
+    : ""
+}
+
+Total Paid: ${currencySymbol}${totalAmount.toFixed(2)}
+
+Donation Type: ${donationType.charAt(0).toUpperCase() + donationType.slice(1)}
+
+Download Official Tax Receipt (PDF):
+${pdfUrl}
+
+Please retain the attached PDF receipt for your tax records.
+
+Donations of $2 or more are tax-deductible in Australia.
+
+Crescent Change Platform
+
+This is an automated email. Please do not reply directly.
+`.trim();
+
   const mailOptions = {
     from: `"Crescent Change" <${config.email.nodemailerEmail}>`,
     to: donorEmail,
     subject: `Donation Receipt - ${organizationName}`,
     html: htmlContent,
+    text: textContent,
+    replyTo: config.email.contactUsEmail,
     attachments: [
       {
         filename: `Receipt-${receiptNumber}.pdf`,
