@@ -3,8 +3,15 @@ import { auth, validateRequest } from '../../middlewares';
 import { AuthValidation } from './auth.validation';
 import { AuthController } from './auth.controller';
 import { upload } from '../../lib';
+import rateLimiter from 'express-rate-limit';
 import { validateRequestFromFormData } from '../../middlewares/validateRequest';
 import { ROLE } from './auth.constant';
+
+const limiter = rateLimiter({
+  windowMs: 1 * 60 * 1000,
+  limit: 10,
+  message: 'Too many requested. Try again later.',
+});
 
 const router = Router();
 
@@ -225,6 +232,13 @@ router.post(
   '/social-login',
   validateRequest(AuthValidation.socialLoginSchema),
   AuthController.socialLogin,
+);
+
+router.get(
+  '/email-status',
+  limiter,
+  validateRequest(AuthValidation.emailStatusSchema),
+  AuthController.checkIsEmailAlreadyInUse,
 );
 
 export const AuthRoutes = router;

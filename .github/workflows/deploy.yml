@@ -1,10 +1,10 @@
 name: Crescent change api
 
-"on":
+'on':
   push:
-    branches: ["main"]
+    branches: ['main']
   pull_request:
-    branches: ["main"]
+    branches: ['main']
 jobs:
   # PRE BUILD:  Test Build before build inside actual machine
   build-and-deploy:
@@ -15,7 +15,7 @@ jobs:
       - name: Setup Node JS
         uses: actions/setup-node@v6
         with:
-          node-version: "24.16.0"
+          node-version: '24.16.0'
       - name: Install Dependencies
         run: npm install  --frozen-lockfile
       - name: Build Now
@@ -30,7 +30,7 @@ jobs:
       - name: Setup Node JS
         uses: actions/setup-node@v6
         with:
-          node-version: "24.16.0"
+          node-version: '24.16.0'
       - name: Install Dependencies
         run: npm ci
       - name: Build the Code
@@ -41,8 +41,8 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          source: "."
-          target: "/home/ec2-user/${{ secrets.PROJECT_FOLDER }}"
+          source: '.'
+          target: '/home/ec2-user/${{ secrets.PROJECT_FOLDER }}'
           rm: false
           strip_components: 0
 

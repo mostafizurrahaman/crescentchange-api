@@ -432,6 +432,17 @@ const socialLogin = asyncHandler(async (req, res) => {
   });
 });
 
+const checkIsEmailAlreadyInUse = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  const result = await AuthService.checkIsEmailAlreadyInUse(email);
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    message: result.message,
+    data: result,
+  });
+});
+
 export const AuthController = {
   createAuth,
   sendSignupOtpAgain,
@@ -462,4 +473,5 @@ export const AuthController = {
   signInAsBusiness,
   deleteUserAccount,
   socialLogin,
+  checkIsEmailAlreadyInUse,
 };

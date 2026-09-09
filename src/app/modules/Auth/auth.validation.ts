@@ -360,53 +360,55 @@ const createProfileSchema = z.object({
 const organizationSignupWithProfileSchema = z.object({
   body: z
     .object({
-    // Auth fields (Required)
-    email: z
-      .string()
-      .email({ message: 'Invalid email format!' })
-      .transform((email) => email.toLowerCase()),
+      // Auth fields (Required)
+      email: z
+        .string()
+        .email({ message: 'Invalid email format!' })
+        .transform((email) => email.toLowerCase()),
 
-    password: z
-      .string()
-      .min(8, { message: 'Password must be at least 8 characters long!' })
-      .max(20, { message: 'Password cannot exceed 20 characters!' })
-      .regex(/[A-Z]/, {
-        message: 'Password must contain at least one uppercase letter!',
-      })
-      .regex(/[a-z]/, {
-        message: 'Password must contain at least one lowercase letter!',
-      })
-      .regex(/[0-9]/, { message: 'Password must contain at least one number!' })
-      .regex(/[@$!%*?&#]/, {
-        message: 'Password must contain at least one special character!',
-      }),
+      password: z
+        .string()
+        .min(8, { message: 'Password must be at least 8 characters long!' })
+        .max(20, { message: 'Password cannot exceed 20 characters!' })
+        .regex(/[A-Z]/, {
+          message: 'Password must contain at least one uppercase letter!',
+        })
+        .regex(/[a-z]/, {
+          message: 'Password must contain at least one lowercase letter!',
+        })
+        .regex(/[0-9]/, {
+          message: 'Password must contain at least one number!',
+        })
+        .regex(/[@$!%*?&#]/, {
+          message: 'Password must contain at least one special character!',
+        }),
 
-    // Organization Profile Fields (Required)
-    name: z.string().min(1, 'Organization name is required!'),
-    serviceType: z.string().min(1, 'Service type is required!'),
-    address: z.string().min(1, 'Address is required!'),
-    state: z.string().min(1, 'State is required!'),
-    postalCode: z.string().min(1, 'Postal code is required!'),
-    website: z.string().optional(),
-    phoneNumber: z.string().min(1, 'Phone number is required!').optional(),
+      // Organization Profile Fields (Required)
+      name: z.string().min(1, 'Organization name is required!'),
+      serviceType: z.string().min(1, 'Service type is required!'),
+      address: z.string().min(1, 'Address is required!'),
+      state: z.string().min(1, 'State is required!'),
+      postalCode: z.string().min(1, 'Postal code is required!'),
+      website: z.string().optional(),
+      phoneNumber: z.string().min(1, 'Phone number is required!').optional(),
 
-    // Registration Details (Required)
-    tfnOrAbnNumber: z.string().min(1, 'TFN or ABN number is required!'),
-    zakatLicenseHolderNumber: z.string().optional().nullable(),
-    registeredCharityName: z.string().optional(),
-    acncNumber: z.string().optional(),
+      // Registration Details (Required)
+      tfnOrAbnNumber: z.string().min(1, 'TFN or ABN number is required!'),
+      zakatLicenseHolderNumber: z.string().optional().nullable(),
+      registeredCharityName: z.string().optional(),
+      acncNumber: z.string().optional(),
 
-    // Board Member Details (Required)
-    boardMemberName: z.string().min(1, 'Board member name is required!'),
-    boardMemberEmail: z.string().email('Invalid board member email!'),
-    boardMemberPhoneNumber: z
-      .string()
-      .min(1, 'Board member phone is required!'),
+      // Board Member Details (Required)
+      boardMemberName: z.string().min(1, 'Board member name is required!'),
+      boardMemberEmail: z.string().email('Invalid board member email!'),
+      boardMemberPhoneNumber: z
+        .string()
+        .min(1, 'Board member phone is required!'),
 
-    aboutUs: z.string().optional().nullable(),
-    country: stripeCountrySchema,
-    dateOfEstablishment: z.string().optional().nullable(), // Expecting ISO date string
-  })
+      aboutUs: z.string().optional().nullable(),
+      country: stripeCountrySchema,
+      dateOfEstablishment: z.string().optional().nullable(), // Expecting ISO date string
+    })
     .strict(),
 });
 
@@ -651,10 +653,19 @@ const socialLoginSchema = z.object({
   }),
 });
 
+const emailStatusSchema = z.object({
+  body: z.object({
+    email: z
+      .string({ error: 'Email is required.' })
+      .min(1, { error: 'Email is required' })
+      .email({ error: 'Invalid email.' }),
+  }),
+});
+
 export type TSocialLoginPayload = z.infer<typeof socialLoginSchema.shape.body>;
 
 export type TProfilePayload = z.infer<typeof createProfileSchema.shape.body>;
-
+export type TEmailStatusPayload = z.infer<typeof emailStatusSchema.shape.body>;
 export const AuthValidation = {
   createAuthSchema,
   sendSignupOtpAgainSchema,
@@ -678,4 +689,5 @@ export const AuthValidation = {
   verify2FALoginSchema,
   disabled2FASchema,
   socialLoginSchema,
+  emailStatusSchema,
 };

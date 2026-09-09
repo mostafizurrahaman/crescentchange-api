@@ -145,10 +145,7 @@ const sendSignupOtpAgain = async (email: string) => {
   const user = await Auth.isUserExistsByEmail(email);
 
   if (!user) {
-    throw new AppError(
-      httpStatus.BAD_REQUEST,
-      `Account not found!`,
-    );
+    throw new AppError(httpStatus.BAD_REQUEST, `Account not found!`);
   } else if (!user.otpExpiry || user.otpExpiry < now) {
     // sending new OTP if previous one is expired
     const otp = generateOtp();
@@ -288,7 +285,6 @@ const signinIntoDB = async (payload: {
     '+password +twoFactorSecret',
   );
 
-
   if (!user) {
     throw new AppError(httpStatus.NOT_FOUND, 'User does not exist!');
   }
@@ -347,11 +343,9 @@ const signinIntoDB = async (payload: {
     };
   }
 
-   user.lastLogin = new Date()
-   user.lastActivity = new Date()
-   await user.save()
-
-
+  user.lastLogin = new Date();
+  user.lastActivity = new Date();
+  await user.save();
 
   // Prepare user data for token generation
   const accessTokenPayload = {
@@ -1153,7 +1147,7 @@ const fetchProfileFromDB = async (user: IAuth) => {
         organization.defaultCurrency = resolvedCountry.currency;
         await Organization.updateOne(
           { _id: organization._id },
-          { $set: { defaultCurrency: resolvedCountry.currency } }
+          { $set: { defaultCurrency: resolvedCountry.currency } },
         );
       }
     }
@@ -1263,18 +1257,18 @@ const hardDeleteUserAccountById = async (
 
   const rewardIds = businessId
     ? getObjectIds(
-        await Reward.find({ business: businessId }).select('_id').session(
-          session,
-        ),
+        await Reward.find({ business: businessId })
+          .select('_id')
+          .session(session),
       )
     : [];
 
   const donationIds = uniqueObjectIds([
     ...(clientId
       ? getObjectIds(
-          await Donation.find({ donor: clientId }).select('_id').session(
-            session,
-          ),
+          await Donation.find({ donor: clientId })
+            .select('_id')
+            .session(session),
         )
       : []),
     ...(organizationId
@@ -1374,9 +1368,9 @@ const hardDeleteUserAccountById = async (
     await Donation.deleteMany({ organization: organizationId }).session(
       session,
     );
-    await ScheduledDonation.deleteMany({ organization: organizationId }).session(
-      session,
-    );
+    await ScheduledDonation.deleteMany({
+      organization: organizationId,
+    }).session(session);
     await RoundUpModel.deleteMany({ organization: organizationId }).session(
       session,
     );
@@ -2378,10 +2372,9 @@ const signInAsDonor = async (payload: {
     };
   }
 
-   user.lastLogin = new Date()
-   user.lastActivity = new Date()
-   await user.save()
-
+  user.lastLogin = new Date();
+  user.lastActivity = new Date();
+  await user.save();
 
   // Prepare user data for token generation
   const accessTokenPayload = {
@@ -2479,10 +2472,9 @@ const signInAsBusiness = async (payload: {
     };
   }
 
-    user.lastLogin = new Date()
-    user.lastActivity = new Date()
-   await user.save()
-
+  user.lastLogin = new Date();
+  user.lastActivity = new Date();
+  await user.save();
 
   // Prepare user data for token generation
   const accessTokenPayload = {
@@ -2656,8 +2648,8 @@ const socialLoginIntoDB = async ({
       if (!existingUser.authProviders.includes(provider)) {
         existingUser.authProviders.push(provider);
         existingUser.firebaseUid = uid;
-        existingUser.lastLogin = new Date()
-        existingUser.lastActivity = new Date()        
+        existingUser.lastLogin = new Date();
+        existingUser.lastActivity = new Date();
         await existingUser.save({ session });
       }
 
@@ -2701,7 +2693,7 @@ const socialLoginIntoDB = async ({
           otp: '000000', // schema required, dummy value
           otpExpiry: new Date(Date.now() + 60_000),
           lastLogin: new Date(),
-          lastActivity: new Date()
+          lastActivity: new Date(),
         },
       ],
       { session },
@@ -2791,6 +2783,22 @@ const socialLoginIntoDB = async ({
   }
 };
 
+const checkIsEmailAlreadyInUse = (email: string) => {
+  // ?? Check is email already in use:
+  const existingAccount = Auth.findOne({ email });
+
+  if (!existingAccount) {
+    return {
+      alreadyInUse: true,
+      message: 'This email address is already in use.',
+    };
+  }
+  return {
+    alreadyInUse: false,
+    message: 'This email address is already in use.',
+  };
+};
+
 export const AuthService = {
   createAuthIntoDB,
   sendSignupOtpAgain,
@@ -2822,4 +2830,5 @@ export const AuthService = {
   signInAsBusiness,
   getAccessToken,
   socialLoginIntoDB,
+  checkIsEmailAlreadyInUse,
 };
