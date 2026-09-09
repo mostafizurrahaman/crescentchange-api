@@ -2783,19 +2783,20 @@ const socialLoginIntoDB = async ({
   }
 };
 
-const checkIsEmailAlreadyInUse = (email: string) => {
-  // ?? Check is email already in use:
-  const existingAccount = Auth.findOne({ email });
+const checkIsEmailAlreadyInUse = async (email: string) => {
+  // Check if email is already in use
+  const existingAccount = await Auth.findOne({ email });
 
-  if (!existingAccount) {
+  if (existingAccount) {
     return {
       alreadyInUse: true,
       message: 'This email address is already in use.',
     };
   }
+
   return {
     alreadyInUse: false,
-    message: 'This email address is already in use.',
+    message: 'This email address is available.',
   };
 };
 
