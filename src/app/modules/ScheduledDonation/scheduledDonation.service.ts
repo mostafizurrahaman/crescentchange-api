@@ -30,6 +30,7 @@ import {
   getOrganizationCurrencyMeta,
   buildOrganizationCurrencyDisplay,
 } from '../../utils/donation-pricing.utils';
+import { withDonorDisplay } from '../../utils/donor-display-currency.utils';
 
 // Helper function to calculate next donation date
 export const calculateNextDonationDate = (
@@ -219,6 +220,13 @@ const createScheduledDonation = async (
   return {
     scheduledDonation,
     ...getOrganizationCurrencyMeta(organization),
+    ...(await withDonorDisplay(
+      {
+        amount: scheduledDonation.amount,
+        currency: pricing.organizationCurrency,
+      },
+      user.preferredCurrency
+    )),
     message: `Recurring donations will be processed in ${pricing.organizationCurrency}`,
   };
 };
@@ -273,13 +281,18 @@ const getUserScheduledDonations = async (
   const meta = await scheduledDonationQuery.countTotal();
 
   return {
-    scheduledDonations: scheduledDonations.map((item) => {
-      const plain = item.toObject();
-      return {
-        ...plain,
-        ...buildOrganizationCurrencyDisplay(plain.currency),
-      };
-    }),
+    scheduledDonations: await Promise.all(
+      scheduledDonations.map(async (item) => {
+        const plain = item.toObject();
+        return withDonorDisplay(
+          {
+            ...plain,
+            ...buildOrganizationCurrencyDisplay(plain.currency),
+          },
+          user.preferredCurrency
+        );
+      })
+    ),
     meta,
   };
 };
@@ -305,10 +318,13 @@ const getScheduledDonationById = async (
   }
 
   const plain = scheduledDonation.toObject();
-  return {
-    ...plain,
-    ...buildOrganizationCurrencyDisplay(plain.currency),
-  } as unknown as IScheduledDonationModel;
+  return (await withDonorDisplay(
+    {
+      ...plain,
+      ...buildOrganizationCurrencyDisplay(plain.currency),
+    },
+    user.preferredCurrency
+  )) as unknown as IScheduledDonationModel;
 };
 
 const updateScheduledDonation = async (

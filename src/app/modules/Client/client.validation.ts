@@ -1,5 +1,5 @@
 import z from 'zod';
-import { auth } from '../../middlewares';
+import { preferredCurrencyZod } from '../../validation/preferred-currency.validation';
 
 const getUserRecurringDonationsForSpecificOrganizationSchema = z.object({
   query: z.object({
@@ -23,6 +23,7 @@ const updateClientProfileSchema = z.object({
     state: z.string().optional(),
     postalCode: z.string().optional(),
     phoneNumber: z.string().optional(),
+    preferredCurrency: preferredCurrencyZod.nullable().optional(),
   }),
 });
 

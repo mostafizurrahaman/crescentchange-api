@@ -5,6 +5,7 @@ import { asyncHandler, sendResponse, AppError } from '../../utils';
 import { ExtendedRequest } from '../../types';
 import { DonationService } from './donation.service';
 import { TRetryFailedPaymentParams } from './donation.validation';
+import { resolveUserPreferredCurrency } from '../../utils/donor-display-currency.utils';
 import Client from '../Client/client.model';
 import { ROLE } from '../Auth/auth.constant';
 import Organization, {
@@ -60,12 +61,16 @@ const getDonationQuote = asyncHandler(
       organizationId: string;
       amount: number;
       coverFees?: boolean;
+      displayCurrency?: string;
     };
 
     const result = await DonationService.getDonationQuote({
       organizationId: query.organizationId,
       amount: query.amount,
       coverFees: query.coverFees,
+      preferredCurrency:
+        query.displayCurrency ||
+        (await resolveUserPreferredCurrency(req.user?._id?.toString())),
     });
 
     sendResponse(res, {

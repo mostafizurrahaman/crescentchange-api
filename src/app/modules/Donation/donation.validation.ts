@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { preferredCurrencyZod } from '../../validation/preferred-currency.validation';
 
 // 2. Get user donations schema (with QueryBuilder support)
 const getUserDonationsSchema = z.object({
@@ -422,6 +423,7 @@ const getDonationQuoteSchema = z.object({
     coverFees: z.coerce
       .boolean({ error: 'Covers fees should be boolean.' })
       .optional(),
+    displayCurrency: preferredCurrencyZod.optional(),
   }),
 });
 

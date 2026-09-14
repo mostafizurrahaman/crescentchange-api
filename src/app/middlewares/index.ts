@@ -1,5 +1,5 @@
-import auth from './auth';
+import auth, { optionalAuth } from './auth';
 import { validateRequest } from './validateRequest';
 import { validateWebhookSignature } from './webhookMiddleware';
 
-export { auth, validateRequest, validateWebhookSignature };
+export { auth, optionalAuth, validateRequest, validateWebhookSignature };

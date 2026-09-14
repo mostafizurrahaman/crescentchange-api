@@ -3,6 +3,7 @@ import { Response } from 'express';
 import { asyncHandler, sendResponse, AppError } from '../../utils';
 import { ExtendedRequest } from '../../types';
 import { OrganizationService } from './organization.service';
+import { resolveUserPreferredCurrency } from '../../utils/donor-display-currency.utils';
 
 /**
  * Start Stripe Connect onboarding
@@ -72,7 +73,13 @@ const refreshStripeConnectOnboarding = asyncHandler(
 );
 
 const getAllOrganization = asyncHandler(async (req, res) => {
-  const result = await OrganizationService.getAllOrganizations(req.query);
+  const preferredCurrency = await resolveUserPreferredCurrency(
+    req.user?._id?.toString()
+  );
+  const result = await OrganizationService.getAllOrganizations(
+    req.query,
+    preferredCurrency
+  );
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
@@ -150,8 +157,12 @@ const editOrgTaxDetails = asyncHandler(
 const getOrganizationDetails = asyncHandler(
   async (req: ExtendedRequest, res: Response) => {
     const organizationId = req.params.id;
+    const preferredCurrency = await resolveUserPreferredCurrency(
+      req.user?._id?.toString()
+    );
     const result = await OrganizationService.getOrganizationDetailsById(
-      organizationId as string
+      organizationId as string,
+      preferredCurrency
     );
 
     sendResponse(res, {

@@ -126,6 +126,14 @@ const updateClientProfile = asyncHandler(
   }
 );
 
+const getDisplayCurrencies = asyncHandler(async (_req: Request, res: Response) => {
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    message: 'Display currencies retrieved successfully!',
+    data: clientService.getDisplayCurrencies(),
+  });
+});
+
 export const clientController = {
   getRoundupStats,
   getOnetimeDonationStats,
@@ -133,4 +141,5 @@ export const clientController = {
   getUserRecurringDonationsForSpecificOrganization,
   getUnifiedHistory,
   updateClientProfile,
+  getDisplayCurrencies,
 };

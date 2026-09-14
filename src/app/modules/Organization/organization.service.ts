@@ -26,6 +26,7 @@ import {
 } from '../../utils/currency.utils';
 import {
   buildOrganizationCurrencyDisplay,
+  getOrganizationCurrencyMeta,
   resolveOrganizationChargeCurrency,
 } from '../../utils/donation-pricing.utils';
 import { PLATFORM_BASE_CURRENCY } from '../../utils/currency.utils';
@@ -34,6 +35,10 @@ import {
   isOrganizationCountryLocked,
   resolveOrganizationCountryFields,
 } from '../../utils/organization-country.utils';
+import {
+  buildDonorDisplayLayer,
+  donorDisplayMeta,
+} from '../../utils/donor-display-currency.utils';
 import {
   syncStripeAccountFromStripe,
 } from '../OrganizationAccount/stripe-account.sync';
@@ -465,7 +470,10 @@ const editOrgTaxDetailsIntoDB = async (
 /**
  * Get verified Charities/ Organizations list
  */
-const getAllOrganizations = async (query: Record<string, unknown>) => {
+const getAllOrganizations = async (
+  query: Record<string, unknown>,
+  preferredCurrency?: string
+) => {
   // Extract special filters
   const {
     dateFrom,
@@ -565,14 +573,24 @@ const getAllOrganizations = async (query: Record<string, unknown>) => {
 
     // Map causes to their organizations
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const resultWithCauses = result.map((org: any) => {
-      const orgObject = org.toObject();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      orgObject.causes = causes.filter(
-        (cause: any) => cause.organization.toString() === org._id.toString()
-      );
-      return orgObject;
-    });
+    const resultWithCauses = await Promise.all(
+      result.map(async (org: any) => {
+        const orgObject = org.toObject();
+        orgObject.causes = causes.filter(
+          (cause: any) => cause.organization.toString() === org._id.toString()
+        );
+        const currencyDisplay = getOrganizationCurrencyMeta(orgObject);
+        const layer = await buildDonorDisplayLayer(
+          currencyDisplay.organizationCurrency,
+          preferredCurrency
+        );
+        return {
+          ...orgObject,
+          ...currencyDisplay,
+          ...donorDisplayMeta(layer),
+        };
+      })
+    );
 
     return {
       data: resultWithCauses,
@@ -580,8 +598,24 @@ const getAllOrganizations = async (query: Record<string, unknown>) => {
     };
   }
 
+  const data = await Promise.all(
+    result.map(async (org: any) => {
+      const plain = typeof org.toObject === 'function' ? org.toObject() : org;
+      const currencyDisplay = getOrganizationCurrencyMeta(plain);
+      const layer = await buildDonorDisplayLayer(
+        currencyDisplay.organizationCurrency,
+        preferredCurrency
+      );
+      return {
+        ...plain,
+        ...currencyDisplay,
+        ...donorDisplayMeta(layer),
+      };
+    })
+  );
+
   return {
-    data: result,
+    data,
     meta,
   };
 };
@@ -589,7 +623,10 @@ const getAllOrganizations = async (query: Record<string, unknown>) => {
 /**
  * Get Organization Details by ID
  */
-const getOrganizationDetailsById = async (organizationId: string) => {
+const getOrganizationDetailsById = async (
+  organizationId: string,
+  preferredCurrency?: string
+) => {
   // Find organization by ID
   const organization = await Organization.findById(organizationId)
     .select(
@@ -686,16 +723,35 @@ const getOrganizationDetailsById = async (organizationId: string) => {
     organization.defaultCurrency
   );
   const currencyDisplay = buildOrganizationCurrencyDisplay(organizationCurrency);
+  const displayLayer = await buildDonorDisplayLayer(
+    organizationCurrency,
+    preferredCurrency
+  );
+  const usdLayer = await buildDonorDisplayLayer(
+    PLATFORM_BASE_CURRENCY,
+    preferredCurrency
+  );
+
+  const recentDonorsWithDisplay = recentDonors.map((donor: any) => ({
+    ...donor,
+    displayLastDonationAmount: displayLayer.convert(donor.lastDonationAmount),
+    displayCurrency: displayLayer.displayCurrency,
+  }));
 
   return {
     ...organization.toObject(),
     ...currencyDisplay,
-    message: `Donations to this organization are processed in ${organizationCurrency}`,
+    ...donorDisplayMeta(displayLayer),
+    message: displayLayer.isEstimate
+      ? `Donations are processed in ${organizationCurrency}. Estimated ${displayLayer.displayCurrency} amounts are for display only.`
+      : `Donations to this organization are processed in ${organizationCurrency}`,
     totalDonation,
     totalDonationAmount,
+    displayTotalDonationAmount: displayLayer.convert(totalDonationAmount),
     totalDonationAmountBase,
+    displayTotalDonationAmountBase: usdLayer.convert(totalDonationAmountBase),
     reportingCurrency: PLATFORM_BASE_CURRENCY,
-    recentDonors,
+    recentDonors: recentDonorsWithDisplay,
     causes,
     isOnetime: true,
     isRecurring: hasSubscription,

@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import { roleValues, ROLE } from './auth.constant';
 import { stripeCountrySchema } from '../../validation/stripe-country.validation';
+import { preferredCurrencyZod } from '../../validation/preferred-currency.validation';
 
 // Email regex
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -126,6 +127,7 @@ const createProfileSchema = z.object({
       address: z.string().optional(),
       state: z.string().optional(),
       postalCode: z.string().optional(),
+      preferredCurrency: preferredCurrencyZod.optional(),
 
       // For BUSINESS
       category: z.string().optional(),

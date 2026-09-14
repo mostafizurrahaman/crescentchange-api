@@ -2,6 +2,7 @@
 import httpStatus from 'http-status';
 import { asyncHandler, sendResponse } from '../../utils';
 import { CauseService } from './causes.service';
+import { resolveUserPreferredCurrency } from '../../utils/donor-display-currency.utils';
 import { AppError } from '../../utils';
 import { IAuth } from '../Auth/auth.interface';
 import Organization from '../Organization/organization.model';
@@ -45,7 +46,10 @@ const createCause = asyncHandler(async (req, res) => {
 const getCauses = asyncHandler(async (req, res) => {
   const query  = req.query as unknown as TGetAllCauses
   // Pass the entire query object to service - QueryBuilder will handle it
-  const result = await CauseService.getCausesFromDB(query);
+  const preferredCurrency = await resolveUserPreferredCurrency(
+    req.user?._id?.toString()
+  );
+  const result = await CauseService.getCausesFromDB(query, preferredCurrency);
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
@@ -112,6 +116,9 @@ const getRaisedCausesByOrganization = asyncHandler(async (req, res) => {
     sortOrder?: 'asc' | 'desc';
   };
 
+  const preferredCurrency = await resolveUserPreferredCurrency(
+    req.user?._id?.toString()
+  );
   const result = await CauseService.getRaisedCausesByOrganizationFromDB(
     organizationId as string ,
     startMonth,
@@ -121,6 +128,7 @@ const getRaisedCausesByOrganization = asyncHandler(async (req, res) => {
       limit: Number(limit),
       sortBy,
       sortOrder,
+      preferredCurrency,
     }
   );
 

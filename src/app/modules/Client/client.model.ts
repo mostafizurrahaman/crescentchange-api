@@ -36,6 +36,12 @@ const clientSchema = new Schema<IClient>(
     phoneNumber: {
       type: String,
     },
+    preferredCurrency: {
+      type: String,
+      uppercase: true,
+      trim: true,
+      default: null,
+    },
   },
   { timestamps: true, versionKey: false },
 );

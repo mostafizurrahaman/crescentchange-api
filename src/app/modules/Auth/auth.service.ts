@@ -74,6 +74,9 @@ import { RoundUpModel } from '../RoundUp/roundUp.model';
 import { RoundUpTransactionModel } from '../RoundUpTransaction/roundUpTransaction.model';
 import { ScheduledDonation } from '../ScheduledDonation/scheduledDonation.model';
 import { getOrganizationCurrencyMeta } from '../../utils/donation-pricing.utils';
+import {
+  getSupportedDisplayCurrencies,
+} from '../../utils/donor-display-currency.utils';
 import { resolveStripeCountry } from '../../utils/currency.utils';
 const OTP_EXPIRY_MINUTES =
   Number.parseInt(config.jwt.otpSecretExpiresIn as string, 10) || 5;
@@ -397,6 +400,7 @@ const createProfileIntoDB = async (
     address,
     state,
     postalCode,
+    preferredCurrency,
     category,
     tagLine,
     description,
@@ -446,6 +450,7 @@ const createProfileIntoDB = async (
             address,
             state,
             postalCode,
+            preferredCurrency,
             image: imageUrl,
           },
         ],
@@ -1091,7 +1096,14 @@ const fetchProfileFromDB = async (user: IAuth) => {
       },
     ]);
 
-    return client;
+    if (!client) return client;
+
+    const profile = client.toObject();
+    return {
+      ...profile,
+      preferredCurrency: profile.preferredCurrency || null,
+      displayCurrencies: getSupportedDisplayCurrencies(),
+    };
   } else if (user?.role === ROLE.BUSINESS) {
     const business = await Business.findOne({ auth: user._id }).populate([
       {
@@ -1176,7 +1188,14 @@ const fetchProfileFromDB = async (user: IAuth) => {
       select: 'email role isProfile',
     });
 
-    return guest;
+    if (!guest) return guest;
+
+    const guestProfile = guest.toObject();
+    return {
+      ...guestProfile,
+      preferredCurrency: guestProfile.preferredCurrency || null,
+      displayCurrencies: getSupportedDisplayCurrencies(),
+    };
   }
 };
 

@@ -16,6 +16,11 @@ import { CAUSE_CATEGORY_TYPE } from './causes.constant';
 import Donation from '../Donation/donation.model';
 import { TGetAllCauses } from './causes.validation';
 import { IAuth } from '../Auth/auth.interface';
+import {
+  buildDonorDisplayLayer,
+  donorDisplayMeta,
+} from '../../utils/donor-display-currency.utils';
+import { PLATFORM_BASE_CURRENCY } from '../../utils/currency.utils';
 
 const parseMonthInput = (month: string, boundary: 'start' | 'end') => {
   const [yearStr, monthStr] = month.split('-');
@@ -72,7 +77,7 @@ const getRaisedCausesByOrganizationFromDB = async (
   organizationId: string,
   startMonth: string,
   endMonth: string,
-  options: RaisedCausesQueryOptions = {}
+  options: RaisedCausesQueryOptions & { preferredCurrency?: string } = {}
 ): Promise<{
   raisedCauses: IRaisedCauseSummary[];
   meta: { page: number; limit: number; total: number; totalPage: number };
@@ -156,11 +161,19 @@ const getRaisedCausesByOrganizationFromDB = async (
     (aggregatedCauses[0]?.data as RaisedCauseAggregateResult[]) ?? [];
   const total = aggregatedCauses[0]?.total?.[0]?.count ?? 0;
 
+  const usdLayer = await buildDonorDisplayLayer(
+    PLATFORM_BASE_CURRENCY,
+    options.preferredCurrency
+  );
+
   const raisedCauses = data.map((cause) => ({
     causeId: cause.causeId.toString(),
     name: cause.name,
     category: cause.category,
+    reportingCurrency: PLATFORM_BASE_CURRENCY,
     totalDonationAmount: cause.totalDonationAmount,
+    displayTotalDonationAmount: usdLayer.convert(cause.totalDonationAmount),
+    ...donorDisplayMeta(usdLayer),
     startMonth: formatMonthLabel(startDate),
     endMonth: formatMonthLabel(endDate),
   }));
@@ -255,7 +268,10 @@ const getCauseByIdFromDB = async (causeId: string) => {
 };
 
 // Get all causes with filters, search, pagination and sorting
-const getCausesFromDB = async (query: TGetAllCauses) => {
+const getCausesFromDB = async (
+  query: TGetAllCauses,
+  preferredCurrency?: string
+) => {
 
 
   const {
@@ -541,12 +557,22 @@ const totalPages = Math.round(total / limitNum)
 
 
   // Add stats and recent donors to each cause
+  const usdLayer = await buildDonorDisplayLayer(
+    PLATFORM_BASE_CURRENCY,
+    preferredCurrency
+  );
+
   const causesWithStats = result.map((cause: ICause) => {
     const causeObject: any = cause;
     const stats = statsMap.get(cause._id.toString());
     const recentDonorList = recentDonorsMap.get(cause._id.toString());
 
+    causeObject.reportingCurrency = PLATFORM_BASE_CURRENCY;
     causeObject.totalDonationAmount = stats?.totalDonationAmount || 0;
+    causeObject.displayTotalDonationAmount = usdLayer.convert(
+      causeObject.totalDonationAmount
+    );
+    Object.assign(causeObject, donorDisplayMeta(usdLayer));
     causeObject.totalDonors = stats?.totalDonors || 0;
     causeObject.totalDonations = stats?.totalDonations || 0;
     causeObject.recentDonors = recentDonorList || [];

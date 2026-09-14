@@ -89,10 +89,39 @@ const auth = (...requiredRoles: TRole[]) => {
   });
 };
 
+/** Public routes: if a Bearer token is present, attach req.user so preferred currency can be applied. */
+const optionalAuth = () => {
+  return asyncHandler(async (req, res, next) => {
+    const token = req.headers.authorization?.replace('Bearer ', '') || '';
+    if (!token) {
+      return next();
+    }
+
+    try {
+      const decoded = verifyToken(
+        token,
+        config.jwt.accessTokenSecret!,
+      ) as JwtPayload;
+      const user = await Auth.findById(decoded.id);
+      if (
+        user &&
+        !user.isDeleted &&
+        user.isVerifiedByOTP
+      ) {
+        req.user = user;
+      }
+    } catch {
+      // Ignore invalid tokens on public routes
+    }
+
+    next();
+  });
+};
+
 // Helper function to allow multiple roles for endpoints
 const authMultiple = (roles: TRole[]) => {
   return auth(...roles);
 };
 
 export default auth;
-export { authMultiple };
+export { authMultiple, optionalAuth };

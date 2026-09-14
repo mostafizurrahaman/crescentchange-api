@@ -9,37 +9,43 @@ import { validateRequestFromFormData } from '../../middlewares/validateRequest';
 
 const router = express.Router();
 
+router.get(
+  '/display-currencies',
+  // auth(ROLE.CLIENT, ROLE.GUEST),
+  clientController.getDisplayCurrencies,
+);
+
 // Get roundup stats
 router.get(
   '/roundup-stats',
   validateRequest(clientValidationSchema?.getUserRoundupForOrganization),
   auth(ROLE.CLIENT),
-  clientController.getRoundupStats
+  clientController.getRoundupStats,
 );
 router.get(
   '/onetime-stats',
   auth(ROLE.CLIENT),
-  clientController.getOnetimeDonationStats
+  clientController.getOnetimeDonationStats,
 );
 router.get(
   '/recurring-stats',
   auth(ROLE.CLIENT),
-  clientController.getRecurringDonationStats
+  clientController.getRecurringDonationStats,
 );
 
 router.get(
   '/recurring',
   validateRequest(
-    clientValidationSchema.getUserRecurringDonationsForSpecificOrganizationSchema
+    clientValidationSchema.getUserRecurringDonationsForSpecificOrganizationSchema,
   ),
   auth(ROLE.CLIENT),
-  clientController.getUserRecurringDonationsForSpecificOrganization
+  clientController.getUserRecurringDonationsForSpecificOrganization,
 );
 
 router.get(
   '/transaction/history',
   auth(ROLE.CLIENT),
-  clientController.getUnifiedHistory
+  clientController.getUnifiedHistory,
 );
 
 router.patch(
@@ -47,7 +53,7 @@ router.patch(
   auth(ROLE.CLIENT),
   upload.single('image'), // Expects form-data field name "image"
   validateRequestFromFormData(clientValidationSchema.updateClientProfileSchema),
-  clientController.updateClientProfile
+  clientController.updateClientProfile,
 );
 
 export const clientRoutes = router;

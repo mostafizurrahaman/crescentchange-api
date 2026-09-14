@@ -21,6 +21,13 @@ import {
   uploadToS3,
 } from '../../utils/s3.utils';
 import { IORGANIZATION } from '../Organization/organization.interface';
+import {
+  normalizePreferredCurrency,
+  buildDonorDisplayLayer,
+  donorDisplayMeta,
+  getSupportedDisplayCurrencies,
+} from '../../utils/donor-display-currency.utils';
+import { PLATFORM_BASE_CURRENCY } from '../../utils/currency.utils';
 
 // 1. Roundup donation stats
 const getRoundupStats = async (userId: string, roundupId: string) => {
@@ -42,7 +49,7 @@ const getRoundupStats = async (userId: string, roundupId: string) => {
     isActive: true,
   }).populate<{ organization: IORGANIZATION }>(
     'organization',
-    'name registeredCharityName'
+    'name registeredCharityName country defaultCurrency'
   );
 
   if (!currentRoundup) {
@@ -205,18 +212,31 @@ const getRoundupStats = async (userId: string, roundupId: string) => {
   const diffTime = nextMonthFirstDay.getTime() - today.getTime();
 
   const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const orgCurrencyLayer = await buildDonorDisplayLayer(
+    currentRoundup?.organization?.defaultCurrency,
+    client.preferredCurrency
+  );
 
   return {
     organizationName: currentRoundup?.organization?.name,
     registeredCharityName: currentRoundup?.organization?.registeredCharityName,
+    ...donorDisplayMeta(orgCurrencyLayer),
 
     currentRoundupBalance: Number(currentBalance.toFixed(2)),
+    displayCurrentRoundupBalance: orgCurrencyLayer.convert(currentBalance),
     todaysRoundupAmount: Number(todaysRoundupAmount.toFixed(2)) ?? 0,
+    displayTodaysRoundupAmount: orgCurrencyLayer.convert(todaysRoundupAmount),
     monthlyThreshold: isUnlimited
       ? 'no-limit'
       : Number(numericThreshold.toFixed(2)),
+    displayMonthlyThreshold: isUnlimited
+      ? 'no-limit'
+      : orgCurrencyLayer.convert(numericThreshold),
     lastTransactionAmount: Number(
       (lastTransaction?.roundUpAmount || 0).toFixed(2)
+    ),
+    displayLastTransactionAmount: orgCurrencyLayer.convert(
+      lastTransaction?.roundUpAmount || 0
     ),
     roundupPercentage: Number(roundupPercentage.toFixed(2)),
     daysLeft,
@@ -383,10 +403,20 @@ const getOnetimeDonationStats = async (userId: string) => {
   ]);
 
   const stats = result[0];
+  const usdLayer = await buildDonorDisplayLayer(
+    PLATFORM_BASE_CURRENCY,
+    client.preferredCurrency
+  );
 
   return {
+    reportingCurrency: PLATFORM_BASE_CURRENCY,
+    ...donorDisplayMeta(usdLayer),
     totalDonated: stats.totalDonated[0]?.total || 0,
+    displayTotalDonated: usdLayer.convert(stats.totalDonated[0]?.total || 0),
     todaysTotalDonation: stats.todaysTotalDonation[0]?.total || 0,
+    displayTodaysTotalDonation: usdLayer.convert(
+      stats.todaysTotalDonation[0]?.total || 0
+    ),
     recentDonations: stats.recentDonations || [],
   };
 };
@@ -477,12 +507,25 @@ export const getRecurringDonationStats = async (userId: string) => {
     label: getRecurringLabel(donation),
   }));
 
+  const usdLayer = await buildDonorDisplayLayer(
+    PLATFORM_BASE_CURRENCY,
+    client.preferredCurrency
+  );
+
   const response = {
+    reportingCurrency: PLATFORM_BASE_CURRENCY,
+    ...donorDisplayMeta(usdLayer),
     todaysRecurringAmount:
       result[0]?.todaysRecurringAmount[0]?.totalAmount || 0,
+    displayTodaysRecurringAmount: usdLayer.convert(
+      result[0]?.todaysRecurringAmount[0]?.totalAmount || 0
+    ),
     today: startOfToday.getDate(),
     totalWeeklyRecurringAmount:
       recurringStats[0]?.totalWeeklyRecurringAmount[0]?.totalAmount || 0,
+    displayTotalWeeklyRecurringAmount: usdLayer.convert(
+      recurringStats[0]?.totalWeeklyRecurringAmount[0]?.totalAmount || 0
+    ),
     organizationCount: recurringStats[0]?.orgCount[0]?.organizationCount || 0,
     donations: labeledDonations,
   };
@@ -590,6 +633,7 @@ const getUnifiedTransactionHistory = async (
         date: '$transactionDate',
         organization: '$organization',
         status: '$status',
+        currency: '$currency',
       },
     },
 
@@ -632,6 +676,7 @@ const getUnifiedTransactionHistory = async (
               date: '$donationDate',
               organization: '$organization',
               status: '$status',
+              currency: '$currency',
             },
           },
         ],
@@ -676,6 +721,7 @@ const getUnifiedTransactionHistory = async (
               organizationName: '$orgDetails.name',
               image: '$orgDetails.logoImage',
               date: 1,
+              currency: 1,
             },
           },
         ],
@@ -702,6 +748,7 @@ const getUnifiedTransactionHistory = async (
       organizationName: tx.organizationName,
       amount: tx.amount,
       originalAmount: tx.originalAmount,
+      currency: tx.currency,
       type: tx.type,
       image: tx.image,
       timeAgo: getTimeAgo(tx.date),
@@ -714,8 +761,28 @@ const getUnifiedTransactionHistory = async (
     transactions: groupedData[key],
   }));
 
+  const history = await Promise.all(
+    formattedResponse.map(async (group) => ({
+      ...group,
+      transactions: await Promise.all(
+        group.transactions.map(async (tx: any) => {
+          const layer = await buildDonorDisplayLayer(
+            tx.currency,
+            client.preferredCurrency
+          );
+          return {
+            ...tx,
+            ...donorDisplayMeta(layer),
+            displayAmount: layer.convert(tx.amount),
+            displayOriginalAmount: layer.convert(tx.originalAmount || 0),
+          };
+        })
+      ),
+    }))
+  );
+
   return {
-    history: formattedResponse,
+    history,
     meta: {
       page,
       limit,
@@ -763,6 +830,12 @@ const updateClientProfile = async (
     payload.image = uploadResult.url;
   }
 
+  if (payload.preferredCurrency !== undefined) {
+    payload.preferredCurrency = normalizePreferredCurrency(
+      payload.preferredCurrency
+    ) as string | undefined;
+  }
+
   // 3. Update the Database
   const result = await Client.findOneAndUpdate(
     { auth: userId },
@@ -772,6 +845,9 @@ const updateClientProfile = async (
 
   return result;
 };
+
+const getDisplayCurrencies = () => getSupportedDisplayCurrencies();
+
 export default {
   getRoundupStats,
   getOnetimeDonationStats,
@@ -779,4 +855,5 @@ export default {
   getUserRecurringDonationsForSpecificOrganization,
   getUnifiedTransactionHistory,
   updateClientProfile,
+  getDisplayCurrencies,
 };

@@ -53,6 +53,7 @@ import {
   buildBaseMoneyFields,
   getCurrencyForCountry,
   normalizeCurrency,
+  PLATFORM_BASE_CURRENCY,
 } from '../../utils/currency.utils';
 import {
   buildOrganizationCurrencyDisplay,
@@ -62,9 +63,40 @@ import {
   getOrganizationCurrencyMeta,
   resolveOrganizationChargeCurrency,
 } from '../../utils/donation-pricing.utils';
+import {
+  withDonorDisplay,
+  buildDonorDisplayLayer,
+  donorDisplayMeta,
+} from '../../utils/donor-display-currency.utils';
 // Helper function to generate unique idempotency key
 const generateIdempotencyKey = (): string => {
   return `don-${new Types.ObjectId().toString()}-${Date.now()}`;
+};
+
+const toPlainRecord = (doc: unknown): Record<string, unknown> => {
+  const maybe = doc as { toObject?: () => Record<string, unknown> };
+  return typeof maybe?.toObject === 'function'
+    ? maybe.toObject()
+    : (doc as Record<string, unknown>);
+};
+
+const withDonorDonationDisplay = async (
+  donation: unknown,
+  preferredCurrency?: string | null
+) => {
+  const enriched = enrichDonationWithCurrencyDisplay(
+    toPlainRecord(donation) as { currency?: string | null }
+  );
+  return withDonorDisplay(enriched as Record<string, unknown>, preferredCurrency, {
+    sourceCurrency: enriched.organizationCurrency || enriched.currency,
+    amountFields: [
+      { from: 'amount', to: 'displayAmount' },
+      { from: 'totalAmount', to: 'displayTotalAmount' },
+      { from: 'platformFee', to: 'displayPlatformFee' },
+      { from: 'gstOnFee', to: 'displayGstOnFee' },
+      { from: 'stripeFee', to: 'displayStripeFee' },
+    ],
+  });
 };
 
 // 1. Create one-time donation with Payment Intent (Destination Charge)
@@ -241,10 +273,21 @@ const createOneTimeDonation = async (
 
     await session.commitTransaction();
 
+    const displayedDonation = await withDonorDonationDisplay(
+      savedDonation,
+      donor.preferredCurrency
+    );
+
     return {
-      donation: savedDonation,
+      donation: displayedDonation,
       paymentIntent,
       ...currencyDisplay,
+      ...donorDisplayMeta(
+        await buildDonorDisplayLayer(
+          pricing.organizationCurrency,
+          donor.preferredCurrency
+        )
+      ),
     };
   } catch (error: unknown) {
     await session.abortTransaction();
@@ -266,7 +309,7 @@ const getDonationById = async (donationId: string): Promise<IDonation> => {
   }
 
   const donation = await Donation.findById(donationId)
-    .populate('donor', '_id name auth address state postalCode image ')
+    .populate('donor', '_id name auth address state postalCode image preferredCurrency')
     .populate('organization', 'name')
     .populate('cause', 'name description')
     .populate('receiptId', '_id receiptNumber pdfKey pdfUrl');
@@ -282,7 +325,14 @@ const getDonationById = async (donationId: string): Promise<IDonation> => {
     );
   }
 
-  return enrichDonationWithCurrencyDisplay(donation) as IDonation;
+  const preferredCurrency = (
+    donation.donor as unknown as { preferredCurrency?: string }
+  )?.preferredCurrency;
+
+  return (await withDonorDonationDisplay(
+    donation,
+    preferredCurrency
+  )) as unknown as IDonation;
 };
 
 // 3. Update donation status
@@ -393,7 +443,11 @@ const getDonationsByUser = async (
     const meta = await donationQuery.countTotal();
 
     return {
-      donations: enrichDonationsWithCurrencyDisplay(donations),
+      donations: await Promise.all(
+        donations.map((donation) =>
+          withDonorDonationDisplay(donation, donor.preferredCurrency)
+        )
+      ),
       meta,
     };
   } catch (error: unknown) {
@@ -1848,6 +1902,7 @@ const getClientStats = async (
   const formattedUpcoming = upcomingDonations.map((sd: any) => ({
     _id: sd._id.toString(),
     amount: sd.amount,
+    currency: sd.currency,
     nextDate: sd.nextDonationDate,
     causeName: sd.cause?.name,
     organizationName: sd.organization?.name,
@@ -1895,37 +1950,74 @@ const getClientStats = async (
     };
   }
 
+  const usdLayer = await buildDonorDisplayLayer(
+    PLATFORM_BASE_CURRENCY,
+    donor.preferredCurrency
+  );
+
+  const upcomingWithDisplay = await Promise.all(
+    formattedUpcoming.map(async (sd: any) => {
+      const layer = await buildDonorDisplayLayer(
+        sd.currency,
+        donor.preferredCurrency
+      );
+      return {
+        ...sd,
+        ...donorDisplayMeta(layer),
+        displayAmount: layer.convert(sd.amount),
+      };
+    })
+  );
+
   // 6. Assemble Response
   return {
+    reportingCurrency: PLATFORM_BASE_CURRENCY,
+    ...donorDisplayMeta(usdLayer),
     roundUpAmount: Number(result.roundUpAmount.toFixed(2)),
     recurringAmount: Number(result.recurringAmount.toFixed(2)),
     oneTimeAmount: Number(result.oneTimeAmount.toFixed(2)),
     totalDonationAmount: Number(result.totalAmount.toFixed(2)),
+    displayRoundUpAmount: usdLayer.convert(result.roundUpAmount),
+    displayRecurringAmount: usdLayer.convert(result.recurringAmount),
+    displayOneTimeAmount: usdLayer.convert(result.oneTimeAmount),
+    displayTotalDonationAmount: usdLayer.convert(result.totalAmount),
     averageDonation:
       result.count > 0
         ? Number((result.totalAmount / result.count).toFixed(2))
         : 0,
+    displayAverageDonation:
+      result.count > 0
+        ? usdLayer.convert(result.totalAmount / result.count)
+        : 0,
     maxConsistencyStreak: maxStreak,
     currentStreak: currentStreak,
 
-    // Detailed list sorted descending
-    donationDates: result.donationList.sort(
-      (a: any, b: any) =>
-        new Date(b.date).getTime() - new Date(a.date).getTime(),
-    ),
+    donationDates: result.donationList
+      .sort(
+        (a: any, b: any) =>
+          new Date(b.date).getTime() - new Date(a.date).getTime()
+      )
+      .map((item: any) => ({
+        ...item,
+        displayAmount: usdLayer.convert(item.amount),
+        displayCurrency: usdLayer.displayCurrency,
+      })),
 
-    // Unique dates set
     uniqueDonationDates: Array.from(
       new Set(
         result.donationList.map(
-          (d: any) => new Date(d.date).toISOString().split('T')[0],
-        ),
-      ),
+          (d: any) => new Date(d.date).toISOString().split('T')[0]
+        )
+      )
     ).sort((a: any, b: any) => (a > b ? -1 : 1)),
 
-    dailyStats: dailyStats,
+    dailyStats: dailyStats.map((item: any) => ({
+      ...item,
+      displayTotalAmount: usdLayer.convert(item.totalAmount),
+      displayCurrency: usdLayer.displayCurrency,
+    })),
 
-    upcomingDonations: formattedUpcoming,
+    upcomingDonations: upcomingWithDisplay,
     roundUpStatusData,
   } as any;
 };
@@ -1935,6 +2027,7 @@ const getDonationQuote = async (query: {
   organizationId: string;
   amount: number;
   coverFees?: boolean;
+  preferredCurrency?: string;
 }) => {
   const organization = await Organization.findById(query.organizationId);
   if (!organization) {
@@ -1951,13 +2044,28 @@ const getDonationQuote = async (query: {
   const currencyDisplay = buildOrganizationCurrencyDisplay(
     pricing.organizationCurrency,
   );
+  const displayLayer = await buildDonorDisplayLayer(
+    pricing.organizationCurrency,
+    query.preferredCurrency
+  );
 
   return {
     organizationId: query.organizationId,
     organizationName: organization.name,
     ...currencyDisplay,
-    message: `All donation amounts are in ${pricing.organizationCurrency}`,
+    ...donorDisplayMeta(displayLayer),
+    message: displayLayer.isEstimate
+      ? `You will be charged ${pricing.organizationCurrency}. Estimated total in ${displayLayer.displayCurrency} is shown for convenience.`
+      : `All donation amounts are in ${pricing.organizationCurrency}`,
     pricing,
+    displayPricing: {
+      baseAmount: displayLayer.convert(pricing.baseAmount),
+      platformFee: displayLayer.convert(pricing.platformFee),
+      gstOnFee: displayLayer.convert(pricing.gstOnFee),
+      stripeFee: displayLayer.convert(pricing.stripeFee),
+      totalCharge: displayLayer.convert(pricing.totalCharge),
+      netToOrg: displayLayer.convert(pricing.netToOrg),
+    },
   };
 };
 

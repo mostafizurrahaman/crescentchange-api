@@ -14,5 +14,8 @@ export interface IClient extends Document {
 
   image: string;
 
+  /** Donor app display currency only. Charge and receipts stay in org currency. */
+  preferredCurrency?: string;
+
   // phoneNumber: string;
 }

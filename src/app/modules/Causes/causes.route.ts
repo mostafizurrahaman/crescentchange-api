@@ -1,6 +1,6 @@
 // src/app/modules/Causes/causes.route.ts
 import { Router } from 'express';
-import { auth, validateRequest } from '../../middlewares';
+import { auth, optionalAuth, validateRequest } from '../../middlewares';
 import { CauseValidation } from './causes.validation';
 import { CauseController } from './causes.controller';
 import { ROLE } from '../Auth/auth.constant';
@@ -19,6 +19,7 @@ router
     CauseController.createCause
   )
   .get(
+    optionalAuth(),
     validateRequest(CauseValidation.getCausesQuerySchema),
     CauseController.getCauses
   );
@@ -27,6 +28,7 @@ router
 router
   .route('/organization/:organizationId')
   .get(
+    optionalAuth(),
     validateRequest(CauseValidation.getCausesByOrganizationSchema),
     CauseController.getCausesByOrganization
   );
@@ -34,6 +36,7 @@ router
 router
   .route('/organization/:organizationId/raised-causes')
   .get(
+    optionalAuth(),
     validateRequest(CauseValidation.getRaisedCausesSchema),
     CauseController.getRaisedCausesByOrganization
   );
