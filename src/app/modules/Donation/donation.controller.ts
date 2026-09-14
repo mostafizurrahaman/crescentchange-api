@@ -51,13 +51,14 @@ const createOneTimeDonation = asyncHandler(
         },
       },
     });
-  }
+  },
 );
 
 const getDonationQuote = asyncHandler(
   async (req: ExtendedRequest, res: Response) => {
-    const query = (req as ExtendedRequest & { validatedQuery?: Record<string, unknown> })
-      .validatedQuery as {
+    const query = (
+      req as ExtendedRequest & { validatedQuery?: Record<string, unknown> }
+    ).validatedQuery as {
       organizationId: string;
       amount: number;
       coverFees?: boolean;
@@ -78,7 +79,7 @@ const getDonationQuote = asyncHandler(
       message: 'Donation quote retrieved successfully',
       data: result,
     });
-  }
+  },
 );
 
 // 2. Get user donations with pagination and filters
@@ -103,7 +104,7 @@ const getUserDonations = asyncHandler(
       data: result.donations,
       meta: result.meta,
     });
-  }
+  },
 );
 
 // 3. Get specific donation by ID (user must own it)
@@ -125,7 +126,7 @@ const getDonationById = asyncHandler(
     if (!donation.donor) {
       throw new AppError(
         httpStatus.INTERNAL_SERVER_ERROR,
-        'Donor information not available'
+        'Donor information not available',
       );
     }
 
@@ -141,7 +142,7 @@ const getDonationById = asyncHandler(
       message: 'Donation retrieved successfully',
       data: donation,
     });
-  }
+  },
 );
 
 // 4. Get donations by organization ID (for organization admin)
@@ -173,14 +174,14 @@ const getOrganizationDonations = asyncHandler(
     if (organization.auth.toString() !== userId) {
       throw new AppError(
         httpStatus.FORBIDDEN,
-        "You do not have permission to access this organization's donations"
+        "You do not have permission to access this organization's donations",
       );
     }
 
     // Call service layer with full query object for QueryBuilder
     const result = await DonationService.getDonationsByOrganization(
       organizationId as string,
-      query
+      query,
     );
 
     // Send standardized response
@@ -197,7 +198,7 @@ const getOrganizationDonations = asyncHandler(
       },
       meta: result.meta,
     });
-  }
+  },
 );
 
 const getOrganizationCauseStats = asyncHandler(
@@ -228,7 +229,7 @@ const getOrganizationCauseStats = asyncHandler(
     ) {
       throw new AppError(
         httpStatus.FORBIDDEN,
-        "You do not have permission to access this organization's stats"
+        "You do not have permission to access this organization's stats",
       );
     }
 
@@ -237,7 +238,7 @@ const getOrganizationCauseStats = asyncHandler(
     const stats = await DonationService.getOrganizationCauseMonthlyStats(
       organizationId as string,
       causeId,
-      targetYear
+      targetYear,
     );
 
     sendResponse(res, {
@@ -245,7 +246,7 @@ const getOrganizationCauseStats = asyncHandler(
       message: 'Cause stats retrieved successfully',
       data: stats,
     });
-  }
+  },
 );
 
 // 7. Get donation full status with payment info
@@ -281,7 +282,7 @@ const getDonationFullStatus = asyncHandler(
     if (!result.donation.donor) {
       throw new AppError(
         httpStatus.INTERNAL_SERVER_ERROR,
-        'Donor information not available'
+        'Donor information not available',
       );
     }
 
@@ -296,7 +297,7 @@ const getDonationFullStatus = asyncHandler(
       message: 'Donation status retrieved successfully',
       data: result,
     });
-  }
+  },
 );
 
 // 8. Retry failed payment
@@ -327,7 +328,7 @@ const retryFailedPayment = asyncHandler(
         session: result.session,
       },
     });
-  }
+  },
 );
 
 // 9. Cancel donation
@@ -351,7 +352,7 @@ const cancelDonation = asyncHandler(
       message: 'Donation canceled successfully',
       data: donation,
     });
-  }
+  },
 );
 
 // 10. Refund donation
@@ -368,7 +369,11 @@ const refundDonation = asyncHandler(
     const { reason } = req.body;
 
     // Call service layer
-    const donation = await DonationService.refundDonation(id as string, userId, reason);
+    const donation = await DonationService.refundDonation(
+      id as string,
+      userId,
+      reason,
+    );
 
     // Send standardized response
     sendResponse(res, {
@@ -376,7 +381,7 @@ const refundDonation = asyncHandler(
       message: 'Donation refunded successfully',
       data: donation,
     });
-  }
+  },
 );
 
 // 11. Get donation statistics
@@ -396,7 +401,7 @@ const getDonationStatistics = asyncHandler(
 
     // Call service layer
     const stats = await DonationService.getDonationStatistics(
-      donor._id.toString()
+      donor._id.toString(),
     );
 
     // Send standardized response
@@ -405,7 +410,7 @@ const getDonationStatistics = asyncHandler(
       message: 'Donation statistics retrieved successfully',
       data: stats,
     });
-  }
+  },
 );
 
 // 12. Get donation Analytics controller :
@@ -440,7 +445,7 @@ const getDonationAnalyticsController = asyncHandler(
       if (!organization) {
         throw new AppError(
           httpStatus.NOT_FOUND,
-          'Organization profile not found'
+          'Organization profile not found',
         );
       }
 
@@ -457,7 +462,7 @@ const getDonationAnalyticsController = asyncHandler(
       filter as 'today' | 'this_week' | 'this_month',
       organizationId,
       year,
-      donationType || 'all'
+      donationType || 'all',
     );
 
     sendResponse(res, {
@@ -465,7 +470,7 @@ const getDonationAnalyticsController = asyncHandler(
       message: 'Donation analytics retrieved successfully',
       data: analytics,
     });
-  }
+  },
 );
 
 const getOrganizationYearlyDonationTrends = asyncHandler(async (req, res) => {
@@ -475,13 +480,13 @@ const getOrganizationYearlyDonationTrends = asyncHandler(async (req, res) => {
   if (!organizationId) {
     throw new AppError(
       httpStatus.UNAUTHORIZED,
-      'Organization ID not found for this user'
+      'Organization ID not found for this user',
     );
   }
 
   const result = await DonationService.getOrganizationYearlyTrends(
     Number(year),
-    organizationId.toString()
+    organizationId.toString(),
   );
 
   sendResponse(res, {
@@ -507,7 +512,7 @@ const getClientStats = asyncHandler(
     const stats = await DonationService.getClientStats(
       userId,
       roundupId,
-      timeFilter
+      timeFilter,
     );
 
     sendResponse(res, {
@@ -515,7 +520,7 @@ const getClientStats = asyncHandler(
       message: 'Client donation statistics retrieved successfully',
       data: stats,
     });
-  }
+  },
 );
 
 export const DonationController = {
