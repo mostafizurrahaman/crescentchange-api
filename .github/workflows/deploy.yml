@@ -20,6 +20,14 @@ jobs:
         run: npm install  --frozen-lockfile
       - name: Build Now
         run: npm run build
+      - name: CLEANUP ZIP FILE
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          script: |
+            find /home/ec2-user -maxdepth 1 -type f -name "*.zip" -delete
   # BUILD: Now Connect with SSH AND Build inside machain
   deploy:
     runs-on: ubuntu-latest
