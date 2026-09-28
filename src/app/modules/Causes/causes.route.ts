@@ -16,12 +16,12 @@ router
   .post(
     auth(ROLE.ORGANIZATION, ROLE.ADMIN),
     validateRequest(CauseValidation.createCauseSchema),
-    CauseController.createCause
+    CauseController.createCause,
   )
   .get(
     optionalAuth(),
     validateRequest(CauseValidation.getCausesQuerySchema),
-    CauseController.getCauses
+    CauseController.getCauses,
   );
 
 // Get causes by organization (public route with filters)
@@ -30,7 +30,7 @@ router
   .get(
     optionalAuth(),
     validateRequest(CauseValidation.getCausesByOrganizationSchema),
-    CauseController.getCausesByOrganization
+    CauseController.getCausesByOrganization,
   );
 
 router
@@ -38,14 +38,22 @@ router
   .get(
     optionalAuth(),
     validateRequest(CauseValidation.getRaisedCausesSchema),
-    CauseController.getRaisedCausesByOrganization
+    CauseController.getRaisedCausesByOrganization,
+  );
+
+router
+  .route('/organization/:organizationId/raised-causes-org-only')
+  .get(
+    auth(ROLE.ORGANIZATION, ROLE.ADMIN),
+    validateRequest(CauseValidation.getRaisedCausesSchema),
+    CauseController.getRaisedCausesByOrganizationOrgOnly,
   );
 
 // Update cause status (admin only) - Separate endpoint for status updates
 router.route('/:id/status').patch(
   auth(ROLE.ADMIN), //: TODO: Update cause status only for admin and organization
   validateRequest(CauseValidation.updateCauseStatusSchema),
-  CauseController.updateCauseStatus
+  CauseController.updateCauseStatus,
 );
 
 // Get, update, and delete cause by ID
@@ -53,17 +61,17 @@ router
   .route('/:id')
   .get(
     validateRequest(CauseValidation.getCauseByIdSchema),
-    CauseController.getCauseById
+    CauseController.getCauseById,
   )
   .patch(
     auth(ROLE.ORGANIZATION, ROLE.ADMIN),
     validateRequest(CauseValidation.updateCauseSchema),
-    CauseController.updateCause
+    CauseController.updateCause,
   )
   .delete(
     auth(ROLE.ORGANIZATION, ROLE.ADMIN),
     validateRequest(CauseValidation.getCauseByIdSchema),
-    CauseController.deleteCause
+    CauseController.deleteCause,
   );
 
 export const CauseRoutes = router;

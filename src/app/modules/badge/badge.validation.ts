@@ -56,6 +56,7 @@ const badgeTierSchema = z
     smallIconUrl: z.string().optional(),
     requiredCount: z.number().min(0).optional(),
     requiredAmount: z.number().min(0).optional(),
+    rewardPoints: z.number().min(0).optional(),
   })
   .refine(
     (data) => {

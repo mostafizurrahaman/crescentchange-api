@@ -21,6 +21,10 @@ import {
   donorDisplayMeta,
 } from '../../utils/donor-display-currency.utils';
 import { PLATFORM_BASE_CURRENCY } from '../../utils/currency.utils';
+import {
+  buildOrganizationCurrencyDisplay,
+  resolveOrganizationChargeCurrency,
+} from '../../utils/donation-pricing.utils';
 
 const parseMonthInput = (month: string, boundary: 'start' | 'end') => {
   const [yearStr, monthStr] = month.split('-');
@@ -37,7 +41,7 @@ const parseMonthInput = (month: string, boundary: 'start' | 'end') => {
   ) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'Month must be in YYYY-MM format!'
+      'Month must be in YYYY-MM format!',
     );
   }
 
@@ -77,7 +81,7 @@ const getRaisedCausesByOrganizationFromDB = async (
   organizationId: string,
   startMonth: string,
   endMonth: string,
-  options: RaisedCausesQueryOptions & { preferredCurrency?: string } = {}
+  options: RaisedCausesQueryOptions & { preferredCurrency?: string } = {},
 ): Promise<{
   raisedCauses: IRaisedCauseSummary[];
   meta: { page: number; limit: number; total: number; totalPage: number };
@@ -94,7 +98,7 @@ const getRaisedCausesByOrganizationFromDB = async (
   if (startDate > endDate) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'Start month must be before end month!'
+      'Start month must be before end month!',
     );
   }
 
@@ -163,7 +167,7 @@ const getRaisedCausesByOrganizationFromDB = async (
 
   const usdLayer = await buildDonorDisplayLayer(
     PLATFORM_BASE_CURRENCY,
-    options.preferredCurrency
+    options.preferredCurrency,
   );
 
   const raisedCauses = data.map((cause) => ({
@@ -188,6 +192,136 @@ const getRaisedCausesByOrganizationFromDB = async (
   return { raisedCauses, meta };
 };
 
+const getRaisedCausesByOrganizationFromDBOrgOnly = async (
+  organizationId: string,
+  startMonth: string,
+  endMonth: string,
+  options: RaisedCausesQueryOptions = {},
+): Promise<{
+  raisedCauses: IRaisedCauseSummary[];
+  currencyDisplay: ReturnType<typeof buildOrganizationCurrencyDisplay>;
+  meta: { page: number; limit: number; total: number; totalPage: number };
+}> => {
+  // Validate organization
+  const organization = await Organization.findById(organizationId);
+  if (!organization) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Organization not found!');
+  }
+
+  const organizationCurrency = resolveOrganizationChargeCurrency(
+    organization.country,
+    organization.defaultCurrency,
+  );
+  const currencyDisplay =
+    buildOrganizationCurrencyDisplay(organizationCurrency);
+
+  const startDate = parseMonthInput(startMonth, 'start');
+  const endDate = parseMonthInput(endMonth, 'end');
+
+  if (startDate > endDate) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      'Start month must be before end month!',
+    );
+  }
+
+  const page = options.page && options.page > 0 ? options.page : 1;
+  const limit = options.limit && options.limit > 0 ? options.limit : 10;
+
+  const allowedSortFields: RaisedCausesSortField[] = [
+    'totalDonationAmount',
+    'name',
+    'category',
+  ];
+  const isValidSortField = (field: unknown): field is RaisedCausesSortField =>
+    typeof field === 'string' &&
+    allowedSortFields.includes(field as RaisedCausesSortField);
+
+  const sortField: RaisedCausesSortField = isValidSortField(options.sortBy)
+    ? options.sortBy!
+    : 'totalDonationAmount';
+  const sortDirection = options.sortOrder === 'asc' ? 1 : -1;
+  const skip = (page - 1) * limit;
+
+  const aggregatedCauses = await Donation.aggregate([
+    {
+      $match: {
+        organization: new Types.ObjectId(organizationId),
+        status: 'completed',
+        donationDate: { $gte: startDate, $lte: endDate },
+        cause: { $exists: true, $ne: null },
+      },
+    },
+    {
+      $group: {
+        _id: '$cause',
+        totalDonationAmount: {
+          $sum: { $ifNull: ['$netAmount',  0] },
+        },
+      },
+    },
+    {
+      $lookup: {
+        from: 'causes',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'cause',
+      },
+    },
+    { $unwind: '$cause' },
+    {
+      $project: {
+        causeId: '$_id',
+        name: '$cause.name',
+        category: '$cause.category',
+        totalDonationAmount: 1,
+      },
+    },
+    { $sort: { [sortField]: sortDirection } },
+    {
+      $facet: {
+        data: [{ $skip: skip }, { $limit: limit }],
+        total: [{ $count: 'count' }],
+      },
+    },
+  ]);
+
+  const data =
+    (aggregatedCauses[0]?.data as RaisedCauseAggregateResult[]) ?? [];
+  const total = aggregatedCauses[0]?.total?.[0]?.count ?? 0;
+
+  const raisedCauses = data.map((cause) => {
+    const roundedAmount = Number((cause.totalDonationAmount || 0).toFixed(2));
+    return {
+      _id: cause.causeId.toString(),
+      causeId: cause.causeId.toString(),
+      name: cause.name,
+      category: cause.category,
+      reportingCurrency: organizationCurrency,
+      currency: organizationCurrency,
+      totalDonationAmount: roundedAmount,
+      displayTotalDonationAmount: roundedAmount,
+      displayCurrency: organizationCurrency,
+      displayCurrencySymbol: currencyDisplay.currencySymbol,
+      displayRate: 1,
+      isEstimate: false,
+      displayNote: `Amounts are in ${organizationCurrency}.`,
+      ...currencyDisplay,
+      startMonth: formatMonthLabel(startDate),
+      endMonth: formatMonthLabel(endDate),
+    };
+  });
+
+  const meta = {
+    page,
+    limit,
+    total,
+    totalPage: total > 0 ? Math.ceil(total / limit) : 0,
+  };
+
+  return { raisedCauses, currencyDisplay, meta };
+};
+
 // Define searchable fields (fixed from 'notes' to 'description')
 const causeSearchableFields = ['name', 'description'];
 
@@ -205,7 +339,7 @@ const createCauseIntoDB = async (payload: {
 
     // Verify organization exists
     const organization = await Organization.findById(
-      payload.organization
+      payload.organization,
     ).session(session);
 
     if (!organization) {
@@ -221,7 +355,7 @@ const createCauseIntoDB = async (payload: {
     if (isAlreadyExists) {
       throw new AppError(
         httpStatus.CONFLICT,
-        'A cause already exists in this category.'
+        'A cause already exists in this category.',
       );
     }
 
@@ -234,7 +368,7 @@ const createCauseIntoDB = async (payload: {
     // Populate organization
     const populatedCause = await Cause.findById(cause._id).populate(
       'organization',
-      'name serviceType coverImage'
+      'name serviceType coverImage',
     );
 
     return populatedCause;
@@ -248,7 +382,7 @@ const createCauseIntoDB = async (payload: {
 
     throw new AppError(
       httpStatus.INTERNAL_SERVER_ERROR,
-      'Failed to create cause!'
+      'Failed to create cause!',
     );
   }
 };
@@ -257,7 +391,7 @@ const createCauseIntoDB = async (payload: {
 const getCauseByIdFromDB = async (causeId: string) => {
   const cause = await Cause.findById(causeId).populate(
     'organization',
-    'name serviceType coverImage'
+    'name serviceType coverImage',
   );
 
   if (!cause) {
@@ -270,217 +404,203 @@ const getCauseByIdFromDB = async (causeId: string) => {
 // Get all causes with filters, search, pagination and sorting
 const getCausesFromDB = async (
   query: TGetAllCauses,
-  preferredCurrency?: string
+  preferredCurrency?: string,
 ) => {
-
-
   const {
-      searchTerm,
-      category,
-      status,
-      organization,
-      page,
-      limit,
-      // sort,
+    searchTerm,
+    category,
+    status,
+    organization,
+    page,
+    limit,
+    // sort,
   } = query as any;
 
-  // 1. Handle the page and limit : 
-  const limitNum = parseInt(limit) || 10
-  const pageNum = parseInt(page) || 1
-  const skip = (pageNum -1) * limitNum
+  // 1. Handle the page and limit :
+  const limitNum = parseInt(limit) || 10;
+  const pageNum = parseInt(page) || 1;
+  const skip = (pageNum - 1) * limitNum;
 
-  const pipeline : PipelineStage[] = []
-
+  const pipeline: PipelineStage[] = [];
 
   // ? Handle organization
- if (organization) {
-  const org = await Organization.findById(organization).populate({
-    path: "auth",
-    select: "_id isActive isDeleted",
-  });
+  if (organization) {
+    const org = await Organization.findById(organization).populate({
+      path: 'auth',
+      select: '_id isActive isDeleted',
+    });
 
-  const auth = org?.auth as unknown as IAuth | null;
+    const auth = org?.auth as unknown as IAuth | null;
 
-  if (!org || !auth || !auth.isActive || auth.isDeleted) {
-    throw new AppError(httpStatus.NOT_FOUND, "Organization not found!");
-  }
+    if (!org || !auth || !auth.isActive || auth.isDeleted) {
+      throw new AppError(httpStatus.NOT_FOUND, 'Organization not found!');
+    }
 
-   pipeline.push({ 
+    pipeline.push({
       $match: {
         organization: org?._id,
-      }
-   })
- }
+      },
+    });
+  }
 
-//  ? Handle Status: 
-if (status){ 
-    pipeline.push({ 
+  //  ? Handle Status:
+  if (status) {
+    pipeline.push({
       $match: {
-        status
-      }
-   })
-}
+        status,
+      },
+    });
+  }
 
-// ? Handle category: 
-if (status){ 
-    pipeline.push({ 
+  // ? Handle category:
+  if (status) {
+    pipeline.push({
       $match: {
-        category
-      }
-   })
-}
+        category,
+      },
+    });
+  }
 
-// ? Handle organization: 
-pipeline.push({ 
-  $lookup: {
-    from: "organizations",
-    localField: "organization", 
-    foreignField: "_id", 
-    as: "organizationDetails",
-    pipeline: [
-          { 
-            $lookup: {
-              from: "auths",
-              localField: "auth", 
-              foreignField: "_id", 
-              as: "authDetails",
-              pipeline: [
-                {
-                  $match: {
-                    isDeleted: { $ne: true },
-                  },
+  // ? Handle organization:
+  pipeline.push({
+    $lookup: {
+      from: 'organizations',
+      localField: 'organization',
+      foreignField: '_id',
+      as: 'organizationDetails',
+      pipeline: [
+        {
+          $lookup: {
+            from: 'auths',
+            localField: 'auth',
+            foreignField: '_id',
+            as: 'authDetails',
+            pipeline: [
+              {
+                $match: {
+                  isDeleted: { $ne: true },
                 },
-                { 
-                  $project: { 
-                    _id: 1, 
-                    email: 1, 
-                    isActive: 1, 
-                    isDeleted: 1,
-                  }
-                },              
-            ]
-         }
-      }, 
-      { 
-        $unwind: { 
-          path: '$authDetails', 
-          preserveNullAndEmptyArrays: true,
+              },
+              {
+                $project: {
+                  _id: 1,
+                  email: 1,
+                  isActive: 1,
+                  isDeleted: 1,
+                },
+              },
+            ],
+          },
+        },
+        {
+          $unwind: {
+            path: '$authDetails',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+      ],
+    },
+  });
 
-        }
-      }
-    ],     
+  pipeline.push({
+    $unwind: {
+      path: '$organizationDetails',
+      preserveNullAndEmptyArrays: true,
+    },
+  });
+
+  const searchableFields = [
+    'name',
+    'email',
+    'orgEmail',
+    'registeredCharityName',
+    'serviceType',
+    'orgName',
+    'category',
+  ];
+
+  // ? Handle
+  pipeline.push({
+    $project: {
+      _id: '$_id',
+      name: '$name',
+      description: '$description',
+      category: '$category',
+      status: '$status',
+      orgName: '$organizationDetails.name',
+      serviceType: '$organizationDetails.serviceType',
+      registeredCharityName: '$organizationDetails.registeredCharityName',
+      orgEmail: '$organizationDetails.authDetails.email',
+      isActive: '$organizationDetails.authDetails.isActive',
+      isDeleted: '$organizationDetails.authDetails.isDeleted',
+      organization: {
+        _id: '$organizationDetails._id',
+        id: '$organizationDetails._id',
+        name: '$organizationDetails.name',
+        serviceType: '$organizationDetails.serviceType',
+        coverImage: '$organizationDetails.coverImage',
+        logoImage: '$organizationDetails.logoImage',
+        aboutUs: '$organizationDetails.aboutUs',
+        dateOfEstablishment: '$organizationDetails.dateOfEstablishment',
+        registeredCharityName: '$organizationDetails.registeredCharityName',
+        isProfileVisible: '$organizationDetails.isProfileVisible',
+      },
+      createdAt: '$createdAt',
+      updatedAt: '$updatedAt',
+    },
+  });
+
+  pipeline.push({
+    $match: {
+      isActive: true,
+      isDeleted: {
+        $ne: true,
+      },
+    },
+  });
+
+  if (searchTerm) {
+    pipeline.push({
+      $match: {
+        $or: searchableFields.map((field) => {
+          return {
+            [field]: {
+              $regex: searchTerm,
+              $options: 'i',
+            },
+          };
+        }),
+      },
+    });
   }
-})
 
-pipeline.push({ 
-  $unwind: { 
-    path: "$organizationDetails", 
-    preserveNullAndEmptyArrays: true
-  }
-})
+  pipeline.push({
+    $facet: {
+      data: [
+        {
+          $skip: skip,
+        },
+        {
+          $limit: limitNum,
+        },
+      ],
+      meta: [
+        {
+          $count: 'total',
+        },
+      ],
+    },
+  });
 
+  const causes = await Cause.aggregate(pipeline);
 
-
-const searchableFields = ['name', "email", 'orgEmail', 'registeredCharityName', "serviceType", 'orgName', 'category' ]
-
-
-
-
-
-
-
-// ? Handle 
-pipeline.push({
-  $project:{ 
-    _id: "$_id", 
-    name: "$name", 
-    description: "$description",
-    category: "$category",
-    status: "$status",
-    orgName: "$organizationDetails.name", 
-    serviceType: "$organizationDetails.serviceType",
-    registeredCharityName:  "$organizationDetails.registeredCharityName", 
-    orgEmail: "$organizationDetails.authDetails.email",
-    isActive: "$organizationDetails.authDetails.isActive",
-    isDeleted: "$organizationDetails.authDetails.isDeleted", 
-    organization: {
-       _id: "$organizationDetails._id",
-       id: "$organizationDetails._id",
-       name: "$organizationDetails.name", 
-       serviceType: "$organizationDetails.serviceType",
-       coverImage: "$organizationDetails.coverImage", 
-       logoImage:  "$organizationDetails.logoImage", 
-       aboutUs:  "$organizationDetails.aboutUs", 
-       dateOfEstablishment:  "$organizationDetails.dateOfEstablishment", 
-       registeredCharityName:  "$organizationDetails.registeredCharityName", 
-       isProfileVisible:  "$organizationDetails.isProfileVisible", 
-    }, 
-    createdAt: "$createdAt", 
-    updatedAt: "$updatedAt", 
-  }
-   
-})
-
-
-pipeline.push({ 
-  $match: { 
-     isActive: true, 
-     isDeleted: { 
-      $ne: true
-     }
-  }
-})
-
-
-if ( searchTerm){ 
-  pipeline.push({ 
-     
-    $match: { 
-      $or: searchableFields.map((field) => { 
-        return {
-          [field]: { 
-            $regex: searchTerm, 
-            $options: 'i'
-          }
-        }
-      })
-
-    }
-  })
-}
-
-
-pipeline.push({ 
-  $facet: { 
-    data: [
-       {
-        $skip: skip
-       }, 
-       {
-         $limit: limitNum
-       } 
-    ], 
-    meta: [
-      { 
-        $count: "total"
-      }
-    ]
-  }
-})
-
-
-
-
-const causes = await Cause.aggregate(pipeline)
-
-// get data : 
-const result = causes?.[0].data
-const total = causes?.[0]?.meta?.[0]?.total
-const totalPages = Math.round(total / limitNum)
- 
+  // get data :
+  const result = causes?.[0].data;
+  const total = causes?.[0]?.meta?.[0]?.total;
+  const totalPages = Math.round(total / limitNum);
 
   // Get all cause IDs from result
-  const causeIds = result.map((cause : ICause) => cause._id);
+  const causeIds = result.map((cause: ICause) => cause._id);
 
   // Get donation statistics for all causes in one query
   const donationStats = await Donation.aggregate([
@@ -544,22 +664,20 @@ const totalPages = Math.round(total / limitNum)
     },
   ]);
 
-
   // Create maps for quick lookup
   const statsMap = new Map(
-    donationStats.map((stat) => [stat._id.toString(), stat])
+    donationStats.map((stat) => [stat._id.toString(), stat]),
   );
   const recentDonorsMap = new Map(
     recentDonors?.map((donor) => {
       return [donor?.cause?.toString(), recentDonors];
-    })
+    }),
   );
-
 
   // Add stats and recent donors to each cause
   const usdLayer = await buildDonorDisplayLayer(
     PLATFORM_BASE_CURRENCY,
-    preferredCurrency
+    preferredCurrency,
   );
 
   const causesWithStats = result.map((cause: ICause) => {
@@ -570,7 +688,7 @@ const totalPages = Math.round(total / limitNum)
     causeObject.reportingCurrency = PLATFORM_BASE_CURRENCY;
     causeObject.totalDonationAmount = stats?.totalDonationAmount || 0;
     causeObject.displayTotalDonationAmount = usdLayer.convert(
-      causeObject.totalDonationAmount
+      causeObject.totalDonationAmount,
     );
     Object.assign(causeObject, donorDisplayMeta(usdLayer));
     causeObject.totalDonors = stats?.totalDonors || 0;
@@ -580,26 +698,28 @@ const totalPages = Math.round(total / limitNum)
     return causeObject;
   });
 
-  return { causesWithStats, meta: { 
-     page: pageNum, 
-     limit: limitNum, 
-     total: total || 0,
-     totalPage: totalPages ?? 0
-
-  } }
+  return {
+    causesWithStats,
+    meta: {
+      page: pageNum,
+      limit: limitNum,
+      total: total || 0,
+      totalPage: totalPages ?? 0,
+    },
+  };
 };
 
 // Get causes by organization with filters
 const getCausesByOrganizationFromDB = async (
   organizationId: string,
-  query: Record<string, unknown> = {}
+  query: Record<string, unknown> = {},
 ) => {
   // Add organization filter to query
   const modifiedQuery = { ...query, organization: organizationId };
 
   const baseQuery = Cause.find({ organization: organizationId }).populate(
     'organization',
-    'name serviceType coverImage'
+    'name serviceType coverImage',
   );
 
   const causeQuery = new QueryBuilder<ICause>(baseQuery, modifiedQuery)
@@ -622,7 +742,7 @@ const updateCauseIntoDB = async (
     name?: string;
     description?: string;
     category?: CauseCategoryType;
-  }
+  },
 ) => {
   // Check if cause exists
   const existingCause = await Cause.findById(causeId);
@@ -641,7 +761,7 @@ const updateCauseIntoDB = async (
     if (isSameCategoryHasCause) {
       throw new AppError(
         httpStatus.CONFLICT,
-        'A cause already exists in this category!'
+        'A cause already exists in this category!',
       );
     }
   }
@@ -681,13 +801,14 @@ const getCauseCategoriesFromDB = async () => {
             .split(' ')
             .map(
               (subword) =>
-                subword.charAt(0).toUpperCase() + subword.slice(1).toLowerCase()
+                subword.charAt(0).toUpperCase() +
+                subword.slice(1).toLowerCase(),
             )
-            .join(' ')
+            .join(' '),
         )
         .join(' / '),
       value: value,
-    })
+    }),
   );
 
   return causeCategories;
@@ -696,7 +817,7 @@ const getCauseCategoriesFromDB = async () => {
 // Update cause status (Admin only)
 const updateCauseStatusIntoDB = async (
   causeId: string,
-  status: CauseStatusType
+  status: CauseStatusType,
 ) => {
   // Validate status
   if (!['pending', 'suspended', 'verified'].includes(status)) {
@@ -706,7 +827,7 @@ const updateCauseStatusIntoDB = async (
   const cause = await Cause.findByIdAndUpdate(
     causeId,
     { status },
-    { new: true, runValidators: true }
+    { new: true, runValidators: true },
   ).populate('organization', 'name serviceType coverImage');
 
   if (!cause) {
@@ -722,6 +843,7 @@ export const CauseService = {
   getCausesFromDB,
   getCausesByOrganizationFromDB,
   getRaisedCausesByOrganizationFromDB,
+  getRaisedCausesByOrganizationFromDBOrgOnly,
   updateCauseIntoDB,
   deleteCauseFromDB,
   getCauseCategoriesFromDB,

@@ -195,6 +195,31 @@ export const awardPointsForDonation = async (
 };
 
 // =======================
+// AWARD POINTS FOR BADGE UNLOCK
+// =======================
+export const awardPointsForBadgeUnlock = async (
+  userId: Types.ObjectId | string,
+  badgeId: Types.ObjectId | string,
+  badgeName: string,
+  tier: string,
+  pointsAmount: number,
+  session?: ClientSession
+): Promise<IPointsTransactionResult> => {
+  return createPointsTransaction(
+    {
+      userId,
+      transactionType: TRANSACTION_TYPE.EARNED,
+      amount: pointsAmount,
+      source: POINTS_SOURCE.BADGE_UNLOCK,
+      badgeId,
+      description: `${TRANSACTION_DESCRIPTIONS.BADGE_UNLOCKED} (${badgeName} - ${tier.toUpperCase()})`,
+      metadata: { badgeId, badgeName, tier, bonusPoints: pointsAmount },
+    },
+    session
+  );
+};
+
+// =======================
 // DEDUCT POINTS
 // =======================
 export const deductPoints = async (
@@ -507,6 +532,7 @@ export const getUserPointsSummary = async (
 export const pointsServices = {
   createPointsTransaction,
   awardPointsForDonation,
+  awardPointsForBadgeUnlock,
   deductPoints,
   refundPoints,
   adjustPoints,

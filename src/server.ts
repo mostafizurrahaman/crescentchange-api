@@ -9,12 +9,11 @@ import seedAdmin from './app/seed';
 import { initializeJobs } from './app/jobs';
 import { ensureBasiqWebhookRegistered } from './app/modules/BankConnection/basiq.service';
 import dns from 'node:dns/promises';
-dns.setServers(['1.1.1.1']);
+// dns.setServers(['1.1.1.1']);
 let server: Server | null = null;
 
 // bootstrap function
 async function bootstrap() {
-  
   try {
     // Connect to MongoDB
     await mongoose.connect(config.dbUrl as string);

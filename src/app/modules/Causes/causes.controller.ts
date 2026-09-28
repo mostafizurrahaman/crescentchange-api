@@ -14,14 +14,13 @@ const createCause = asyncHandler(async (req, res) => {
   const user = req.user as IAuth;
   let organizationId = req.body.organizationId;
 
-
   // If user is an organization, use their own ID
   if (user.role === ROLE.ORGANIZATION) {
     const organization = await Organization.findOne({ auth: user._id });
     if (!organization) {
       throw new AppError(
         httpStatus.NOT_FOUND,
-        'Organization profile not found!'
+        'Organization profile not found!',
       );
     }
     organizationId = organization._id.toString();
@@ -44,10 +43,10 @@ const createCause = asyncHandler(async (req, res) => {
 // Get all causes with filtering, searching, sorting and pagination
 // Get all causes with filtering, searching, sorting and pagination
 const getCauses = asyncHandler(async (req, res) => {
-  const query  = req.query as unknown as TGetAllCauses
+  const query = req.query as unknown as TGetAllCauses;
   // Pass the entire query object to service - QueryBuilder will handle it
   const preferredCurrency = await resolveUserPreferredCurrency(
-    req.user?._id?.toString()
+    req.user?._id?.toString(),
   );
   const result = await CauseService.getCausesFromDB(query, preferredCurrency);
 
@@ -55,7 +54,7 @@ const getCauses = asyncHandler(async (req, res) => {
     statusCode: httpStatus.OK,
     message: 'Causes retrieved successfully!',
     data: result.causesWithStats,
-    meta: result.meta
+    meta: result.meta,
     // meta: {
     //   page: result.meta.page,
     //   limit: result.meta.limit,
@@ -82,7 +81,7 @@ const getCausesByOrganization = asyncHandler(async (req, res) => {
   const { organizationId } = req.params;
   const result = await CauseService.getCausesByOrganizationFromDB(
     organizationId as string,
-    req.query
+    req.query,
   );
 
   sendResponse(res, {
@@ -117,10 +116,10 @@ const getRaisedCausesByOrganization = asyncHandler(async (req, res) => {
   };
 
   const preferredCurrency = await resolveUserPreferredCurrency(
-    req.user?._id?.toString()
+    req.user?._id?.toString(),
   );
   const result = await CauseService.getRaisedCausesByOrganizationFromDB(
-    organizationId as string ,
+    organizationId as string,
     startMonth,
     endMonth,
     {
@@ -129,7 +128,7 @@ const getRaisedCausesByOrganization = asyncHandler(async (req, res) => {
       sortBy,
       sortOrder,
       preferredCurrency,
-    }
+    },
   );
 
   sendResponse(res, {
@@ -141,6 +140,65 @@ const getRaisedCausesByOrganization = asyncHandler(async (req, res) => {
       limit: result.meta.limit,
       total: result.meta.total,
       totalPage: result.meta.totalPage,
+    },
+  });
+});
+
+const getRaisedCausesByOrganizationOrgOnly = asyncHandler(async (req, res) => {
+  const { organizationId } = req.params;
+  const user = req.user;
+
+  // Check if organization user has permission to access this organization's data
+  if (user && user.role === ROLE.ORGANIZATION) {
+    const organization = await Organization.findOne({ auth: user._id }).select(
+      '_id',
+    );
+    if (!organization || organization._id.toString() !== organizationId) {
+      throw new AppError(
+        httpStatus.FORBIDDEN,
+        'You are not authorized to access this organization raised causes!',
+      );
+    }
+  }
+
+  const {
+    startMonth,
+    endMonth,
+    page = '1',
+    limit = '10',
+    sortBy = 'totalDonationAmount',
+    sortOrder = 'desc',
+  } = req.query as {
+    startMonth: string;
+    endMonth: string;
+    page?: string;
+    limit?: string;
+    sortBy?: 'totalDonationAmount' | 'name' | 'category';
+    sortOrder?: 'asc' | 'desc';
+  };
+
+  const result = await CauseService.getRaisedCausesByOrganizationFromDBOrgOnly(
+    organizationId as string,
+    startMonth,
+    endMonth,
+    {
+      page: Number(page),
+      limit: Number(limit),
+      sortBy,
+      sortOrder,
+    },
+  );
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    message: 'Raised causes retrieved successfully!',
+    data: result.raisedCauses,
+    meta: {
+      page: result.meta.page,
+      limit: result.meta.limit,
+      total: result.meta.total,
+      totalPage: result.meta.totalPage,
+      ...result.currencyDisplay,
     },
   });
 });
@@ -158,7 +216,7 @@ const updateCause = asyncHandler(async (req, res) => {
     if (cause.organization?._id.toString() !== organization?._id.toString()) {
       throw new AppError(
         httpStatus.FORBIDDEN,
-        'You are not authorized to update this cause!'
+        'You are not authorized to update this cause!',
       );
     }
   }
@@ -185,7 +243,7 @@ const deleteCause = asyncHandler(async (req, res) => {
     if (cause.organization?._id.toString() !== organization?._id.toString()) {
       throw new AppError(
         httpStatus.FORBIDDEN,
-        'You are not authorized to delete this cause!'
+        'You are not authorized to delete this cause!',
       );
     }
   }
@@ -215,7 +273,10 @@ const updateCauseStatus = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
 
-  const result = await CauseService.updateCauseStatusIntoDB(id as string, status);
+  const result = await CauseService.updateCauseStatusIntoDB(
+    id as string,
+    status,
+  );
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
@@ -230,6 +291,7 @@ export const CauseController = {
   getCauseById,
   getCausesByOrganization,
   getRaisedCausesByOrganization,
+  getRaisedCausesByOrganizationOrgOnly,
   updateCause,
   deleteCause,
   getCauseCategories,

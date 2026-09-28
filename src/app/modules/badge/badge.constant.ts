@@ -4,6 +4,7 @@ export const BADGE_TIER = {
   BRONZE: 'bronze',
   SILVER: 'silver',
   GOLD: 'gold',
+  LOCKED: 'locked',
 } as const;
 
 export const BADGE_TIER_VALUES = Object.values(BADGE_TIER);
@@ -71,6 +72,15 @@ export const VALID_CATEGORIES = [
 ] as const;
 
 export const TIER_ORDER_PROGRESSION = ['colour', 'bronze', 'silver', 'gold'];
+
+export const BADGE_TIER_DEFAULT_POINTS: Record<string, number> = {
+  'one-tier': 500,
+  colour: 0,
+  bronze: 250,
+  silver: 500,
+  gold: 1000,
+  locked: 0,
+};
 
 
 export const BADGE_MESSAGES = {

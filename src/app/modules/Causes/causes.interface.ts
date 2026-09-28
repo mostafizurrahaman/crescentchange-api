@@ -33,10 +33,23 @@ export interface ICause extends Document {
 }
 
 export interface IRaisedCauseSummary {
+  _id?: string;
   causeId: string;
   name: string;
   category: CauseCategoryType;
+  reportingCurrency?: string;
+  currency?: string;
+  currencySymbol?: string;
   totalDonationAmount: number;
+  displayTotalDonationAmount?: number;
+  displayCurrency?: string;
+  displayCurrencySymbol?: string;
+  displayRate?: number;
+  isEstimate?: boolean;
+  displayNote?: string;
+  organizationCurrency?: string;
+  stripeCurrency?: string;
+  amountLabel?: string;
   startMonth: string;
   endMonth: string;
 }

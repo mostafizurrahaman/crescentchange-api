@@ -9,7 +9,9 @@ import {
   TIER_ORDER_PROGRESSION,
   BADGE_MESSAGES,
   SEASONAL_PERIOD,
+  BADGE_TIER_DEFAULT_POINTS,
 } from './badge.constant';
+import { pointsServices } from '../Points/points.service';
 import { AppError, uploadToS3 } from '../../utils';
 import httpStatus from 'http-status';
 import { currencySymbol as resolveCurrencySymbol } from '../../utils/currency.utils';
@@ -347,10 +349,19 @@ const getAllBadgesWithProgress = async (
   const result = badges.map((badge: any) => {
     const userBadge = userBadgeMap.get(badge._id.toString()) as any;
 
+    const isSingleTierUnlocked =
+      userBadge?.tiersUnlocked?.some((t: any) => t.tier === 'one-tier') || false;
+
     // Determine the current tier name
-    const currentTierName =
-      userBadge?.currentTier || (badge.isSingleTier ? 'one-tier' : 'colour');
-    const isCompleted = userBadge?.isCompleted || false;
+    const currentTierName = badge.isSingleTier
+      ? isSingleTierUnlocked
+        ? 'one-tier'
+        : 'locked'
+      : userBadge?.currentTier || 'colour';
+
+    const isCompleted = badge.isSingleTier
+      ? isSingleTierUnlocked
+      : userBadge?.isCompleted || false;
 
     // Identify the Next Target Tier
     let nextTier: any = undefined;
@@ -432,13 +443,17 @@ const getAllBadgesWithProgress = async (
       }
     }
 
+    const isBadgeUnlocked = badge.isSingleTier
+      ? isSingleTierUnlocked
+      : (userBadge?.tiersUnlocked?.length || 0) > 0;
+
     return {
       badgeId: badge._id,
       name: badge.name,
       icon: badge.icon,
       description: badge.description,
       type: badge.unlockType,
-      isUnlocked: !!userBadge,
+      isUnlocked: isBadgeUnlocked,
       tiers: badge.tiers.map((tier: any) => ({
         tier: tier.tier,
         name: tier.name,
@@ -455,6 +470,11 @@ const getAllBadgesWithProgress = async (
 
         requiredCount: tier.requiredCount,
         requiredAmount: tier.requiredAmount,
+        rewardPoints:
+          tier.rewardPoints ??
+          (BADGE_TIER_DEFAULT_POINTS[tier.tier] !== undefined
+            ? BADGE_TIER_DEFAULT_POINTS[tier.tier]
+            : 0),
       })),
       isCompleted,
       currentTier: currentTierName,
@@ -761,8 +781,13 @@ const checkAndUpdateBadgesForDonation = async (
     // Donation Size
     else if (badge.unlockType === BADGE_UNLOCK_TYPE.DONATION_SIZE) {
       const sizeAmount = donation.amountBase ?? donation.amount;
-      if (badge.maxDonationAmount && sizeAmount < badge.maxDonationAmount)
-        matchesCondition = true;
+      const minOk = badge.minDonationAmount
+        ? sizeAmount >= badge.minDonationAmount
+        : true;
+      const maxOk = badge.maxDonationAmount
+        ? sizeAmount <= badge.maxDonationAmount
+        : true;
+      if (minOk && maxOk) matchesCondition = true;
     }
 
     // General Counters
@@ -805,13 +830,15 @@ const updateUserBadgeProgress = async (
       lastDonationDate: date,
     },
     $setOnInsert: {
-      currentTier: badge.isSingleTier ? BADGE_TIER.ONE_TIER : BADGE_TIER.COLOUR,
-      tiersUnlocked: [
-        {
-          tier: badge.isSingleTier ? BADGE_TIER.ONE_TIER : BADGE_TIER.COLOUR,
-          unlockedAt: new Date(),
-        },
-      ],
+      currentTier: badge.isSingleTier ? BADGE_TIER.LOCKED : BADGE_TIER.COLOUR,
+      tiersUnlocked: badge.isSingleTier
+        ? []
+        : [
+            {
+              tier: BADGE_TIER.COLOUR,
+              unlockedAt: new Date(),
+            },
+          ],
       isCompleted: false,
       consecutiveMonths: 0,
       // REMOVED: progressCount: 0 to allow $inc to work without conflict
@@ -866,46 +893,13 @@ const updateUserBadgeProgress = async (
   // Complete Frequency Logic (Monthly Streak)
   if (badge.unlockType === BADGE_UNLOCK_TYPE.FREQUENCY) {
     const currentDate = new Date(date);
-    const currentMonth = currentDate.getMonth();
-    const currentYear = currentDate.getFullYear();
-
-    // Check if we need to fetch donation history
-    let needsHistoryCheck = true;
-
-    if (userBadge.lastDonationDate) {
-      const lastDate = new Date(userBadge.lastDonationDate);
-      const lastMonth = lastDate.getMonth();
-      const lastYear = lastDate.getFullYear();
-
-      // Calculate month difference
-      const monthsDiff =
-        (currentYear - lastYear) * 12 + (currentMonth - lastMonth);
-
-      if (monthsDiff === 0) {
-        // Same month - no change to streak
-        needsHistoryCheck = false;
-      } else if (monthsDiff === 1) {
-        // Consecutive month - increment
-        userBadge.consecutiveMonths = (userBadge.consecutiveMonths || 0) + 1;
-        userBadge.progressCount = userBadge.consecutiveMonths;
-        shouldSave = true;
-        needsHistoryCheck = false;
-      } else if (monthsDiff > 1) {
-        // Gap in months - need to check if this starts a new streak
-        needsHistoryCheck = true;
-      }
-    }
-
-    // If needed, check donation history to calculate the streak
-    if (needsHistoryCheck) {
-      const monthsWithDonations = await calculateConsecutiveMonths(
-        userId,
-        currentDate
-      );
-      userBadge.consecutiveMonths = monthsWithDonations;
-      userBadge.progressCount = monthsWithDonations;
-      shouldSave = true;
-    }
+    const monthsWithDonations = await calculateConsecutiveMonths(
+      userId,
+      currentDate
+    );
+    userBadge.consecutiveMonths = monthsWithDonations;
+    userBadge.progressCount = monthsWithDonations;
+    shouldSave = true;
   }
 
   if (shouldSave) await userBadge.save();
@@ -916,20 +910,16 @@ const updateUserBadgeProgress = async (
 
 // Helper function to calculate consecutive months
 const calculateConsecutiveMonths = async (
-  userId: Types.ObjectId,
+  donorId: Types.ObjectId,
   currentDate: Date
 ): Promise<number> => {
-  // Get the client
-  const client = await Client.findOne({ auth: userId }).lean();
-  if (!client) return 1;
-
-  // Find all donations for this user, sorted by date descending
+  // Find all completed donations for this donor, sorted by date descending
   const donations = await Donation.find({
-    client: client._id,
+    donor: donorId,
     status: 'completed',
   })
-    .sort({ donationDate: -1 })
-    .select('donationDate')
+    .sort({ donationDate: -1, createdAt: -1 })
+    .select('donationDate createdAt')
     .lean();
 
   if (donations.length === 0) return 1;
@@ -942,9 +932,18 @@ const calculateConsecutiveMonths = async (
     monthsSet.add(key);
   });
 
+  // Ensure current donation month is represented
+  const currentKey = `${currentDate.getFullYear()}-${currentDate.getMonth()}`;
+  monthsSet.add(currentKey);
+
   // Count consecutive months from current month backwards
   let consecutiveCount = 0;
-  let checkDate = new Date(currentDate);
+  // Day 1 prevents month-end overflow issues when stepping backward
+  const checkDate = new Date(
+    currentDate.getFullYear(),
+    currentDate.getMonth(),
+    1
+  );
 
   while (true) {
     const key = `${checkDate.getFullYear()}-${checkDate.getMonth()}`;
@@ -957,7 +956,7 @@ const calculateConsecutiveMonths = async (
     }
   }
 
-  return consecutiveCount;
+  return Math.max(1, consecutiveCount);
 };
 /**
  * Core Engine: Checks if current progress qualifies for a tier upgrade.
@@ -972,8 +971,11 @@ const checkTierUpgrade = async (userBadge: any, badge: any): Promise<void> => {
 
   // 2. Determine the name of the next tier to check
   if (badge.isSingleTier) {
-    // For single tier badges, the only target is 'one-tier'
-    if (currentTier === 'one-tier') return;
+    // For single tier badges, the target is 'one-tier'
+    const alreadyUnlocked = userBadge.tiersUnlocked?.some(
+      (t: any) => t.tier === 'one-tier'
+    );
+    if (alreadyUnlocked || userBadge.isCompleted) return;
     nextTierName = 'one-tier';
   } else {
     // For multi-tier, follow the progression: colour -> bronze -> silver -> gold
@@ -1060,19 +1062,46 @@ const checkTierUpgrade = async (userBadge: any, badge: any): Promise<void> => {
     // Save the progress
     await userBadge.save();
 
-    // 10. Send In-App Notification
+    // 10. Award Points for Badge Unlock
+    const tierPoints =
+      targetTierConfig.rewardPoints ??
+      (BADGE_TIER_DEFAULT_POINTS[nextTierName] !== undefined
+        ? BADGE_TIER_DEFAULT_POINTS[nextTierName]
+        : 0);
+
+    if (tierPoints > 0) {
+      try {
+        await pointsServices.awardPointsForBadgeUnlock(
+          userBadge.user,
+          badge._id,
+          badge.name,
+          nextTierName,
+          tierPoints
+        );
+        console.log(
+          `✅ Awarded ${tierPoints} bonus points to user for unlocking ${nextTierName} of "${badge.name}"`
+        );
+      } catch (pointsError) {
+        console.error('Points Award for Badge Unlock Error:', pointsError);
+      }
+    }
+
+    // 11. Send In-App Notification
     try {
       const client = await Client.findById(userBadge.user);
       if (client && client.auth) {
         await createNotification(
           client.auth.toString(),
           NOTIFICATION_TYPE.BADGE_UNLOCKED,
-          `Congratulations! You've unlocked the ${targetTierConfig.name} tier for the "${badge.name}" badge!`,
+          `Congratulations! You've unlocked the ${targetTierConfig.name} tier for the "${badge.name}" badge!${
+            tierPoints > 0 ? ` +${tierPoints} bonus points earned!` : ''
+          }`,
           badge._id.toString(),
           {
             tier: nextTierName,
             badgeName: badge.name,
             badgeId: badge._id.toString(),
+            bonusPoints: tierPoints,
           }
         );
       }
@@ -1080,7 +1109,7 @@ const checkTierUpgrade = async (userBadge: any, badge: any): Promise<void> => {
       console.error('Badge Notification Error:', error);
     }
 
-    // 11. RECURSION
+    // 12. RECURSION
     // Check again immediately. This allows a user to jump from
     // "Colour" -> "Bronze" -> "Silver" in a single donation if they
     // meet the higher requirements.

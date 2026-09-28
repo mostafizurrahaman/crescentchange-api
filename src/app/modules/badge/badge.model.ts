@@ -25,6 +25,7 @@ const BadgeTierSchema = new Schema<IBadgeTierConfig>(
     smallIconUrl: { type: String, required: true },
     requiredCount: { type: Number, default: 0 },
     requiredAmount: { type: Number, default: 0 },
+    rewardPoints: { type: Number, default: 0 },
   },
   { _id: false }
 );

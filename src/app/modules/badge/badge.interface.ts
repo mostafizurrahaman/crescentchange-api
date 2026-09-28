@@ -15,6 +15,7 @@ export interface IBadgeTierConfig {
   smallIconUrl: string; // png, jpg
   requiredCount: number;
   requiredAmount?: number;
+  rewardPoints?: number;
 }
 
 export interface IBadge extends Document {

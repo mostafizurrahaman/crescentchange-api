@@ -437,12 +437,20 @@ const handlePaymentIntentSucceeded = async (
 
     // 3. Award points
     try {
+      const donorClientId =
+        (donation.donor as any)._id?.toString() || donation.donor.toString();
+      const pointsBaseAmount = donation.amountBase ?? donation.amount;
+
       await pointsServices.awardPointsForDonation(
-        donation.donor._id.toString(),
+        donorClientId,
         donation._id!.toString(),
-        donation.amount
+        pointsBaseAmount
       );
-      console.log(`✅ Points awarded to donor`);
+      console.log(
+        `✅ Points awarded to donor (${pointsBaseAmount} base USD, points: ${Math.floor(
+          pointsBaseAmount * 100
+        )})`
+      );
     } catch (err) {
       console.error(`❌ Points awarding failed:`, err);
     }
@@ -450,8 +458,10 @@ const handlePaymentIntentSucceeded = async (
     // 4. Check and update badges
     try {
       console.log(`🏅 Checking badges...`);
+      const donorClientId =
+        (donation.donor as any)._id?.toString() || donation.donor.toString();
       await badgeService.checkAndUpdateBadgesForDonation(
-        donation.donor._id?.toString(),
+        donorClientId,
         donation._id?.toString() as string
       );
       console.log(`✅ Badges checked and updated`);
