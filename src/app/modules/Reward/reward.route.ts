@@ -95,11 +95,19 @@ router.patch(
   RewardController.updateRewardImage
 );
 
-// Public: Get Reward Details (Dynamic :id)
+// Business: Check if reward can be deleted
+router.get(
+  '/can-delete/:id',
+  auth(ROLE.BUSINESS, ROLE.ADMIN),
+  checkSubscription(),
+  RewardController.canDeleteReward
+);
+
+// Get Reward Details (Dynamic :id)
 // This catches /:id, so it must be near the bottom
 router.get(
   '/:id',
-  auth(ROLE.CLIENT, ROLE.ADMIN),
+  auth(ROLE.CLIENT, ROLE.ADMIN, ROLE.BUSINESS),
   validateRequest(rewardValidation.getRewardByIdSchema),
   RewardController.getRewardById
 );

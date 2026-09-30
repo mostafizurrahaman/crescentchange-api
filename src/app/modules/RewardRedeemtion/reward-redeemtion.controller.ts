@@ -17,9 +17,13 @@ const claimReward = asyncHandler(
       throw new AppError(httpStatus.UNAUTHORIZED, 'User not authenticated');
     }
 
+    const { preferredCodeType, idempotencyKey } = req.body || {};
+
     const result = await rewardRedemptionService.claimReward({
       rewardId: req.params.id as string,
       userId,
+      preferredCodeType,
+      idempotencyKey,
     });
 
     sendResponse(res, {
@@ -66,7 +70,12 @@ const cancelClaimedReward = asyncHandler(
  */
 const redeemReward = asyncHandler(
   async (req: ExtendedRequest, res: Response) => {
-    const { staffAuthId, code, method } = req.body;
+    const staffAuthId = req.user?._id?.toString() || req.body?.staffAuthId;
+    const { code, method } = req.body;
+
+    if (!staffAuthId) {
+      throw new AppError(httpStatus.UNAUTHORIZED, 'Staff not authenticated');
+    }
 
     const result = await rewardRedemptionService.redeemRewardByCode({
       code,
@@ -150,14 +159,14 @@ const getClaimedRewardById = asyncHandler(
 const verifyRedemption = asyncHandler(
   async (req: ExtendedRequest, res: Response) => {
     const { code, redemptionId } = req.body;
-    const staffBusinessId = req.user?._id?.toString();
+    const staffAuthId = req.user?._id?.toString();
 
-    if (!staffBusinessId) {
+    if (!staffAuthId) {
       throw new AppError(httpStatus.UNAUTHORIZED, 'Business not authenticated');
     }
 
     const result = await rewardRedemptionService.verifyRedemption(
-      staffBusinessId,
+      staffAuthId,
       code,
       redemptionId
     );
