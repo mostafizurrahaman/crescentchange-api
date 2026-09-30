@@ -8,6 +8,7 @@ import {
   ILimitUpdateRecord,
   IViewReward,
 } from './reward.interface';
+import { RewardCode } from '../RewardCode/reward-code.model';
 import {
   REWARD_TYPE_VALUES,
   REWARD_STATUS_VALUES,
@@ -213,14 +214,7 @@ rewardSchema.index({ business: 1, isActive: 1 });
 rewardSchema.index({ business: 1, title: 1 }, { unique: true });
 rewardSchema.index({ type: 1, category: 1 });
 rewardSchema.index({ featured: 1, priority: -1 });
-rewardSchema.index({ 'codes.code': 1 });
 rewardSchema.index({ title: 'text', description: 'text' });
-
-// Instance Methods
-rewardSchema.methods.incrementViews = async function (): Promise<void> {
-  this.views += 1;
-  await this.save();
-};
 
 rewardSchema.methods.incrementRedemptions = async function (): Promise<void> {
   this.redemptions += 1;
@@ -237,6 +231,7 @@ rewardSchema.methods.incrementRedemptions = async function (): Promise<void> {
 rewardSchema.methods.decrementStock = async function (): Promise<boolean> {
   if (this.remainingCount <= 0) return false;
 
+  this.redemptions += 1;
   this.redeemedCount += 1;
   this.remainingCount -= 1;
 
@@ -248,56 +243,16 @@ rewardSchema.methods.decrementStock = async function (): Promise<boolean> {
   return true;
 };
 
-rewardSchema.methods.getAvailableCode = function (
-  type?: 'discount' | 'giftcard'
-): IRewardCode | null {
-  if (this.codes.length === 0) return null;
-
-  if (type) {
-    const filterKey = type === 'giftcard' ? 'isGiftCard' : 'isDiscountCode';
-    return (
-      this.codes.find((code: IRewardCode) => !code.isUsed && code[filterKey]) ||
-      null
-    );
-  }
-
-  return this.codes.find((code: IRewardCode) => !code.isUsed) || null;
+rewardSchema.methods.getAvailableCode = function (): IRewardCode | null {
+  return null;
 };
 
-rewardSchema.methods.markCodeAsUsed = async function (
-  code: string,
-  userId: Types.ObjectId,
-  redemptionId: Types.ObjectId
-): Promise<void> {
-  const codeIndex = this.codes.findIndex(
-    (c: IRewardCode) => c.code === code && !c.isUsed
-  );
-
-  if (codeIndex === -1) {
-    throw new Error('Code not found or already used');
-  }
-
-  this.codes[codeIndex].isUsed = true;
-  this.codes[codeIndex].usedBy = userId;
-  this.codes[codeIndex].usedAt = new Date();
-  this.codes[codeIndex].redemptionId = redemptionId;
-
-  await this.save();
+rewardSchema.methods.markCodeAsUsed = async function (): Promise<void> {
+  return;
 };
 
-rewardSchema.methods.returnCode = async function (code: string): Promise<void> {
-  const codeIndex = this.codes.findIndex(
-    (c: IRewardCode) => c.code === code && c.isUsed
-  );
-
-  if (codeIndex === -1) return;
-
-  this.codes[codeIndex].isUsed = false;
-  this.codes[codeIndex].usedBy = undefined;
-  this.codes[codeIndex].usedAt = undefined;
-  this.codes[codeIndex].redemptionId = undefined;
-
-  await this.save();
+rewardSchema.methods.returnCode = async function (): Promise<void> {
+  return;
 };
 
 rewardSchema.methods.checkAvailability = function (): boolean {
@@ -420,14 +375,14 @@ rewardSchema.statics.checkCodeUniqueness = async function (
   excludeRewardId?: Types.ObjectId
 ): Promise<boolean> {
   const query: Record<string, unknown> = {
-    'codes.code': { $in: codes },
+    code: { $in: codes },
   };
 
   if (excludeRewardId) {
-    query._id = { $ne: excludeRewardId };
+    query.reward = { $ne: excludeRewardId };
   }
 
-  const duplicates = await this.findOne(query);
+  const duplicates = await RewardCode.findOne(query);
   return !duplicates;
 };
 

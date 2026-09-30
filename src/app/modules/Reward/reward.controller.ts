@@ -7,6 +7,8 @@ import { REWARD_MESSAGES } from './reward.constant';
 import { AppError, asyncHandler, sendResponse } from '../../utils';
 import { ExtendedRequest } from '../../types';
 import { runRewardMaintenanceManual } from '../../jobs/updateRewardsStatus.job';
+import Business from '../Business/business.model';
+import { ROLE } from '../Auth/auth.constant';
 
 // Type for multer files object
 interface MulterFiles {
@@ -17,37 +19,61 @@ interface MulterFiles {
 /**
  * Create a new reward
  */
-const createReward = asyncHandler(async (req: Request, res: Response) => {
-  const files = req.files as MulterFiles | undefined;
-  const rewardImage = files?.rewardImage?.[0];
-  const codesFiles = files?.codesFiles;
+const createReward = asyncHandler(
+  async (req: ExtendedRequest, res: Response) => {
+    const files = req.files as MulterFiles | undefined;
+    const rewardImage = files?.rewardImage?.[0];
+    const codesFiles = files?.codesFiles;
 
-  const reward = await rewardService.createReward(
-    req.body,
-    rewardImage,
-    codesFiles
-  );
+    if (req.user?.role === ROLE.BUSINESS) {
+      const business = await Business.findOne({ auth: req.user._id });
+      if (!business) {
+        throw new AppError(httpStatus.NOT_FOUND, 'Business profile not found');
+      }
+      req.body.businessId = business._id.toString();
+    }
 
-  sendResponse(res, {
-    statusCode: httpStatus.CREATED,
-    message: REWARD_MESSAGES.CREATED,
-    data: reward,
-  });
-});
+    const reward = await rewardService.createReward(
+      req.body,
+      rewardImage,
+      codesFiles
+    );
 
-const createOnlineRewardController = async (req: Request, res: Response) => {
-  const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-  const imageFile = files['rewardImage']?.[0];
-  const codesFiles = files['codesFiles']; // Array of files
+    sendResponse(res, {
+      statusCode: httpStatus.CREATED,
+      message: REWARD_MESSAGES.CREATED,
+      data: reward,
+    });
+  }
+);
 
-  const result = await rewardService.createOnlineReward(
-    req.body,
-    imageFile,
-    codesFiles
-  );
+const createOnlineRewardController = asyncHandler(
+  async (req: ExtendedRequest, res: Response) => {
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    const imageFile = files['rewardImage']?.[0];
+    const codesFiles = files['codesFiles'];
 
-  res.status(201).json({ success: true, data: result });
-};
+    if (req.user?.role === ROLE.BUSINESS) {
+      const business = await Business.findOne({ auth: req.user._id });
+      if (!business) {
+        throw new AppError(httpStatus.NOT_FOUND, 'Business profile not found');
+      }
+      req.body.businessId = business._id.toString();
+    }
+
+    const result = await rewardService.createOnlineReward(
+      req.body,
+      imageFile,
+      codesFiles
+    );
+
+    sendResponse(res, {
+      statusCode: httpStatus.CREATED,
+      message: REWARD_MESSAGES.CREATED,
+      data: result,
+    });
+  }
+);
 
 /**
  * Update a reward
@@ -97,7 +123,8 @@ const updateRewardImage = asyncHandler(
 
     const reward = await rewardService.updateRewardImage(
       req.params.id as string,
-      req.file
+      req.file,
+      userId
     );
 
     sendResponse(res, {
@@ -111,16 +138,28 @@ const updateRewardImage = asyncHandler(
 /**
  * Get reward by ID
  */
-const getRewardById = asyncHandler(async (req: Request, res: Response) => {
-  const userId = req.user._id?.toString();
-  const reward = await rewardService.getRewardById(req.params.id as string, userId);
+const getRewardById = asyncHandler(
+  async (req: Request, res: Response, next) => {
+    const userId = (req as ExtendedRequest).user?._id?.toString();
+    try {
+      const reward = await rewardService.getRewardById(
+        req.params.id as string,
+        userId
+      );
 
-  sendResponse(res, {
-    statusCode: httpStatus.OK,
-    message: 'Reward retrieved successfully',
-    data: reward,
-  });
-});
+      sendResponse(res, {
+        statusCode: httpStatus.OK,
+        message: 'Reward retrieved successfully',
+        data: reward,
+      });
+    } catch (err: any) {
+      if (err?.statusCode === httpStatus.NOT_FOUND && next) {
+        return next();
+      }
+      throw err;
+    }
+  }
+);
 
 /**
  * Get all rewards with filters
@@ -268,14 +307,20 @@ const canDeleteReward = asyncHandler(
 /**
  * Upload codes to reward (supports multiple files)
  */
-const uploadCodes = asyncHandler(async (req: Request, res: Response) => {
-  const files = req.files as Express.Multer.File[] | undefined;
+const uploadCodes = asyncHandler(
+  async (req: ExtendedRequest, res: Response) => {
+    const files = req.files as Express.Multer.File[] | undefined;
+    const userId = req.user?._id?.toString();
 
-  if (!files || files.length === 0) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'No file(s) uploaded');
-  }
+    if (!files || files.length === 0) {
+      throw new AppError(httpStatus.BAD_REQUEST, 'No file(s) uploaded');
+    }
 
-  const result = await rewardService.uploadCodesToReward(req.params.id as string, files);
+    const result = await rewardService.uploadCodesToReward(
+      req.params.id as string,
+      files,
+      userId
+    );
 
   sendResponse(res, {
     statusCode: httpStatus.OK,

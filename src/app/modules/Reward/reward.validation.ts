@@ -232,8 +232,8 @@ const getAdminRewardsSchema = z.object({
     fromDate: z.string().optional(), // Date string validation handled in service/querybuilder if needed
     toDate: z.string().optional(),
     isActive: z
-      .string()
-      .transform((val) => Boolean(val))
+      .enum(['true', 'false'])
+      .transform((val) => val === 'true')
       .optional(),
     searchTerm: z.string().optional(),
     page: z.coerce.number().min(1).default(1),

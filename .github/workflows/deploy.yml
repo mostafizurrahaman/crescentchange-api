@@ -27,7 +27,7 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
           script: |
-            find /home/ec2-user -maxdepth 1 -type f -name "*.zip" -delete
+            find /home/ec2-user -maxdepth 1 -type f -name "*.tar.gz" -delete
   # BUILD: Now Connect with SSH AND Build inside machain
   deploy:
     runs-on: ubuntu-latest

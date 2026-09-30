@@ -533,6 +533,21 @@ const updateReward = async (
     throw new AppError(httpStatus.NOT_FOUND, REWARD_MESSAGES.NOT_FOUND);
   }
 
+  // Ownership validation
+  if (userId) {
+    const user = await Auth.findById(userId);
+    if (!user) throw new AppError(httpStatus.NOT_FOUND, 'User not found!');
+    if (user.role === ROLE.BUSINESS) {
+      const business = await Business.findOne({ auth: userId });
+      if (!business || reward.business.toString() !== business._id.toString()) {
+        throw new AppError(
+          httpStatus.FORBIDDEN,
+          'You do not have permission to modify this reward'
+        );
+      }
+    }
+  }
+
   // 2. Validation: Prevent extending an already expired reward
   if (payload.expiryDate && reward.status === 'expired') {
     throw new AppError(
@@ -719,12 +734,27 @@ const updateReward = async (
  */
 const updateRewardImage = async (
   rewardId: string,
-  imageFile: Express.Multer.File
+  imageFile: Express.Multer.File,
+  userId?: string
 ): Promise<IRewardDocument> => {
   // 1. Check if reward exists
   const reward = await Reward.findById(rewardId);
   if (!reward) {
     throw new AppError(httpStatus.NOT_FOUND, REWARD_MESSAGES.NOT_FOUND);
+  }
+
+  // Ownership validation
+  if (userId) {
+    const user = await Auth.findById(userId);
+    if (user?.role === ROLE.BUSINESS) {
+      const business = await Business.findOne({ auth: userId });
+      if (!business || reward.business.toString() !== business._id.toString()) {
+        throw new AppError(
+          httpStatus.FORBIDDEN,
+          'You do not have permission to modify this reward image'
+        );
+      }
+    }
   }
 
   // 2. Cleanup: Delete the old image from S3 if it exists
@@ -764,14 +794,7 @@ const getRewardById = async (
     throw new AppError(httpStatus.NOT_FOUND, REWARD_MESSAGES.NOT_FOUND);
   }
 
-  // Handle Reward Views
-  if (userId) {
-    const client = await Client.findOne({ auth: userId });
-    if (client) {
-      await ViewReward.create({ user: client.auth, reward: rewardId });
-    }
-  }
-
+  // Handle Reward Views & Client Status
   let userCanAfford = false;
   let userBalance = 0;
   let hasAlreadyClaimed = false;
@@ -781,34 +804,36 @@ const getRewardById = async (
 
   if (userId) {
     const client = await Client.findOne({ auth: userId });
-    try {
-      const [balance, existingClaim, existingFavorite] = await Promise.all([
-        pointsServices.getUserBalance(client!._id.toString()),
-        RewardRedemption.findOne({
-          user: client?._id,
-          reward: rewardId,
-          status: { $in: ['claimed', 'redeemed'] },
-        }),
-        FavoriteReward.exists({
-          user: userId,
-          reward: rewardId,
-        }),
-      ]);
+    if (client) {
+      await ViewReward.create({ user: client.auth, reward: rewardId }).catch(() => null);
 
-      userBalance = balance.currentBalance;
-      userCanAfford = balance.canAfford(STATIC_POINTS_COST);
-      if (existingFavorite) {
-        isAlreadySaved = true;
-      }
-      if (existingClaim) {
-        hasAlreadyClaimed = true;
-        claimDetails = existingClaim;
-        existingClaimId = existingClaim._id;
-      }
-    } catch (err) {
-      console.log(err);
+      try {
+        const [balance, existingClaim, existingFavorite] = await Promise.all([
+          pointsServices.getUserBalance(client._id.toString()),
+          RewardRedemption.findOne({
+            user: client._id,
+            reward: rewardId,
+            status: { $in: ['claimed', 'redeemed'] },
+          }),
+          FavoriteReward.exists({
+            user: client.auth,
+            reward: rewardId,
+          }),
+        ]);
 
-      userCanAfford = false;
+        userBalance = balance.currentBalance;
+        userCanAfford = balance.canAfford(STATIC_POINTS_COST);
+        if (existingFavorite) {
+          isAlreadySaved = true;
+        }
+        if (existingClaim) {
+          hasAlreadyClaimed = true;
+          claimDetails = existingClaim;
+          existingClaimId = existingClaim._id;
+        }
+      } catch (err) {
+        userCanAfford = false;
+      }
     }
   }
 
@@ -870,18 +895,22 @@ const getRewards = async (
 
   if (userId) {
     try {
-      const [balance, claims] = await Promise.all([
-        pointsServices.getUserBalance(userId),
-        RewardRedemption.find({
-          user: userId,
-          reward: { $in: rewards.map((r) => r._id) },
-          status: { $in: ['claimed', 'redeemed'] },
-        }).select('reward status'),
-      ]);
-      userBalance = balance.currentBalance;
-      claims.forEach((claim: any) => {
-        userClaims.set(claim.reward.toString(), claim.status);
-      });
+      const client = await Client.findOne({ auth: userId });
+      const clientObjectId = client ? client._id : (Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : null);
+      if (clientObjectId) {
+        const [balance, claims] = await Promise.all([
+          pointsServices.getUserBalance(clientObjectId.toString()),
+          RewardRedemption.find({
+            user: clientObjectId,
+            reward: { $in: rewards.map((r) => r._id) },
+            status: { $in: ['claimed', 'redeemed'] },
+          }).select('reward status'),
+        ]);
+        userBalance = balance.currentBalance;
+        claims.forEach((claim: any) => {
+          userClaims.set(claim.reward.toString(), claim.status);
+        });
+      }
     } catch {
       userBalance = 0;
     }
@@ -968,6 +997,21 @@ const deleteReward = async (
     throw new AppError(httpStatus.NOT_FOUND, REWARD_MESSAGES.NOT_FOUND);
   }
 
+  // Ownership validation
+  if (userId) {
+    const user = await Auth.findById(userId);
+    if (!user) throw new AppError(httpStatus.NOT_FOUND, 'User not found!');
+    if (user.role === ROLE.BUSINESS) {
+      const business = await Business.findOne({ auth: userId });
+      if (!business || reward.business.toString() !== business._id.toString()) {
+        throw new AppError(
+          httpStatus.FORBIDDEN,
+          'You do not have permission to delete this reward'
+        );
+      }
+    }
+  }
+
   // 2. Check if reward is active
   if (reward.isActive) {
     throw new AppError(
@@ -1011,7 +1055,13 @@ const deleteReward = async (
       { session }
     );
 
-    // 7. Hide all RewardRedemptions (keep for audit, but hide from user)
+    // 7. Delete all FavoriteReward records for this reward
+    await FavoriteReward.deleteMany(
+      { reward: reward._id },
+      { session }
+    );
+
+    // 8. Hide all RewardRedemptions (keep for audit, but hide from user)
     const redemptionsResult = await RewardRedemption.updateMany(
       { reward: reward._id },
       {
@@ -1069,6 +1119,21 @@ const deleteRewardImage = async (rewardId: string, userId: string) => {
 
   if (!reward) {
     throw new AppError(httpStatus.NOT_FOUND, REWARD_MESSAGES.NOT_FOUND);
+  }
+
+  // Ownership validation
+  if (userId) {
+    const user = await Auth.findById(userId);
+    if (!user) throw new AppError(httpStatus.NOT_FOUND, 'User not found!');
+    if (user.role === ROLE.BUSINESS) {
+      const business = await Business.findOne({ auth: userId });
+      if (!business || reward.business.toString() !== business._id.toString()) {
+        throw new AppError(
+          httpStatus.FORBIDDEN,
+          'You do not have permission to delete this reward image'
+        );
+      }
+    }
   }
 
   try {
@@ -1139,12 +1204,27 @@ const canDeleteReward = async (
  */
 const uploadCodesToReward = async (
   rewardId: string,
-  codesFiles: Express.Multer.File[]
+  codesFiles: Express.Multer.File[],
+  userId?: string
 ) => {
   // 1. Fetch the Reward document
   const reward = await Reward.findById(rewardId);
   if (!reward) {
     throw new AppError(httpStatus.NOT_FOUND, REWARD_MESSAGES.NOT_FOUND);
+  }
+
+  // Ownership validation
+  if (userId) {
+    const user = await Auth.findById(userId);
+    if (user?.role === ROLE.BUSINESS) {
+      const business = await Business.findOne({ auth: userId });
+      if (!business || reward.business.toString() !== business._id.toString()) {
+        throw new AppError(
+          httpStatus.FORBIDDEN,
+          'You do not have permission to upload codes to this reward'
+        );
+      }
+    }
   }
 
   // 2. Validation: This endpoint is strictly for Online rewards
@@ -1292,33 +1372,36 @@ const checkAvailability = async (
 
   // 4. User-Specific Checks
   if (userId && isAvailable) {
-    // Only check if general availability passed
-    // Check for previous claims (Unchanged)
-    const existingClaim = await RewardRedemption.findOne({
-      user: userId,
-      reward: rewardId,
-      status: { $in: ['claimed', 'redeemed'] },
-    });
+    const client = await Client.findOne({ auth: userId });
+    const clientObjectId = client ? client._id : (Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : null);
+    if (clientObjectId) {
+      // Check for previous claims
+      const existingClaim = await RewardRedemption.findOne({
+        user: clientObjectId,
+        reward: rewardId,
+        status: { $in: ['claimed', 'redeemed'] },
+      });
 
-    if (existingClaim) {
-      hasAlreadyClaimed = true;
-      existingClaimId = existingClaim._id as Types.ObjectId;
-      isAvailable = false;
-      reason = REWARD_MESSAGES.ALREADY_CLAIMED;
-    }
-
-    // Check Points Balance (Unchanged)
-    try {
-      const balance = await pointsServices.getUserBalance(userId);
-      userBalance = balance.currentBalance;
-      userCanAfford = balance.canAfford(STATIC_POINTS_COST);
-
-      if (!userCanAfford && isAvailable) {
-        isAvailable = false; // Must set this to false
-        reason = REWARD_MESSAGES.INSUFFICIENT_POINTS;
+      if (existingClaim) {
+        hasAlreadyClaimed = true;
+        existingClaimId = existingClaim._id as Types.ObjectId;
+        isAvailable = false;
+        reason = REWARD_MESSAGES.ALREADY_CLAIMED;
       }
-    } catch {
-      userCanAfford = false;
+
+      // Check Points Balance
+      try {
+        const balance = await pointsServices.getUserBalance(clientObjectId.toString());
+        userBalance = balance.currentBalance;
+        userCanAfford = balance.canAfford(STATIC_POINTS_COST);
+
+        if (!userCanAfford && isAvailable) {
+          isAvailable = false;
+          reason = REWARD_MESSAGES.INSUFFICIENT_POINTS;
+        }
+      } catch {
+        userCanAfford = false;
+      }
     }
   }
 
@@ -1596,7 +1679,7 @@ const getAdminRewardAnalytics = async () => {
             },
             {
               $sort: {
-                count: 1,
+                count: -1,
               },
             },
             {
@@ -1627,7 +1710,7 @@ const getAdminRewardAnalytics = async () => {
                 description: '$rewardDetails.description',
                 type: '$rewardDetails.type',
                 category: '$rewardDetails.category',
-                image: '$reweardDetails.image',
+                image: '$rewardDetails.image',
               },
             },
           ],
@@ -1688,7 +1771,7 @@ const getAdminRewardAnalytics = async () => {
 // Get Single Reward Details with Redeemtion and claimed:
 const getRewardDetailsForAdmin = async (rewardId: string) => {
   const reward = await Reward.findById(rewardId).select(
-    'name description inStoreRedemptionMethods  onlineRedemptionMethods image isActive status'
+    'title description inStoreRedemptionMethods onlineRedemptionMethods image isActive status'
   );
 
   if (!reward) {
