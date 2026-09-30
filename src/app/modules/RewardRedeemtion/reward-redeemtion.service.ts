@@ -41,8 +41,13 @@ import { IBusiness } from '../Business/business.interface';
  * Digital (Online): Claim -> Auto-Redeem -> Email Code
  * Physical (In-Store): Claim -> Status: 'claimed' -> Wait for store scan
  */
-const claimReward = async (payload: { rewardId: string; userId: string }) => {
-  const { rewardId, userId } = payload;
+const claimReward = async (payload: {
+  rewardId: string;
+  userId: string;
+  preferredCodeType?: 'discount' | 'giftcard';
+  idempotencyKey?: string;
+}) => {
+  const { rewardId, userId, preferredCodeType, idempotencyKey } = payload;
 
   // 1. Resolve Client Profile
   const client = await Client.findOne({ auth: userId });
@@ -50,12 +55,29 @@ const claimReward = async (payload: { rewardId: string; userId: string }) => {
     throw new AppError(httpStatus.NOT_FOUND, 'Client profile not found');
   }
 
+  // Idempotency check: if claim already exists with this key
+  if (idempotencyKey) {
+    const existingIdempotentClaim = await RewardRedemption.findOne({
+      idempotencyKey,
+      user: client._id,
+    });
+    if (existingIdempotentClaim) {
+      return {
+        redemption: existingIdempotentClaim,
+        code: existingIdempotentClaim.assignedCode || '',
+        status: existingIdempotentClaim.status,
+        availableMethods: existingIdempotentClaim.availableRedemptionMethods || [],
+        message: 'Reward claim already processed',
+      };
+    }
+  }
+
   // Check the points balance:
   const balance = await PointsBalance?.findOne({
     user: client?._id,
   });
 
-  if (!balance || balance.currentBalance < 500) {
+  if (!balance || balance.currentBalance < STATIC_POINTS_COST) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
       'You have Insufficient balance!'
@@ -90,14 +112,20 @@ const claimReward = async (payload: { rewardId: string; userId: string }) => {
       { session, new: true }
     );
 
-
     if (!reward) {
       throw new AppError(httpStatus.GONE, REWARD_MESSAGES.RACE_CONDITION);
     }
 
     // 5. Fetch and Lock one unique Code from inventory
-    const availableCode = await RewardCode.findOneAndUpdate(
-      { reward: rewardId, isUsed: false },
+    const codeQuery: Record<string, unknown> = { reward: rewardId, isUsed: false };
+    if (preferredCodeType === 'discount') {
+      codeQuery.isDiscountCode = true;
+    } else if (preferredCodeType === 'giftcard') {
+      codeQuery.isGiftCard = true;
+    }
+
+    let availableCode = await RewardCode.findOneAndUpdate(
+      codeQuery,
       {
         $set: {
           isUsed: true,
@@ -107,6 +135,21 @@ const claimReward = async (payload: { rewardId: string; userId: string }) => {
       },
       { session, new: true }
     );
+
+    // Fallback if specific preferredCodeType wasn't available
+    if (!availableCode && preferredCodeType) {
+      availableCode = await RewardCode.findOneAndUpdate(
+        { reward: rewardId, isUsed: false },
+        {
+          $set: {
+            isUsed: true,
+            usedBy: client._id,
+            usedAt: new Date(),
+          },
+        },
+        { session, new: true }
+      );
+    }
 
     if (!availableCode) {
       throw new AppError(
@@ -153,6 +196,8 @@ const claimReward = async (payload: { rewardId: string; userId: string }) => {
           pointsSpent: STATIC_POINTS_COST,
           status: finalStatus,
           assignedCode: availableCode.code,
+          availableRedemptionMethods: availableMethods,
+          idempotencyKey,
           redeemedAt: isOnline ? new Date() : undefined,
           expiresAt: expiryDate,
         },
@@ -165,7 +210,7 @@ const claimReward = async (payload: { rewardId: string; userId: string }) => {
     await availableCode.save({ session });
 
     // 8. Deduct Points (Atomic)
-    await pointsServices.deductPoints(
+    const deductionResult = await pointsServices.deductPoints(
       client._id.toString(),
       STATIC_POINTS_COST,
       'reward_redemption',
@@ -174,6 +219,12 @@ const claimReward = async (payload: { rewardId: string; userId: string }) => {
       { rewardId: reward._id.toString() },
       session
     );
+
+    if (deductionResult?.transaction?._id) {
+      redemption.pointsTransactionId = deductionResult.transaction
+        ._id as Types.ObjectId;
+      await redemption.save({ session });
+    }
 
     // 9. If stock hit zero, mark as sold-out
     if (reward.remainingCount <= 0) {
@@ -278,7 +329,7 @@ const cancelClaimedReward = async (
   try {
     // Refund points
     const refundTransaction = await pointsServices.refundPoints(
-      userId,
+      userObjectId.toString(),
       redemption.pointsSpent,
       'reward_redemption',
       reason || 'Reward claim cancelled',
@@ -315,6 +366,7 @@ const cancelClaimedReward = async (
 
       reward.remainingCount += 1;
       reward.redeemedCount = Math.max(0, reward.redeemedCount - 1);
+      reward.redemptions = Math.max(0, reward.redemptions - 1);
 
       if (reward.status === 'sold-out') {
         reward.status = 'active';
@@ -337,10 +389,15 @@ const cancelClaimedReward = async (
  * Verify redemption by code or ID (Step 1: Scan/Input)
  */
 const verifyRedemption = async (
-  staffBusinessId: string,
+  staffAuthId: string,
   code?: string,
   redemptionId?: string
 ) => {
+  const business = await Business.findOne({ auth: staffAuthId });
+  if (!business) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Business profile not found.');
+  }
+
   const query: any = { status: 'claimed', isHidden: { $ne: true } };
 
   if (code) {
@@ -364,7 +421,7 @@ const verifyRedemption = async (
     );
   }
 
-  if (redemption.business._id.toString() !== staffBusinessId) {
+  if (redemption.business._id.toString() !== business._id.toString()) {
     throw new AppError(
       httpStatus.FORBIDDEN,
       'This reward does not belong to your business'
@@ -395,6 +452,10 @@ const redeemRewardByCode = async (payload: {
   method: RedemptionMethod;
 }) => {
   const { code, staffAuthId, method } = payload;
+
+  if (!code) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Redemption code is required.');
+  }
 
   const business = await Business.findOne({ auth: staffAuthId });
   if (!business) {
@@ -639,25 +700,24 @@ const expireOldClaimsWithFullRestoration = async (): Promise<{
       // Refund points
       try {
         const client = await Client.findById(claim.user);
-        // const authUserId = client
-        //   ? client.auth.toString()
-        //   : claim.user.toString();
 
-        const refundResult = await pointsServices.refundPoints(
-          client!._id.toString(),
-          claim.pointsSpent,
-          'claim_expired',
-          `Reward claim expired - automatic refund`,
-          claim._id.toString(),
-          undefined,
-          session
-        );
+        if (client) {
+          const refundResult = await pointsServices.refundPoints(
+            client._id.toString(),
+            claim.pointsSpent,
+            'reward_redemption',
+            `Reward claim expired - automatic refund`,
+            claim._id.toString(),
+            undefined,
+            session
+          );
 
-        if (refundResult && refundResult.transaction) {
-          claim.refundTransactionId = refundResult.transaction
-            ._id as Types.ObjectId;
-          await claim.save({ session });
-          result.pointsRefunded += claim.pointsSpent;
+          if (refundResult && refundResult.transaction) {
+            claim.refundTransactionId = refundResult.transaction
+              ._id as Types.ObjectId;
+            await claim.save({ session });
+            result.pointsRefunded += claim.pointsSpent;
+          }
         }
       } catch (refundError) {
         console.error(
@@ -687,6 +747,7 @@ const expireOldClaimsWithFullRestoration = async (): Promise<{
 
         reward.remainingCount += 1;
         reward.redeemedCount = Math.max(0, reward.redeemedCount - 1);
+        reward.redemptions = Math.max(0, reward.redemptions - 1);
         if (reward.status === 'sold-out' && reward.remainingCount > 0) {
           reward.status = 'active';
         }
@@ -721,30 +782,35 @@ const getExpiringClaims = async (hoursUntilExpiry = 24) => {
   return RewardRedemption.find({
     status: 'claimed',
     expiresAt: { $gt: now, $lte: expiryThreshold },
-  }).populate('user name email reward title business name');
+  })
+    .populate('user', 'name email')
+    .populate('reward', 'title')
+    .populate('business', 'name');
 };
 
 /**
  * Get user expiration summary
  */
 const getUserExpirationSummary = async (userId: string) => {
+  const client = await Client.findOne({ auth: userId });
+  const clientObjectId = client ? client._id : new Types.ObjectId(userId);
   const now = new Date();
   const in24Hours = new Date(now.getTime() + 24 * 60 * 60 * 1000);
   const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   const [expiringIn24Hours, expiringIn7Days, totalActive] = await Promise.all([
     RewardRedemption.countDocuments({
-      user: userId,
+      user: clientObjectId,
       status: 'claimed',
       expiresAt: { $gt: now, $lte: in24Hours },
     }),
     RewardRedemption.countDocuments({
-      user: userId,
+      user: clientObjectId,
       status: 'claimed',
       expiresAt: { $gt: now, $lte: in7Days },
     }),
     RewardRedemption.countDocuments({
-      user: userId,
+      user: clientObjectId,
       status: 'claimed',
       expiresAt: { $gt: now },
     }),

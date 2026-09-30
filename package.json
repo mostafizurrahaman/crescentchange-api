@@ -30,9 +30,9 @@
   "homepage": "https://github.com/sparktechagency/crecent-change-apis#readme",
   "version": "1.0.0",
   "scripts": {
-    "start": "node dist/server.js",
-    "dev": "ts-node-dev --respawn --transpile-only --poll --clear --exit-child src/server.ts",
-    "build": "tsc",
+    "start": "node api.js && node dist/server.js",
+    "dev": "node api.js && ts-node-dev --respawn --transpile-only --poll --clear --exit-child src/server.ts",
+    "build": "node api.js && tsc",
     "generate": "node generate",
     "create-module": "npx ts-node src/scripts/createModule.ts",
     "backfill:currency": "npx ts-node src/scripts/backfillCurrencyBase.ts",

@@ -39,6 +39,20 @@ router.get(
 
 // Get details of a specific claimed reward (Redemption Ticket)
 router.get(
+  '/claim/:redemptionId',
+  auth(ROLE.CLIENT, ROLE.BUSINESS, ROLE.ADMIN),
+  validateRequest(rewardRedemptionValidation.getClaimedRewardByIdSchema),
+  RewardRedemptionController.getClaimedRewardById
+);
+
+router.get(
+  '/redemption/:redemptionId',
+  auth(ROLE.CLIENT, ROLE.BUSINESS, ROLE.ADMIN),
+  validateRequest(rewardRedemptionValidation.getClaimedRewardByIdSchema),
+  RewardRedemptionController.getClaimedRewardById
+);
+
+router.get(
   '/:redemptionId',
   auth(ROLE.CLIENT, ROLE.BUSINESS, ROLE.ADMIN),
   validateRequest(rewardRedemptionValidation.getClaimedRewardByIdSchema),
