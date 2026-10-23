@@ -36,6 +36,9 @@
     "generate": "node generate",
     "create-module": "npx ts-node src/scripts/createModule.ts",
     "backfill:currency": "npx ts-node src/scripts/backfillCurrencyBase.ts",
+    "migrate:net-amount": "npx ts-node src/scripts/migrateDonationNetAmount.ts",
+    "migrate:balance": "npx ts-node src/scripts/migrateBalanceTransactions.ts",
+    "inspect:related": "npx ts-node src/scripts/inspectRelatedModels.ts",
     "deploy": "yarn build && vercel && vercel --prod"
   },
   "dependencies": {

@@ -106,6 +106,7 @@ export const reconcileDonationFromStripePaymentIntent = async (
     gstOnFee?: number;
     netAmount?: number;
     currency?: string;
+    coverFees?: boolean;
   }
 ): Promise<ReconciledDonationAmounts> => {
   const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId, {
@@ -151,7 +152,8 @@ export const reconcileDonationFromStripePaymentIntent = async (
 
   if (transfer) {
     stripeTransferId = transfer.id;
-    netAmount = fromStripeAmount(transfer.amount, currency);
+    // Note: In destination charges, transfer.amount is gross transfer (total charged),
+    // NOT net to org. Net amount comes from connectedBalanceTxn.net or metadata.netToOrg.
   }
 
   if (connectedAccountId) {
@@ -199,14 +201,26 @@ export const reconcileDonationFromStripePaymentIntent = async (
     );
   }
 
+  const isCoverFees =
+    metadata.coverFees === 'true' || existing?.coverFees === true;
+
   if (!netAmount && totalAmount > 0) {
-    if (applicationFeeAmount > 0) {
-      netAmount = Number((totalAmount - applicationFeeAmount).toFixed(2));
+    if (isCoverFees && amount > 0) {
+      netAmount = amount;
+    } else if (applicationFeeAmount > 0) {
+      netAmount = Number(
+        Math.max(0, totalAmount - applicationFeeAmount - stripeFee).toFixed(2)
+      );
     } else if (stripeFee > 0) {
       netAmount = Number(
-        (totalAmount - stripeFee - platformFee - gstOnFee).toFixed(2)
+        Math.max(0, totalAmount - stripeFee - platformFee - gstOnFee).toFixed(2)
       );
     }
+  }
+
+  // Safety guard: if donor covered fees, organization receives the base donation amount
+  if (isCoverFees && amount > 0 && netAmount > amount) {
+    netAmount = amount;
   }
 
   const estimatedTotal = parseMetadataAmount(
