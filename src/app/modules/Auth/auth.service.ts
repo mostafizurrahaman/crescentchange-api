@@ -870,11 +870,9 @@ const sendForgotPasswordOtpAgain = async (forgotPassToken: string) => {
 
   let decoded: JwtPayload;
   try {
-    decoded = jwt.verify(forgotPassToken, config.jwt.otpSecret!, {
-      ignoreExpiration: true,
-    }) as JwtPayload;
+    decoded = jwt.verify(forgotPassToken, config.jwt.otpSecret!) as JwtPayload;
   } catch (error) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid token!');
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid or expired token!');
   }
   const email = decoded.email;
 
@@ -960,11 +958,9 @@ const verifyOtpForForgotPassword = async (payload: {
   let decoded: JwtPayload;
 
   try {
-    decoded = jwt.verify(payload.token, config.jwt.otpSecret!, {
-      ignoreExpiration: true,
-    }) as JwtPayload;
+    decoded = jwt.verify(payload.token, config.jwt.otpSecret!) as JwtPayload;
   } catch {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid token!');
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid or expired token!');
   }
 
   const email = decoded.email;
@@ -1081,6 +1077,9 @@ const resetPasswordIntoDB = async (
   user.ensureActiveStatus();
 
   user.password = newPassword;
+  user.passwordChangedAt = new Date(Date.now() - 5000);
+  user.otp = '';
+  user.otpExpiry = new Date(0);
   await user.save({ validateBeforeSave: true });
 
   return null;

@@ -754,7 +754,8 @@ const transferFundsToConnectedAccount = async (
 const createPayout = async (
   accountId: string,
   amount: number,
-  currency: string = 'aud'
+  currency: string = 'aud',
+  idempotencyKey?: string
 ): Promise<Stripe.Payout> => {
   if (!accountId) {
     throw new AppError(
@@ -775,6 +776,7 @@ const createPayout = async (
       },
       {
         stripeAccount: accountId, // This executes the payout on the Org's account
+        idempotencyKey,
       }
     );
 

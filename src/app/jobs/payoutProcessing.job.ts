@@ -79,7 +79,8 @@ export const startPayoutProcessingCron = () => {
           const stripePayout = await StripeService.createPayout(
             stripeAccount.stripeAccountId, // Perform action ON BEHALF OF this account
             payout.netAmount, // Amount to send to bank
-            payout.currency
+            payout.currency,
+            `payout_${payout._id.toString()}`
           );
 
           // 4. Mark as COMPLETED in DB

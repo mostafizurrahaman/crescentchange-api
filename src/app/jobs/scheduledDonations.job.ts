@@ -62,6 +62,11 @@ export const startScheduledDonationsCron = () => {
 
       if (dueDonations.length === 0) {
         console.log('✅ No scheduled donations to process');
+        cronJobTracker.completeExecution(JOB_NAME, {
+          totalProcessed: 0,
+          successCount: 0,
+          failureCount: 0,
+        });
         return;
       }
 

@@ -339,6 +339,7 @@ const handlePaymentIntentSucceeded = async (
       donation._id,
       {
         status: 'completed',
+        donationDate: new Date(),
         stripePaymentIntentId: paymentIntent.id,
         stripeChargeId: reconciled.stripeChargeId,
         amount: reconciled.amount,

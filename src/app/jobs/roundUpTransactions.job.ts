@@ -59,7 +59,7 @@ const processEndOfMonthDonations = async () => {
   let failureCount = 0;
 
   for (const config of configsForDonation) {
-    const userId = config.user._id.toString();
+    const userId = config.user?._id?.toString();
     if (!userId) {
       failureCount++;
       console.log(

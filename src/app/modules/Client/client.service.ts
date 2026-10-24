@@ -254,225 +254,204 @@ const getOnetimeDonationStats = async (userId: string) => {
     throw new AppError(httpStatus.NOT_FOUND, 'User not found!');
   }
 
-  const result = await Donation?.aggregate([
-    {
-      $match: {
-        donor: client?._id,
-        donationType: 'one-time',
-        status: 'completed',
-      },
-    },
-    {
-      $facet: {
-        totalDonated: [
-          {
-            $group: {
-              _id: null,
-              total: { $sum: { $ifNull: ['$amountBase', '$amount'] } },
-            },
-          },
-        ],
-        todaysTotalDonation: [
-          {
-            $match: {
-              createdAt: {
-                $gte: new Date(new Date().setHours(0, 0, 0, 0)),
-              },
-            },
-          },
-          {
-            $group: {
-              _id: null,
-              total: { $sum: { $ifNull: ['$amountBase', '$amount'] } },
-            },
-          },
-        ],
-        recentDonations: [
-          { $sort: { createdAt: -1 } },
-          { $limit: 5 },
-          {
-            $lookup: {
-              from: 'organizations',
-              localField: 'organization',
-              foreignField: '_id',
-              as: 'orgDetails',
-            },
-          },
-          { $unwind: '$orgDetails' },
-          {
-            $addFields: {
-              todayStr: {
-                $dateToString: { format: '%Y-%m-%d', date: new Date() },
-              },
-              yesterdayStr: {
-                $dateToString: {
-                  format: '%Y-%m-%d',
-                  date: { $subtract: [new Date(), 24 * 60 * 60 * 1000] },
-                },
-              },
-              createdDateStr: {
-                $dateToString: { format: '%Y-%m-%d', date: '$createdAt' },
-              },
-              hoursDiff: {
-                $dateDiff: {
-                  startDate: '$createdAt',
-                  endDate: '$$NOW',
-                  unit: 'hour',
-                },
-              },
-              daysDiff: {
-                $dateDiff: {
-                  startDate: '$createdAt',
-                  endDate: '$$NOW',
-                  unit: 'day',
-                },
-              },
-              formattedDate: {
-                $concat: [
-                  { $toString: { $dayOfMonth: '$createdAt' } },
-                  ' ',
-                  { $dateToString: { format: '%b %Y', date: '$createdAt' } },
-                ],
-              },
-            },
-          },
-          {
-            $addFields: {
-              dateLabel: {
-                $switch: {
-                  branches: [
-                    {
-                      case: { $eq: ['$createdDateStr', '$todayStr'] },
-                      then: 'Today',
-                    },
-                    {
-                      case: { $eq: ['$createdDateStr', '$yesterdayStr'] },
-                      then: 'Yesterday',
-                    },
-                  ],
-                  default: '$formattedDate',
-                },
-              },
-              timeAgoStr: {
-                $cond: {
-                  if: { $gte: ['$hoursDiff', 24] },
-                  then: {
-                    $concat: [{ $toString: '$daysDiff' }, ' days ago'],
-                  },
-                  else: {
-                    $cond: {
-                      if: { $eq: ['$hoursDiff', 0] },
-                      then: 'Just now',
-                      else: {
-                        $concat: [{ $toString: '$hoursDiff' }, ' hours ago'],
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-          {
-            $group: {
-              _id: '$dateLabel',
-              sortDate: { $first: '$createdDateStr' },
-              donations: {
-                $push: {
-                  donationId: '$_id',
-                  amount: '$amount',
-                  orgName: '$orgDetails.name',
-                  registeredCharityName: '$orgDetails.registeredCharityName',
-                  orgLogo: '$orgDetails.logoImage',
-                  timeAgo: '$timeAgoStr',
-                  createdAt: '$createdAt',
-                },
-              },
-            },
-          },
-          { $sort: { sortDate: -1 } },
-          {
-            $project: {
-              _id: 0,
-              title: '$_id',
-              donations: 1,
-            },
-          },
-        ],
-      },
-    },
-  ]);
+  const preferredCurrency = client.preferredCurrency || PLATFORM_BASE_CURRENCY;
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
 
-  const stats = result[0];
   const usdLayer = await buildDonorDisplayLayer(
     PLATFORM_BASE_CURRENCY,
-    client.preferredCurrency
+    preferredCurrency
   );
+
+  const donations = await Donation.find({
+    donor: client._id,
+    donationType: 'one-time',
+    status: 'completed',
+  })
+    .sort({ donationDate: -1, createdAt: -1 })
+    .populate('organization', 'name registeredCharityName logoImage')
+    .lean();
+
+  const getDisplayAmount = (donation: any): number => {
+    if (donation.currency === preferredCurrency) {
+      return Number(Number(donation.amount || 0).toFixed(2));
+    }
+    if (preferredCurrency === PLATFORM_BASE_CURRENCY) {
+      if (
+        donation.amountBase !== undefined &&
+        donation.amountBase !== null &&
+        donation.amountBase > 0
+      ) {
+        return Number(Number(donation.amountBase).toFixed(2));
+      }
+      if (donation.exchangeRate && donation.exchangeRate > 0) {
+        return Number((donation.amount * donation.exchangeRate).toFixed(2));
+      }
+    }
+    const baseAmount =
+      donation.amountBase && donation.amountBase > 0
+        ? donation.amountBase
+        : donation.exchangeRate
+        ? donation.amount * donation.exchangeRate
+        : donation.amount;
+
+    return usdLayer.convert(baseAmount);
+  };
+
+  const getBaseAmount = (donation: any): number => {
+    if (
+      donation.amountBase !== undefined &&
+      donation.amountBase !== null &&
+      donation.amountBase > 0
+    ) {
+      return Number(donation.amountBase);
+    }
+    if (donation.exchangeRate && donation.exchangeRate > 0) {
+      return Number((donation.amount * donation.exchangeRate).toFixed(2));
+    }
+    return Number(donation.amount || 0);
+  };
+
+  let totalDonatedBase = 0;
+  let totalDonatedDisplay = 0;
+  let todaysTotalBase = 0;
+  let todaysTotalDisplay = 0;
+
+  for (const d of donations) {
+    const baseAmt = getBaseAmount(d);
+    const dispAmt = getDisplayAmount(d);
+
+    totalDonatedBase += baseAmt;
+    totalDonatedDisplay += dispAmt;
+
+    const donationTime = d.donationDate || d.createdAt;
+    if (donationTime && new Date(donationTime) >= startOfToday) {
+      todaysTotalBase += baseAmt;
+      todaysTotalDisplay += dispAmt;
+    }
+  }
+
+  const recentList = donations.slice(0, 5);
+  const groupedDonations: Record<string, any[]> = {};
+
+  for (const item of recentList) {
+    const org = item.organization as any;
+    const date = item.donationDate || item.createdAt;
+    const header = getDateHeader(date);
+    const displayAmount = getDisplayAmount(item);
+
+    const formattedDonation = {
+      donationId: item._id,
+      amount: item.amount,
+      currency: item.currency,
+      exchangeRate: item.exchangeRate ?? 1,
+      amountBase: item.amountBase ?? item.amount,
+      displayAmount,
+      orgName: org?.name || 'Unknown',
+      registeredCharityName: org?.registeredCharityName || '',
+      orgLogo: org?.logoImage || null,
+      timeAgo: getTimeAgo(date),
+      createdAt: item.createdAt,
+      donationDate: item.donationDate,
+    };
+
+    if (!groupedDonations[header]) {
+      groupedDonations[header] = [];
+    }
+    groupedDonations[header].push(formattedDonation);
+  }
+
+  const recentDonations = Object.keys(groupedDonations).map((title) => ({
+    title,
+    donations: groupedDonations[title],
+    data: groupedDonations[title],
+  }));
 
   return {
     reportingCurrency: PLATFORM_BASE_CURRENCY,
     ...donorDisplayMeta(usdLayer),
-    totalDonated: stats.totalDonated[0]?.total || 0,
-    displayTotalDonated: usdLayer.convert(stats.totalDonated[0]?.total || 0),
-    todaysTotalDonation: stats.todaysTotalDonation[0]?.total || 0,
-    displayTodaysTotalDonation: usdLayer.convert(
-      stats.todaysTotalDonation[0]?.total || 0
-    ),
-    recentDonations: stats.recentDonations || [],
+    totalDonated: Number(totalDonatedBase.toFixed(2)),
+    displayTotalDonated: Number(totalDonatedDisplay.toFixed(2)),
+    todaysTotalDonation: Number(todaysTotalBase.toFixed(2)),
+    displayTodaysTotalDonation: Number(todaysTotalDisplay.toFixed(2)),
+    recentDonations,
   };
 };
 
 // 3. Recurring Donation Stats [Client]
 export const getRecurringDonationStats = async (userId: string) => {
-  // Fetch the client
   const client = await Client.findOne({ auth: userId });
   if (!client) {
     throw new AppError(httpStatus.NOT_FOUND, 'User not found!');
   }
 
+  const preferredCurrency = client.preferredCurrency || PLATFORM_BASE_CURRENCY;
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
 
   const currentWeek = getDateRanges('this_week');
 
-  const result = await Donation.aggregate([
-    { $match: { donor: client._id, donationType: 'recurring' } },
-    {
-      $facet: {
-        todaysRecurringAmount: [
-          { $match: { donationDate: { $gte: startOfToday } } },
-          { $group: { _id: null, totalAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } } } },
-        ],
-      },
-    },
-  ]);
+  const usdLayer = await buildDonorDisplayLayer(
+    PLATFORM_BASE_CURRENCY,
+    preferredCurrency
+  );
 
-  const recurringStats = await ScheduledDonation.aggregate([
-    {
-      $match: {
-        isActive: true,
-        user: client._id,
-        nextDonationDate: {
-          $gte: currentWeek.current.startDate,
-          $lte: currentWeek.current.endDate,
-        },
-        $or: [
-          { frequency: 'weekly' },
-          { frequency: 'custom', 'customInterval.unit': 'weeks' },
-        ],
-      },
+  const todayDonations = await Donation.find({
+    donor: client._id,
+    donationType: 'recurring',
+    status: 'completed',
+    $or: [
+      { donationDate: { $gte: startOfToday } },
+      { createdAt: { $gte: startOfToday } },
+    ],
+  }).lean();
+
+  let todaysRecurringBase = 0;
+  let todaysRecurringDisplay = 0;
+
+  for (const d of todayDonations) {
+    const baseAmt =
+      d.amountBase && d.amountBase > 0
+        ? d.amountBase
+        : d.exchangeRate
+        ? d.amount * d.exchangeRate
+        : d.amount;
+    const dispAmt =
+      d.currency === preferredCurrency ? d.amount : usdLayer.convert(baseAmt);
+    todaysRecurringBase += baseAmt;
+    todaysRecurringDisplay += dispAmt;
+  }
+
+  const scheduledWeekly = await ScheduledDonation.find({
+    isActive: true,
+    user: client._id,
+    nextDonationDate: {
+      $gte: currentWeek.current.startDate,
+      $lte: currentWeek.current.endDate,
     },
-    {
-      $facet: {
-        totalWeeklyRecurringAmount: [
-          { $group: { _id: null, totalAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } } } },
-        ],
-        orgCount: [
-          { $group: { _id: '$organization' } },
-          { $count: 'organizationCount' },
-        ],
-      },
-    },
-  ]);
+    $or: [
+      { frequency: 'weekly' },
+      { frequency: 'custom', 'customInterval.unit': 'weeks' },
+    ],
+  }).lean();
+
+  let totalWeeklyRecurringAmount = 0;
+  let displayWeeklyRecurringAmount = 0;
+  const distinctOrgs = new Set<string>();
+
+  for (const s of scheduledWeekly) {
+    distinctOrgs.add(s.organization.toString());
+    totalWeeklyRecurringAmount += s.amount;
+    if (s.currency === preferredCurrency) {
+      displayWeeklyRecurringAmount += s.amount;
+    } else {
+      const orgCurrencyLayer = await buildDonorDisplayLayer(
+        s.currency,
+        preferredCurrency
+      );
+      displayWeeklyRecurringAmount += orgCurrencyLayer.convert(s.amount);
+    }
+  }
 
   const organizationDonations = await ScheduledDonation.aggregate([
     { $match: { isActive: true, user: client._id } },
@@ -485,11 +464,17 @@ export const getRecurringDonationStats = async (userId: string) => {
         as: 'organizationDetails',
       },
     },
-    { $unwind: '$organizationDetails' },
+    {
+      $unwind: {
+        path: '$organizationDetails',
+        preserveNullAndEmptyArrays: true,
+      },
+    },
     {
       $project: {
         _id: 1,
         amount: 1,
+        currency: 1,
         frequency: 1,
         customInterval: 1,
         startDate: 1,
@@ -507,26 +492,17 @@ export const getRecurringDonationStats = async (userId: string) => {
     label: getRecurringLabel(donation),
   }));
 
-  const usdLayer = await buildDonorDisplayLayer(
-    PLATFORM_BASE_CURRENCY,
-    client.preferredCurrency
-  );
-
   const response = {
     reportingCurrency: PLATFORM_BASE_CURRENCY,
     ...donorDisplayMeta(usdLayer),
-    todaysRecurringAmount:
-      result[0]?.todaysRecurringAmount[0]?.totalAmount || 0,
-    displayTodaysRecurringAmount: usdLayer.convert(
-      result[0]?.todaysRecurringAmount[0]?.totalAmount || 0
-    ),
+    todaysRecurringAmount: Number(todaysRecurringBase.toFixed(2)),
+    displayTodaysRecurringAmount: Number(todaysRecurringDisplay.toFixed(2)),
     today: startOfToday.getDate(),
-    totalWeeklyRecurringAmount:
-      recurringStats[0]?.totalWeeklyRecurringAmount[0]?.totalAmount || 0,
-    displayTotalWeeklyRecurringAmount: usdLayer.convert(
-      recurringStats[0]?.totalWeeklyRecurringAmount[0]?.totalAmount || 0
+    totalWeeklyRecurringAmount: Number(totalWeeklyRecurringAmount.toFixed(2)),
+    displayTotalWeeklyRecurringAmount: Number(
+      displayWeeklyRecurringAmount.toFixed(2)
     ),
-    organizationCount: recurringStats[0]?.orgCount[0]?.organizationCount || 0,
+    organizationCount: distinctOrgs.size,
     donations: labeledDonations,
   };
 
@@ -538,13 +514,11 @@ export const getUserRecurringDonationsForSpecificOrganization = async (
   userId: string,
   organizationId: string
 ) => {
-  //  check is the user exists :
   const client = await Client.findOne({ auth: userId });
   if (!client) {
     throw new AppError(httpStatus.NOT_FOUND, 'User not found!');
   }
 
-  //  check organization is exits:
   const organization = await Organization.findOne({
     _id: organizationId,
   }).select(
@@ -552,26 +526,25 @@ export const getUserRecurringDonationsForSpecificOrganization = async (
   );
 
   if (!organization) {
-    throw new AppError(httpStatus.NOT_FOUND, 'User not found!');
+    throw new AppError(httpStatus.NOT_FOUND, 'Organization not found!');
   }
 
   const today = getDateRanges('today');
 
-  // all donations :
-  const [previousDonations, upcommingDoantions] = await Promise.all([
-    await Donation.find({
+  const [previousDonations, upcomingDonations] = await Promise.all([
+    Donation.find({
       donor: client?._id,
       organization: organization?._id,
       donationType: 'recurring',
     })
       .populate<{ scheduledDonationId: IScheduledDonation }>(
         'scheduledDonationId',
-        'isActive frequency customInterval '
+        'isActive frequency customInterval'
       )
       .select(
-        'donationDate totalAmount amount donationType scheduledDonationId netAmount status stripeFee gstOnFee platformFee coverFess'
+        'donationDate totalAmount amount currency donationType scheduledDonationId netAmount status stripeFee gstOnFee platformFee coverFees'
       ),
-    await ScheduledDonation.aggregate([
+    ScheduledDonation.aggregate([
       {
         $match: {
           user: client?._id,
@@ -587,6 +560,7 @@ export const getUserRecurringDonationsForSpecificOrganization = async (
           frequency: 1,
           coverFees: 1,
           amount: 1,
+          currency: 1,
           nextDonationDate: 1,
           startDate: 1,
           customInterval: 1,
@@ -597,7 +571,8 @@ export const getUserRecurringDonationsForSpecificOrganization = async (
 
   return {
     organization,
-    upcommingDoantions,
+    upcomingDonations,
+    upcommingDoantions: upcomingDonations,
     previousDonations,
   };
 };
