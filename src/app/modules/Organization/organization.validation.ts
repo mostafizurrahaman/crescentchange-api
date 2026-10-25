@@ -127,6 +127,9 @@ const getAllOrganizationsSchema = z.object({
           'Invalid fields format. Use comma-separated field names'
         )
         .optional(),
+
+      // Preferred display currency
+      preferredCurrency: z.string().optional(),
     })
     .refine(
       (data) => {

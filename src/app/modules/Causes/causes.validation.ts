@@ -105,6 +105,7 @@ const getRaisedCausesSchema = z.object({
         .enum(['totalDonationAmount', 'name', 'category'] as const)
         .optional(),
       sortOrder: z.enum(['asc', 'desc']).optional(),
+      preferredCurrency: z.string().optional(),
     })
     .strict(),
 });
@@ -125,6 +126,7 @@ const getCausesQuerySchema = z.object({
         })
         .optional(),
       organization: z.string().optional(), // Filter by organization ID
+      preferredCurrency: z.string().optional(),
       page: z.coerce.number().int().positive().default(1).optional(),
       limit: z.coerce.number().int().positive().max(100).default(10).optional(),
       sort: z.string().optional(), // e.g., 'name', '-createdAt'

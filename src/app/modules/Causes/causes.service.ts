@@ -20,7 +20,10 @@ import {
   buildDonorDisplayLayer,
   donorDisplayMeta,
 } from '../../utils/donor-display-currency.utils';
-import { PLATFORM_BASE_CURRENCY } from '../../utils/currency.utils';
+import {
+  normalizeCurrency,
+  PLATFORM_BASE_CURRENCY,
+} from '../../utils/currency.utils';
 import {
   buildOrganizationCurrencyDisplay,
   resolveOrganizationChargeCurrency,
@@ -76,6 +79,7 @@ type RaisedCauseAggregateResult = {
   name: string;
   category: CauseCategoryType;
   totalDonationAmount: number;
+  displayTotalDonationAmount?: number;
 };
 
 const getRaisedCausesByOrganizationFromDB = async (
@@ -121,6 +125,29 @@ const getRaisedCausesByOrganizationFromDB = async (
   const sortDirection = options.sortOrder === 'asc' ? 1 : -1;
   const skip = (page - 1) * limit;
 
+  const targetCurrency = normalizeCurrency(
+    options.preferredCurrency || PLATFORM_BASE_CURRENCY,
+  );
+  const usdLayer = await buildDonorDisplayLayer(
+    PLATFORM_BASE_CURRENCY,
+    options.preferredCurrency,
+  );
+
+  const displayAmountExpr = {
+    $cond: [
+      {
+        $eq: [
+          { $toUpper: { $ifNull: ['$currency', PLATFORM_BASE_CURRENCY] } },
+          targetCurrency,
+        ],
+      },
+      '$amount',
+      {
+        $multiply: [amountBaseField, usdLayer.displayRate],
+      },
+    ],
+  };
+
   const aggregatedCauses = await Donation.aggregate([
     {
       $match: {
@@ -134,6 +161,7 @@ const getRaisedCausesByOrganizationFromDB = async (
       $group: {
         _id: '$cause',
         totalDonationAmount: { $sum: amountBaseField },
+        displayTotalDonationAmount: { $sum: displayAmountExpr },
       },
     },
     {
@@ -151,6 +179,7 @@ const getRaisedCausesByOrganizationFromDB = async (
         name: '$cause.name',
         category: '$cause.category',
         totalDonationAmount: 1,
+        displayTotalDonationAmount: 1,
       },
     },
     { $sort: { [sortField]: sortDirection } },
@@ -166,18 +195,15 @@ const getRaisedCausesByOrganizationFromDB = async (
     (aggregatedCauses[0]?.data as RaisedCauseAggregateResult[]) ?? [];
   const total = aggregatedCauses[0]?.total?.[0]?.count ?? 0;
 
-  const usdLayer = await buildDonorDisplayLayer(
-    PLATFORM_BASE_CURRENCY,
-    options.preferredCurrency,
-  );
-
   const raisedCauses = data.map((cause) => ({
     causeId: cause.causeId.toString(),
     name: cause.name,
     category: cause.category,
     reportingCurrency: PLATFORM_BASE_CURRENCY,
     totalDonationAmount: Number(cause.totalDonationAmount.toFixed(2)),
-    displayTotalDonationAmount: usdLayer.convert(cause.totalDonationAmount),
+    displayTotalDonationAmount: Number(
+      (cause.displayTotalDonationAmount || 0).toFixed(2),
+    ),
     ...donorDisplayMeta(usdLayer),
     startMonth: formatMonthLabel(startDate),
     endMonth: formatMonthLabel(endDate),
@@ -603,6 +629,29 @@ const getCausesFromDB = async (
   // Get all cause IDs from result
   const causeIds = result.map((cause: ICause) => cause._id);
 
+  const targetCurrency = normalizeCurrency(
+    preferredCurrency || PLATFORM_BASE_CURRENCY,
+  );
+  const usdLayer = await buildDonorDisplayLayer(
+    PLATFORM_BASE_CURRENCY,
+    preferredCurrency,
+  );
+
+  const displayAmountExpr = {
+    $cond: [
+      {
+        $eq: [
+          { $toUpper: { $ifNull: ['$currency', PLATFORM_BASE_CURRENCY] } },
+          targetCurrency,
+        ],
+      },
+      '$amount',
+      {
+        $multiply: [amountBaseField, usdLayer.displayRate],
+      },
+    ],
+  };
+
   // Get donation statistics for all causes in one query
   const donationStats = await Donation.aggregate([
     {
@@ -614,7 +663,8 @@ const getCausesFromDB = async (
     {
       $group: {
         _id: '$cause',
-        totalDonationAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } },
+        totalDonationAmount: { $sum: amountBaseField },
+        displayTotalDonationAmount: { $sum: displayAmountExpr },
         totalDonors: { $addToSet: '$donor' },
         totalDonations: { $sum: 1 }, // Count total number of donations
       },
@@ -623,6 +673,7 @@ const getCausesFromDB = async (
       $project: {
         _id: 1,
         totalDonationAmount: 1,
+        displayTotalDonationAmount: 1,
         totalDonors: { $size: '$totalDonors' },
         totalDonations: 1,
       },
@@ -675,21 +726,17 @@ const getCausesFromDB = async (
     }),
   );
 
-  // Add stats and recent donors to each cause
-  const usdLayer = await buildDonorDisplayLayer(
-    PLATFORM_BASE_CURRENCY,
-    preferredCurrency,
-  );
-
   const causesWithStats = result.map((cause: ICause) => {
     const causeObject: any = cause;
     const stats = statsMap.get(cause._id.toString());
     const recentDonorList = recentDonorsMap.get(cause._id.toString());
 
     causeObject.reportingCurrency = PLATFORM_BASE_CURRENCY;
-    causeObject.totalDonationAmount = stats?.totalDonationAmount || 0;
-    causeObject.displayTotalDonationAmount = usdLayer.convert(
-      causeObject.totalDonationAmount,
+    causeObject.totalDonationAmount = Number(
+      (stats?.totalDonationAmount || 0).toFixed(2),
+    );
+    causeObject.displayTotalDonationAmount = Number(
+      (stats?.displayTotalDonationAmount || 0).toFixed(2),
     );
     Object.assign(causeObject, donorDisplayMeta(usdLayer));
     causeObject.totalDonors = stats?.totalDonors || 0;

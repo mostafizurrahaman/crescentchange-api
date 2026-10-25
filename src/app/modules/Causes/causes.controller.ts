@@ -47,6 +47,7 @@ const getCauses = asyncHandler(async (req, res) => {
   // Pass the entire query object to service - QueryBuilder will handle it
   const preferredCurrency = await resolveUserPreferredCurrency(
     req.user?._id?.toString(),
+    (req.query as any)?.preferredCurrency,
   );
   const result = await CauseService.getCausesFromDB(query, preferredCurrency);
 
@@ -117,6 +118,7 @@ const getRaisedCausesByOrganization = asyncHandler(async (req, res) => {
 
   const preferredCurrency = await resolveUserPreferredCurrency(
     req.user?._id?.toString(),
+    (req.query as any)?.preferredCurrency,
   );
   const result = await CauseService.getRaisedCausesByOrganizationFromDB(
     organizationId as string,

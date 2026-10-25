@@ -74,7 +74,8 @@ const refreshStripeConnectOnboarding = asyncHandler(
 
 const getAllOrganization = asyncHandler(async (req, res) => {
   const preferredCurrency = await resolveUserPreferredCurrency(
-    req.user?._id?.toString()
+    req.user?._id?.toString(),
+    (req.query as any)?.preferredCurrency
   );
   const result = await OrganizationService.getAllOrganizations(
     req.query,
@@ -158,7 +159,8 @@ const getOrganizationDetails = asyncHandler(
   async (req: ExtendedRequest, res: Response) => {
     const organizationId = req.params.id;
     const preferredCurrency = await resolveUserPreferredCurrency(
-      req.user?._id?.toString()
+      req.user?._id?.toString(),
+      (req.query as any)?.preferredCurrency
     );
     const result = await OrganizationService.getOrganizationDetailsById(
       organizationId as string,
