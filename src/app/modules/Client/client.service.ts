@@ -74,7 +74,7 @@ const getRoundupStats = async (userId: string, roundupId: string) => {
     status: 'processed',
   })
     .sort({ createdAt: -1 })
-    .select('roundUpAmount');
+    .select('roundUpAmount currency');
 
   // 4. Calculate Today's Total Roundup Amount
   const startOfDay = new Date();
@@ -170,6 +170,7 @@ const getRoundupStats = async (userId: string, roundupId: string) => {
             transactionAmount: '$originalAmount',
             transactionName: '$transactionName',
             createdAt: '$createdAt',
+            currency: '$currency',
           },
         },
       },
@@ -212,10 +213,42 @@ const getRoundupStats = async (userId: string, roundupId: string) => {
   const diffTime = nextMonthFirstDay.getTime() - today.getTime();
 
   const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const orgCurrency =
+    currentRoundup?.organization?.defaultCurrency || PLATFORM_BASE_CURRENCY;
   const orgCurrencyLayer = await buildDonorDisplayLayer(
-    currentRoundup?.organization?.defaultCurrency,
+    orgCurrency,
     client.preferredCurrency
   );
+
+  const prefCurrency = client.preferredCurrency || orgCurrency;
+  const getTxDisplayAmount = (amount: number, txCurrency?: string) => {
+    const c = txCurrency || orgCurrency;
+    if (c === prefCurrency) {
+      return Number((amount || 0).toFixed(2));
+    }
+    return orgCurrencyLayer.convert(amount || 0);
+  };
+
+  const mappedRecentTransactions = recentTransactions.map((group: any) => {
+    const txList = (group.transactions || []).map((tx: any) => ({
+      ...tx,
+      currency: tx.currency || orgCurrency,
+      displayRoundupAmount: getTxDisplayAmount(
+        tx.roundupAmount || 0,
+        tx.currency
+      ),
+      displayTransactionAmount: getTxDisplayAmount(
+        tx.transactionAmount || 0,
+        tx.currency
+      ),
+      displayCurrency: orgCurrencyLayer.displayCurrency,
+    }));
+    return {
+      ...group,
+      transactions: txList,
+      data: txList,
+    };
+  });
 
   return {
     organizationName: currentRoundup?.organization?.name,
@@ -235,12 +268,13 @@ const getRoundupStats = async (userId: string, roundupId: string) => {
     lastTransactionAmount: Number(
       (lastTransaction?.roundUpAmount || 0).toFixed(2)
     ),
-    displayLastTransactionAmount: orgCurrencyLayer.convert(
-      lastTransaction?.roundUpAmount || 0
+    displayLastTransactionAmount: getTxDisplayAmount(
+      lastTransaction?.roundUpAmount || 0,
+      (lastTransaction as any)?.currency
     ),
     roundupPercentage: Number(roundupPercentage.toFixed(2)),
     daysLeft,
-    recentTransactions,
+    recentTransactions: mappedRecentTransactions,
   };
 };
 

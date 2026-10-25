@@ -1787,102 +1787,130 @@ const getClientStats = async (
     current: { startDate: start, endDate: end },
   } = getDateRanges(timeFilter);
 
-  // 3. Aggregate Donations using $facet for parallel processing
-  const stats = await Donation.aggregate([
-    {
-      $match: {
-        donor: donor._id,
-        status: 'completed',
-        donationDate: { $gte: start, $lte: end },
-      },
-    },
-    {
-      $facet: {
-        summary: [
-          {
-            $group: {
-              _id: null,
-              totalAmount: { $sum: amountBaseField }, // Using base amount (tax deductible)
-              count: { $sum: 1 },
-              roundUpAmount: {
-                $sum: {
-                  $cond: [
-                    { $eq: ['$donationType', 'round-up'] },
-                    amountBaseField,
-                    0,
-                  ],
-                },
-              },
-              recurringAmount: {
-                $sum: {
-                  $cond: [
-                    { $eq: ['$donationType', 'recurring'] },
-                    amountBaseField,
-                    0,
-                  ],
-                },
-              },
-              oneTimeAmount: {
-                $sum: {
-                  $cond: [
-                    { $eq: ['$donationType', 'one-time'] },
-                    amountBaseField,
-                    0,
-                  ],
-                },
-              },
-              dates: { $push: '$donationDate' }, // For streak calc
-              donationList: {
-                $push: {
-                  date: '$donationDate',
-                  amount: amountBaseField,
-                  currency: '$currency',
-                  type: '$donationType',
-                },
-              },
-            },
-          },
-        ],
+  // 3. Fetch completed donations directly to calculate exact display and base amounts
+  const donations = await Donation.find({
+    donor: donor._id,
+    status: 'completed',
+    donationDate: { $gte: start, $lte: end },
+  })
+    .sort({ donationDate: -1 })
+    .lean();
 
-        dailyStats: [
-          {
-            $group: {
-              _id: {
-                $dateToString: { format: '%Y-%m-%d', date: '$donationDate' },
-              },
-              totalAmount: { $sum: amountBaseField },
-              count: { $sum: 1 },
-            },
-          },
-          { $sort: { _id: 1 } },
-          {
-            $project: {
-              _id: 0,
-              date: '$_id',
-              totalAmount: { $round: ['$totalAmount', 2] },
-              count: 1,
-            },
-          },
-        ],
-      },
-    },
-  ]);
+  const prefCurrency = donor.preferredCurrency || PLATFORM_BASE_CURRENCY;
+  const usdLayer = await buildDonorDisplayLayer(
+    PLATFORM_BASE_CURRENCY,
+    donor.preferredCurrency
+  );
 
-  // Extract results from facet
-  const result = stats[0].summary[0] || {
-    totalAmount: 0,
-    count: 0,
-    roundUpAmount: 0,
-    recurringAmount: 0,
-    oneTimeAmount: 0,
-    dates: [],
-    donationList: [],
+  const getDisplayAmount = (d: any) => {
+    const dCurrency = d.currency || PLATFORM_BASE_CURRENCY;
+    if (dCurrency === prefCurrency) {
+      return Number((d.amount || 0).toFixed(2));
+    }
+    if (prefCurrency === PLATFORM_BASE_CURRENCY) {
+      return Number((d.amountBase ?? d.amount ?? 0).toFixed(2));
+    }
+    const base =
+      d.amountBase ??
+      (d.exchangeRate ? (d.amount || 0) / d.exchangeRate : d.amount || 0);
+    return usdLayer.convert(base);
   };
 
-  const dailyStats = stats[0].dailyStats || [];
+  const getBaseAmount = (d: any) => {
+    if (
+      d.amountBase !== undefined &&
+      d.amountBase !== null &&
+      !(d.amountBase === 0 && d.amount > 0)
+    ) {
+      return d.amountBase;
+    }
+    if (!d.currency || d.currency === PLATFORM_BASE_CURRENCY) {
+      return d.amount || 0;
+    }
+    if (d.exchangeRate && d.exchangeRate > 0) {
+      return (d.amount || 0) / d.exchangeRate;
+    }
+    return d.amount || 0;
+  };
+
+  let totalBase = 0;
+  let roundUpBase = 0;
+  let recurringBase = 0;
+  let oneTimeBase = 0;
+
+  let displayTotalDonationAmount = 0;
+  let displayRoundUpAmount = 0;
+  let displayRecurringAmount = 0;
+  let displayOneTimeAmount = 0;
+
+  const dates: Date[] = [];
+  const donationList: Array<{
+    date: Date;
+    amount: number;
+    currency: string;
+    type: string;
+    displayAmount: number;
+    displayCurrency: string;
+  }> = [];
+
+  const dailyMap = new Map<
+    string,
+    { totalAmount: number; displayTotalAmount: number; count: number }
+  >();
+
+  for (const d of donations) {
+    const baseAmt = getBaseAmount(d);
+    const dispAmt = getDisplayAmount(d);
+
+    totalBase += baseAmt;
+    displayTotalDonationAmount += dispAmt;
+
+    if (d.donationType === 'round-up') {
+      roundUpBase += baseAmt;
+      displayRoundUpAmount += dispAmt;
+    } else if (d.donationType === 'recurring') {
+      recurringBase += baseAmt;
+      displayRecurringAmount += dispAmt;
+    } else if (d.donationType === 'one-time') {
+      oneTimeBase += baseAmt;
+      displayOneTimeAmount += dispAmt;
+    }
+
+    dates.push(d.donationDate);
+
+    donationList.push({
+      date: d.donationDate,
+      amount: d.amount,
+      currency: d.currency || PLATFORM_BASE_CURRENCY,
+      type: d.donationType,
+      displayAmount: dispAmt,
+      displayCurrency: usdLayer.displayCurrency,
+    });
+
+    const dayKey = new Date(d.donationDate).toISOString().split('T')[0];
+    const existing = dailyMap.get(dayKey) || {
+      totalAmount: 0,
+      displayTotalAmount: 0,
+      count: 0,
+    };
+    existing.totalAmount += baseAmt;
+    existing.displayTotalAmount += dispAmt;
+    existing.count += 1;
+    dailyMap.set(dayKey, existing);
+  }
+
+  const dailyStats = Array.from(dailyMap.entries())
+    .sort(([a], [b]) => (a > b ? 1 : -1))
+    .map(([date, val]) => ({
+      date,
+      totalAmount: Number(val.totalAmount.toFixed(2)),
+      displayTotalAmount: Number(val.displayTotalAmount.toFixed(2)),
+      displayCurrency: usdLayer.displayCurrency,
+      count: val.count,
+    }));
 
   // 4. Calculate Streaks
-  const { maxStreak, currentStreak } = calculateStreaks(result.dates);
+  const { maxStreak, currentStreak } = calculateStreaks(dates);
 
   // 5. Get Upcoming Donations (Scheduled)
   const upcomingDonations = await ScheduledDonation.find({
@@ -1950,11 +1978,6 @@ const getClientStats = async (
     };
   }
 
-  const usdLayer = await buildDonorDisplayLayer(
-    PLATFORM_BASE_CURRENCY,
-    donor.preferredCurrency
-  );
-
   const upcomingWithDisplay = await Promise.all(
     formattedUpcoming.map(async (sd: any) => {
       const layer = await buildDonorDisplayLayer(
@@ -1969,53 +1992,36 @@ const getClientStats = async (
     })
   );
 
+  const count = donations.length;
+  const averageDonation =
+    count > 0 ? Number((totalBase / count).toFixed(2)) : 0;
+  const displayAverageDonation =
+    count > 0 ? Number((displayTotalDonationAmount / count).toFixed(2)) : 0;
+
   // 6. Assemble Response
   return {
     reportingCurrency: PLATFORM_BASE_CURRENCY,
     ...donorDisplayMeta(usdLayer),
-    roundUpAmount: Number(result.roundUpAmount.toFixed(2)),
-    recurringAmount: Number(result.recurringAmount.toFixed(2)),
-    oneTimeAmount: Number(result.oneTimeAmount.toFixed(2)),
-    totalDonationAmount: Number(result.totalAmount.toFixed(2)),
-    displayRoundUpAmount: usdLayer.convert(result.roundUpAmount),
-    displayRecurringAmount: usdLayer.convert(result.recurringAmount),
-    displayOneTimeAmount: usdLayer.convert(result.oneTimeAmount),
-    displayTotalDonationAmount: usdLayer.convert(result.totalAmount),
-    averageDonation:
-      result.count > 0
-        ? Number((result.totalAmount / result.count).toFixed(2))
-        : 0,
-    displayAverageDonation:
-      result.count > 0
-        ? usdLayer.convert(result.totalAmount / result.count)
-        : 0,
+    roundUpAmount: Number(roundUpBase.toFixed(2)),
+    recurringAmount: Number(recurringBase.toFixed(2)),
+    oneTimeAmount: Number(oneTimeBase.toFixed(2)),
+    totalDonationAmount: Number(totalBase.toFixed(2)),
+    displayRoundUpAmount: Number(displayRoundUpAmount.toFixed(2)),
+    displayRecurringAmount: Number(displayRecurringAmount.toFixed(2)),
+    displayOneTimeAmount: Number(displayOneTimeAmount.toFixed(2)),
+    displayTotalDonationAmount: Number(displayTotalDonationAmount.toFixed(2)),
+    averageDonation,
+    displayAverageDonation,
     maxConsistencyStreak: maxStreak,
     currentStreak: currentStreak,
 
-    donationDates: result.donationList
-      .sort(
-        (a: any, b: any) =>
-          new Date(b.date).getTime() - new Date(a.date).getTime()
-      )
-      .map((item: any) => ({
-        ...item,
-        displayAmount: usdLayer.convert(item.amount),
-        displayCurrency: usdLayer.displayCurrency,
-      })),
+    donationDates: donationList,
 
-    uniqueDonationDates: Array.from(
-      new Set(
-        result.donationList.map(
-          (d: any) => new Date(d.date).toISOString().split('T')[0]
-        )
-      )
-    ).sort((a: any, b: any) => (a > b ? -1 : 1)),
+    uniqueDonationDates: Array.from(dailyMap.keys()).sort((a, b) =>
+      a > b ? -1 : 1
+    ),
 
-    dailyStats: dailyStats.map((item: any) => ({
-      ...item,
-      displayTotalAmount: usdLayer.convert(item.totalAmount),
-      displayCurrency: usdLayer.displayCurrency,
-    })),
+    dailyStats,
 
     upcomingDonations: upcomingWithDisplay,
     roundUpStatusData,

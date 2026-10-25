@@ -42,6 +42,7 @@ import {
 import {
   syncStripeAccountFromStripe,
 } from '../OrganizationAccount/stripe-account.sync';
+import { amountBaseField } from '../../lib/filter-helper';
 
 /**
  * Start Stripe Connect onboarding for an organization
@@ -664,7 +665,7 @@ const getOrganizationDetailsById = async (
           {
             $group: {
               _id: null,
-              totalAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } },
+              totalAmount: { $sum: amountBaseField },
             },
           },
         ],
@@ -675,6 +676,9 @@ const getOrganizationDetailsById = async (
               _id: '$donor',
               lastDonationDate: { $first: '$donationDate' },
               lastDonationAmount: { $first: '$amount' },
+              currency: { $first: '$currency' },
+              exchangeRate: { $first: '$exchangeRate' },
+              amountBase: { $first: '$amountBase' },
             },
           },
           { $limit: 5 },
@@ -686,12 +690,20 @@ const getOrganizationDetailsById = async (
               as: 'donorDetails',
             },
           },
-          { $unwind: '$donorDetails' },
+          {
+            $unwind: {
+              path: '$donorDetails',
+              preserveNullAndEmptyArrays: true,
+            },
+          },
           {
             $project: {
               donorId: '$_id',
               lastDonationDate: 1,
               lastDonationAmount: 1,
+              currency: 1,
+              exchangeRate: 1,
+              amountBase: 1,
               donorName: '$donorDetails.name',
               donorImage: '$donorDetails.image',
               donorAddress: '$donorDetails.address',
@@ -732,11 +744,20 @@ const getOrganizationDetailsById = async (
     preferredCurrency
   );
 
-  const recentDonorsWithDisplay = recentDonors.map((donor: any) => ({
-    ...donor,
-    displayLastDonationAmount: displayLayer.convert(donor.lastDonationAmount),
-    displayCurrency: displayLayer.displayCurrency,
-  }));
+  const recentDonorsWithDisplay = recentDonors.map((donor: any) => {
+    let dispAmt: number;
+    const donorCurr = donor.currency || organizationCurrency;
+    if (preferredCurrency && donorCurr === preferredCurrency) {
+      dispAmt = Number((donor.lastDonationAmount || 0).toFixed(2));
+    } else {
+      dispAmt = displayLayer.convert(donor.lastDonationAmount);
+    }
+    return {
+      ...donor,
+      displayLastDonationAmount: dispAmt,
+      displayCurrency: displayLayer.displayCurrency,
+    };
+  });
 
   return {
     ...organization.toObject(),

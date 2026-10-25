@@ -25,6 +25,7 @@ import {
   buildOrganizationCurrencyDisplay,
   resolveOrganizationChargeCurrency,
 } from '../../utils/donation-pricing.utils';
+import { amountBaseField } from '../../lib/filter-helper';
 
 const parseMonthInput = (month: string, boundary: 'start' | 'end') => {
   const [yearStr, monthStr] = month.split('-');
@@ -132,7 +133,7 @@ const getRaisedCausesByOrganizationFromDB = async (
     {
       $group: {
         _id: '$cause',
-        totalDonationAmount: { $sum: { $ifNull: ['$amountBase', '$amount'] } },
+        totalDonationAmount: { $sum: amountBaseField },
       },
     },
     {
@@ -143,7 +144,7 @@ const getRaisedCausesByOrganizationFromDB = async (
         as: 'cause',
       },
     },
-    { $unwind: '$cause' },
+    { $unwind: { path: '$cause', preserveNullAndEmptyArrays: true } },
     {
       $project: {
         causeId: '$_id',
@@ -175,7 +176,7 @@ const getRaisedCausesByOrganizationFromDB = async (
     name: cause.name,
     category: cause.category,
     reportingCurrency: PLATFORM_BASE_CURRENCY,
-    totalDonationAmount: cause.totalDonationAmount,
+    totalDonationAmount: Number(cause.totalDonationAmount.toFixed(2)),
     displayTotalDonationAmount: usdLayer.convert(cause.totalDonationAmount),
     ...donorDisplayMeta(usdLayer),
     startMonth: formatMonthLabel(startDate),
