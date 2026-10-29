@@ -825,6 +825,14 @@ const getRewardById = async (
     throw new AppError(httpStatus.NOT_FOUND, REWARD_MESSAGES.NOT_FOUND);
   }
 
+  if (reward.expiryDate && reward.expiryDate < new Date()) {
+    if (reward.isActive || reward.status !== 'expired') {
+      reward.isActive = false;
+      reward.status = 'expired';
+      await reward.save();
+    }
+  }
+
   // Handle Reward Views & Client Status
   let userCanAfford = false;
   let userBalance = 0;
@@ -955,16 +963,25 @@ const getRewards = async (
     }
   }
 
-  const rewardsWithAvailability = (rewards as any[]).map((reward: any) => ({
-    ...reward,
-    isAvailable:
-      reward?.isActive &&
-      reward.remainingCount > 0 &&
-      new Date() >= new Date(reward.startDate) &&
-      (!reward.expiryDate || new Date() <= new Date(reward.expiryDate)),
-    userCanAfford: userId ? userBalance >= STATIC_POINTS_COST : undefined,
-    claimStatus: userId ? userClaims.get(String(reward._id)) : undefined,
-  }));
+  const rewardsWithAvailability = (rewards as any[]).map((reward: any) => {
+    const isExpired =
+      reward.expiryDate && new Date(reward.expiryDate) < new Date();
+    const effectiveIsActive = isExpired ? false : Boolean(reward?.isActive);
+    const effectiveStatus = isExpired ? 'expired' : reward?.status;
+
+    return {
+      ...reward,
+      isActive: effectiveIsActive,
+      status: effectiveStatus,
+      isAvailable:
+        effectiveIsActive &&
+        reward.remainingCount > 0 &&
+        new Date() >= new Date(reward.startDate) &&
+        (!reward.expiryDate || new Date() <= new Date(reward.expiryDate)),
+      userCanAfford: userId ? userBalance >= STATIC_POINTS_COST : undefined,
+      claimStatus: userId ? userClaims.get(String(reward._id)) : undefined,
+    };
+  });
 
   return { data: rewardsWithAvailability, meta };
 };
@@ -1395,15 +1412,15 @@ const checkAvailability = async (
   let existingClaimId: Types.ObjectId | undefined;
 
   // 1. Basic Status & Date Checks
-  if (!reward.isActive) {
+  if (reward.expiryDate && reward.expiryDate < now) {
+    isAvailable = false;
+    reason = REWARD_MESSAGES.EXPIRED;
+  } else if (!reward.isActive) {
     isAvailable = false;
     reason = REWARD_MESSAGES.INACTIVE;
   } else if (reward.startDate > now) {
     isAvailable = false;
     reason = REWARD_MESSAGES.NOT_STARTED;
-  } else if (reward.expiryDate && reward.expiryDate < now) {
-    isAvailable = false;
-    reason = REWARD_MESSAGES.EXPIRED;
   } else if (reward.remainingCount <= 0) {
     isAvailable = false;
     reason = REWARD_MESSAGES.INSUFFICIENT_STOCK;
@@ -1479,10 +1496,12 @@ const updateExpiredRewards = async () => {
   const result = await Reward.updateMany(
     {
       expiryDate: { $lte: now },
-      status: { $ne: REWARD_STATUS.EXPIRED },
-      isActive: true,
+      $or: [
+        { status: { $ne: REWARD_STATUS.EXPIRED } },
+        { isActive: true },
+      ],
     },
-    { $set: { status: REWARD_STATUS.EXPIRED } },
+    { $set: { status: REWARD_STATUS.EXPIRED, isActive: false } },
   );
   return result.modifiedCount;
 };
@@ -1522,6 +1541,8 @@ const getBusinessRewards = async (
     filter.$or = [{ expiryDate: { $gt: new Date() } }, { expiryDate: null }];
   } else if (status === 'disabled') {
     filter.isActive = false;
+    filter.status = { $ne: 'expired' };
+    filter.$or = [{ expiryDate: { $gt: new Date() } }, { expiryDate: null }];
   } else if (status === 'expires_soon') {
     // Expires in next 7 days
     const next7Days = new Date();

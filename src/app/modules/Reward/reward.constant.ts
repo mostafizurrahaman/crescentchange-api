@@ -111,6 +111,8 @@ export const REWARD_MESSAGES = {
   REWARD_NOT_DELETABLE: 'This reward cannot be deleted at this time',
   CANNOT_ACTIVATE_EXPIRED:
     'Cannot activate an expired reward without updating the expiry date',
+  CANNOT_MODIFY_EXPIRED_STATUS:
+    'Cannot activate or deactivate an expired reward',
 } as const;
 
 // URL validation regex

@@ -107,6 +107,7 @@ const claimReward = async (payload: {
         remainingCount: { $gt: 0 },
         status: 'active',
         isActive: true,
+        $or: [{ expiryDate: { $gt: new Date() } }, { expiryDate: null }],
       },
       { $inc: { remainingCount: -1, redeemedCount: 1, redemptions: 1 } },
       { session, new: true }

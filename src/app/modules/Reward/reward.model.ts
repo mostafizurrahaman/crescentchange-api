@@ -288,12 +288,13 @@ rewardSchema.methods.canUpdateLimit = function (newLimit: number): boolean {
 rewardSchema.methods.updateStatus = async function (): Promise<void> {
   const now = new Date();
 
-  if (!this.isActive) {
+  if (this.expiryDate && this.expiryDate < now) {
+    this.status = 'expired';
+    this.isActive = false;
+  } else if (!this.isActive) {
     this.status = 'inactive';
   } else if (this.remainingCount <= 0) {
     this.status = 'sold-out';
-  } else if (this.expiryDate && this.expiryDate < now) {
-    this.status = 'expired';
   } else if (this.startDate > now) {
     this.status = 'upcoming';
   } else {
@@ -313,12 +314,13 @@ rewardSchema.pre('save', function (next) {
   }
 
   const now = new Date();
-  if (!this.isActive) {
+  if (this.expiryDate && this.expiryDate < now) {
+    this.status = 'expired';
+    this.isActive = false;
+  } else if (!this.isActive) {
     this.status = 'inactive';
   } else if (this.remainingCount <= 0) {
     this.status = 'sold-out';
-  } else if (this.expiryDate && this.expiryDate < now) {
-    this.status = 'expired';
   } else if (this.startDate > now) {
     this.status = 'upcoming';
   } else if (this.status !== 'active') {
