@@ -1035,10 +1035,12 @@ const toggleRewardStatus = async (
   }
 
   if (isActive && user.role === ROLE.BUSINESS) {
+    console.log({
+      isActive,
+    });
     const isExpired =
       reward.status === REWARD_STATUS.EXPIRED ||
       Boolean(reward.expiryDate && new Date(reward.expiryDate) <= new Date());
-
     if (isExpired) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
@@ -1496,10 +1498,7 @@ const updateExpiredRewards = async () => {
   const result = await Reward.updateMany(
     {
       expiryDate: { $lte: now },
-      $or: [
-        { status: { $ne: REWARD_STATUS.EXPIRED } },
-        { isActive: true },
-      ],
+      $or: [{ status: { $ne: REWARD_STATUS.EXPIRED } }, { isActive: true }],
     },
     { $set: { status: REWARD_STATUS.EXPIRED, isActive: false } },
   );
