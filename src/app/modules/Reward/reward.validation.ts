@@ -202,7 +202,7 @@ export const getRewardStatsSchema = z.object({
 const getBusinessRewardsSchema = z.object({
   query: z.object({
     status: z
-      .enum(['all', 'active', 'disabled', 'expires_soon'])
+      .enum(['all', 'active', 'disabled', 'expires_soon', 'expired'])
       .optional()
       .default('all'),
     search: z.string().optional(),

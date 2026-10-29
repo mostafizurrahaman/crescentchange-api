@@ -56,7 +56,7 @@ import { FavoriteReward } from '../FavoriteReward/FavoriteReward.model';
  */
 const generateInStoreCodes = async (
   prefix: string,
-  count: number
+  count: number,
 ): Promise<string[]> => {
   const codes: string[] = [];
   const localSet = new Set<string>();
@@ -106,7 +106,7 @@ const generateInStoreCodes = async (
 };
 
 const parseCodesFiles = async (
-  files: Express.Multer.File[]
+  files: Express.Multer.File[],
 ): Promise<{ codes: IParsedCodeFromCSV[]; filesProcessed: number }> => {
   const allCodes: IParsedCodeFromCSV[] = [];
   const seenCodes = new Set<string>();
@@ -124,14 +124,14 @@ const parseCodesFiles = async (
   if (allCodes.length === 0) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'No valid codes found in uploaded files'
+      'No valid codes found in uploaded files',
     );
   }
   return { codes: allCodes, filesProcessed };
 };
 
 const parseSingleCodesFile = async (
-  file: Express.Multer.File
+  file: Express.Multer.File,
 ): Promise<IParsedCodeFromCSV[]> => {
   try {
     let content = '';
@@ -182,7 +182,7 @@ const parseSingleCodesFile = async (
     console.log(error);
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      `Failed to parse file: ${file.originalname}`
+      `Failed to parse file: ${file.originalname}`,
     );
   }
 };
@@ -193,7 +193,7 @@ const parseSingleCodesFile = async (
 const createReward = async (
   rewardData: ICreateRewardPayload,
   imageFile?: Express.Multer.File,
-  codesFiles?: Express.Multer.File[]
+  codesFiles?: Express.Multer.File[],
 ): Promise<IRewardDocument> => {
   const businessId = new Types.ObjectId(rewardData.businessId as string);
 
@@ -202,7 +202,7 @@ const createReward = async (
   if (!business) {
     throw new AppError(
       httpStatus.NOT_FOUND,
-      REWARD_MESSAGES.BUSINESS_NOT_FOUND
+      REWARD_MESSAGES.BUSINESS_NOT_FOUND,
     );
   }
 
@@ -220,7 +220,7 @@ const createReward = async (
     if (new Date(rewardData.expiryDate) <= new Date(rewardData.startDate)) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        REWARD_MESSAGES.EXPIRY_BEFORE_START
+        REWARD_MESSAGES.EXPIRY_BEFORE_START,
       );
     }
   }
@@ -229,14 +229,14 @@ const createReward = async (
   if (rewardData.type === 'in-store' && !rewardData.inStoreRedemptionMethods) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'In-store methods (QR/Static) are required'
+      'In-store methods (QR/Static) are required',
     );
   }
 
   if (rewardData.type === 'online' && !rewardData.onlineRedemptionMethods) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'Online methods (Discount/GiftCard) are required'
+      'Online methods (Discount/GiftCard) are required',
     );
   }
 
@@ -273,7 +273,7 @@ const createReward = async (
           isActive: true,
         },
       ],
-      { session }
+      { session },
     );
 
     let codesToInsert = [];
@@ -282,7 +282,7 @@ const createReward = async (
     if (reward.type === 'in-store') {
       const codes = await generateInStoreCodes(
         reward?.codePrefix,
-        reward.redemptionLimit
+        reward.redemptionLimit,
       );
       codesToInsert = codes.map((code) => ({
         reward: reward._id,
@@ -295,7 +295,7 @@ const createReward = async (
       if (!codesFiles || codesFiles.length === 0) {
         throw new AppError(
           httpStatus.BAD_REQUEST,
-          REWARD_MESSAGES.FILE_REQUIRED
+          REWARD_MESSAGES.FILE_REQUIRED,
         );
       }
 
@@ -304,7 +304,7 @@ const createReward = async (
       if (parsedCodes.length < reward.redemptionLimit) {
         throw new AppError(
           httpStatus.BAD_REQUEST,
-          `Insufficient codes in CSV. Required: ${reward.redemptionLimit}`
+          `Insufficient codes in CSV. Required: ${reward.redemptionLimit}`,
         );
       }
 
@@ -316,7 +316,7 @@ const createReward = async (
       if (duplicateInDb) {
         throw new AppError(
           httpStatus.CONFLICT,
-          'One or more codes already used in another reward.'
+          'One or more codes already used in another reward.',
         );
       }
 
@@ -361,7 +361,7 @@ const createReward = async (
 const createOnlineReward = async (
   rewardData: Omit<ICreateRewardPayload, 'redemptionLimit'>, // Limit comes from file, not payload
   imageFile?: Express.Multer.File,
-  codesFiles?: Express.Multer.File[]
+  codesFiles?: Express.Multer.File[],
 ): Promise<IRewardDocument> => {
   const businessId = new Types.ObjectId(rewardData.businessId as string);
   // 1. Validate Business Existence
@@ -370,7 +370,7 @@ const createOnlineReward = async (
   if (!business) {
     throw new AppError(
       httpStatus.NOT_FOUND,
-      REWARD_MESSAGES.BUSINESS_NOT_FOUND
+      REWARD_MESSAGES.BUSINESS_NOT_FOUND,
     );
   }
 
@@ -387,7 +387,7 @@ const createOnlineReward = async (
   if (!codesFiles || codesFiles.length === 0) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'You must upload a CSV/Excel file containing the reward codes.'
+      'You must upload a CSV/Excel file containing the reward codes.',
     );
   }
 
@@ -397,7 +397,7 @@ const createOnlineReward = async (
   if (!parsedCodes || parsedCodes.length === 0) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'The uploaded files contain no valid codes.'
+      'The uploaded files contain no valid codes.',
     );
   }
 
@@ -413,7 +413,7 @@ const createOnlineReward = async (
   if (duplicateInDb) {
     throw new AppError(
       httpStatus.CONFLICT,
-      `One or more codes (e.g., ${duplicateInDb.code}) are already in use in another reward.`
+      `One or more codes (e.g., ${duplicateInDb.code}) are already in use in another reward.`,
     );
   }
 
@@ -452,7 +452,7 @@ const createOnlineReward = async (
           isActive: true,
         },
       ],
-      { session }
+      { session },
     );
 
     // 9. Prepare and Bulk Insert Reward Codes
@@ -506,8 +506,8 @@ const broadcastNewReward = async (reward: any) => {
           NOTIFICATION_TYPE.NEW_REWARD,
           `New Reward: "${reward.title}" is now available!`,
           reward._id.toString(),
-          { rewardId: reward._id.toString() }
-        )
+          { rewardId: reward._id.toString() },
+        ),
       );
       await Promise.all(promises);
     }
@@ -525,7 +525,7 @@ const updateReward = async (
   payload: IUpdateRewardPayload,
   userId: string,
   imageFile?: Express.Multer.File,
-  codesFiles?: Express.Multer.File[]
+  codesFiles?: Express.Multer.File[],
 ): Promise<IRewardDocument> => {
   // 1. Fetch current reward state
   const reward = await Reward.findById(rewardId);
@@ -534,25 +534,56 @@ const updateReward = async (
   }
 
   // Ownership validation
+  let user: any = null;
   if (userId) {
-    const user = await Auth.findById(userId);
+    user = await Auth.findById(userId);
     if (!user) throw new AppError(httpStatus.NOT_FOUND, 'User not found!');
     if (user.role === ROLE.BUSINESS) {
       const business = await Business.findOne({ auth: userId });
       if (!business || reward.business.toString() !== business._id.toString()) {
         throw new AppError(
           httpStatus.FORBIDDEN,
-          'You do not have permission to modify this reward'
+          'You do not have permission to modify this reward',
         );
       }
     }
   }
 
-  // 2. Validation: Prevent extending an already expired reward
-  if (payload.expiryDate && reward.status === 'expired') {
+  const isExpired =
+    reward.status === REWARD_STATUS.EXPIRED ||
+    Boolean(reward.expiryDate && new Date(reward.expiryDate) <= new Date());
+
+  if (payload.expiryDate && new Date(payload.expiryDate) <= new Date()) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      REWARD_MESSAGES.CANNOT_EXTEND_EXPIRED
+      'Expiry date must be in the future',
+    );
+  }
+
+  if (payload.expiryDate) {
+    const effectiveStartDate = payload.startDate
+      ? new Date(payload.startDate)
+      : new Date(reward.startDate);
+    if (new Date(payload.expiryDate) <= effectiveStartDate) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        REWARD_MESSAGES.EXPIRY_BEFORE_START,
+      );
+    }
+  }
+
+  const hasValidFutureExpiry =
+    payload.expiryDate && new Date(payload.expiryDate) > new Date();
+
+  if (
+    user?.role === ROLE.BUSINESS &&
+    payload.isActive === true &&
+    isExpired &&
+    !hasValidFutureExpiry
+  ) {
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      REWARD_MESSAGES.CANNOT_ACTIVATE_EXPIRED,
     );
   }
 
@@ -563,7 +594,7 @@ const updateReward = async (
     if (hoursSinceUpdate < LIMIT_UPDATE_COOLDOWN_HOURS) {
       throw new AppError(
         httpStatus.TOO_MANY_REQUESTS,
-        REWARD_MESSAGES.UPDATE_COOLDOWN
+        REWARD_MESSAGES.UPDATE_COOLDOWN,
       );
     }
   }
@@ -575,7 +606,7 @@ const updateReward = async (
       const oldKey = getS3KeyFromUrl(reward.image);
       if (oldKey) {
         await deleteFromS3(oldKey).catch((err) =>
-          console.error('Failed to delete old reward image from S3:', err)
+          console.error('Failed to delete old reward image from S3:', err),
         );
       }
     }
@@ -603,7 +634,7 @@ const updateReward = async (
       if (newLimit < reward.redeemedCount) {
         throw new AppError(
           httpStatus.BAD_REQUEST,
-          `${REWARD_MESSAGES.LIMIT_BELOW_REDEEMED}. Minimum required: ${reward.redeemedCount}`
+          `${REWARD_MESSAGES.LIMIT_BELOW_REDEEMED}. Minimum required: ${reward.redeemedCount}`,
         );
       }
 
@@ -627,7 +658,7 @@ const updateReward = async (
         if (!codesFiles || codesFiles.length === 0) {
           throw new AppError(
             httpStatus.BAD_REQUEST,
-            'A CSV file with new codes is required to increase the limit for online rewards.'
+            'A CSV file with new codes is required to increase the limit for online rewards.',
           );
         }
 
@@ -637,7 +668,7 @@ const updateReward = async (
         if (parsedCodes.length < neededCount) {
           throw new AppError(
             httpStatus.BAD_REQUEST,
-            `File only contains ${parsedCodes.length} codes, but ${neededCount} are required.`
+            `File only contains ${parsedCodes.length} codes, but ${neededCount} are required.`,
           );
         }
 
@@ -648,7 +679,7 @@ const updateReward = async (
         if (duplicate) {
           throw new AppError(
             httpStatus.CONFLICT,
-            `Code "${duplicate.code}" already exists in the system.`
+            `Code "${duplicate.code}" already exists in the system.`,
           );
         }
 
@@ -735,7 +766,7 @@ const updateReward = async (
 const updateRewardImage = async (
   rewardId: string,
   imageFile: Express.Multer.File,
-  userId?: string
+  userId?: string,
 ): Promise<IRewardDocument> => {
   // 1. Check if reward exists
   const reward = await Reward.findById(rewardId);
@@ -751,7 +782,7 @@ const updateRewardImage = async (
       if (!business || reward.business.toString() !== business._id.toString()) {
         throw new AppError(
           httpStatus.FORBIDDEN,
-          'You do not have permission to modify this reward image'
+          'You do not have permission to modify this reward image',
         );
       }
     }
@@ -762,7 +793,7 @@ const updateRewardImage = async (
     const oldKey = getS3KeyFromUrl(reward.image);
     if (oldKey) {
       await deleteFromS3(oldKey).catch((err) =>
-        console.error('Failed to delete old reward image from S3:', err)
+        console.error('Failed to delete old reward image from S3:', err),
       );
     }
   }
@@ -784,11 +815,11 @@ const updateRewardImage = async (
 
 const getRewardById = async (
   rewardId: string,
-  userId?: string
+  userId?: string,
 ): Promise<Record<string, unknown>> => {
   const reward = await Reward.findById(rewardId).populate(
     'business',
-    'name category coverImage locations businessEmail businessPhoneNumber'
+    'name category coverImage locations businessEmail businessPhoneNumber',
   );
   if (!reward) {
     throw new AppError(httpStatus.NOT_FOUND, REWARD_MESSAGES.NOT_FOUND);
@@ -805,7 +836,9 @@ const getRewardById = async (
   if (userId) {
     const client = await Client.findOne({ auth: userId });
     if (client) {
-      await ViewReward.create({ user: client.auth, reward: rewardId }).catch(() => null);
+      await ViewReward.create({ user: client.auth, reward: rewardId }).catch(
+        () => null,
+      );
 
       try {
         const [balance, existingClaim, existingFavorite] = await Promise.all([
@@ -853,7 +886,7 @@ const getRewardById = async (
 };
 
 const getRewards = async (
-  query: IRewardFilterQuery
+  query: IRewardFilterQuery,
 ): Promise<IRewardsListResult> => {
   const {
     userId,
@@ -862,6 +895,8 @@ const getRewards = async (
     sortBy = 'createdAt',
     sortOrder = 'desc',
   } = query;
+
+  console.log(query);
 
   const filter: Record<string, unknown> = {};
   if (query.businessId) filter.business = new Types.ObjectId(query.businessId);
@@ -896,7 +931,11 @@ const getRewards = async (
   if (userId) {
     try {
       const client = await Client.findOne({ auth: userId });
-      const clientObjectId = client ? client._id : (Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : null);
+      const clientObjectId = client
+        ? client._id
+        : Types.ObjectId.isValid(userId)
+          ? new Types.ObjectId(userId)
+          : null;
       if (clientObjectId) {
         const [balance, claims] = await Promise.all([
           pointsServices.getUserBalance(clientObjectId.toString()),
@@ -932,7 +971,7 @@ const getRewards = async (
 
 const getRewardsByBusiness = async (
   businessId: string,
-  query: IRewardFilterQuery
+  query: IRewardFilterQuery,
 ): Promise<IRewardsListResult> => {
   return getRewards({ ...query, businessId });
 };
@@ -943,7 +982,7 @@ const getRewardsByBusiness = async (
 const toggleRewardStatus = async (
   rewardId: string,
   userId: string,
-  isActive: boolean
+  isActive: boolean,
 ) => {
   const reward = await Reward.findById(rewardId);
 
@@ -965,7 +1004,7 @@ const toggleRewardStatus = async (
   ) {
     throw new AppError(
       httpStatus.FORBIDDEN,
-      'You do not have permission to modify this reward'
+      'You do not have permission to modify this reward',
     );
   }
 
@@ -974,9 +1013,23 @@ const toggleRewardStatus = async (
   ) {
     throw new AppError(
       httpStatus.FORBIDDEN,
-      'You do not have permission to modify this reward'
+      'You do not have permission to modify this reward',
     );
   }
+
+  if (isActive && user.role === ROLE.BUSINESS) {
+    const isExpired =
+      reward.status === REWARD_STATUS.EXPIRED ||
+      Boolean(reward.expiryDate && new Date(reward.expiryDate) <= new Date());
+
+    if (isExpired) {
+      throw new AppError(
+        httpStatus.BAD_REQUEST,
+        REWARD_MESSAGES.CANNOT_ACTIVATE_EXPIRED,
+      );
+    }
+  }
+
   reward.isActive = isActive;
 
   await reward.save();
@@ -988,7 +1041,7 @@ const toggleRewardStatus = async (
 
 const deleteReward = async (
   rewardId: string,
-  userId: string
+  userId: string,
 ): Promise<IHardDeleteResult> => {
   // 1. Find the reward
   const reward = await Reward.findById(rewardId);
@@ -1006,7 +1059,7 @@ const deleteReward = async (
       if (!business || reward.business.toString() !== business._id.toString()) {
         throw new AppError(
           httpStatus.FORBIDDEN,
-          'You do not have permission to delete this reward'
+          'You do not have permission to delete this reward',
         );
       }
     }
@@ -1016,7 +1069,7 @@ const deleteReward = async (
   if (reward.isActive) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      REWARD_MESSAGES.CANNOT_DELETE_ACTIVE
+      REWARD_MESSAGES.CANNOT_DELETE_ACTIVE,
     );
   }
 
@@ -1034,7 +1087,7 @@ const deleteReward = async (
         REWARD_MESSAGES.CANNOT_DELETE_WITH_ACTIVE_CLAIMS
       } (${activeClaimsCount} active claim${
         activeClaimsCount > 1 ? 's' : ''
-      } remaining)`
+      } remaining)`,
     );
   }
 
@@ -1046,20 +1099,17 @@ const deleteReward = async (
     // 5. Delete all RewardCodes for this reward
     const codesResult = await RewardCode.deleteMany(
       { reward: reward._id },
-      { session }
+      { session },
     );
 
     // 6. Delete all ViewRewards for this reward
     const viewsResult = await ViewReward.deleteMany(
       { reward: reward._id },
-      { session }
+      { session },
     );
 
     // 7. Delete all FavoriteReward records for this reward
-    await FavoriteReward.deleteMany(
-      { reward: reward._id },
-      { session }
-    );
+    await FavoriteReward.deleteMany({ reward: reward._id }, { session });
 
     // 8. Hide all RewardRedemptions (keep for audit, but hide from user)
     const redemptionsResult = await RewardRedemption.updateMany(
@@ -1071,7 +1121,7 @@ const deleteReward = async (
           hiddenReason: 'Reward deleted',
         },
       },
-      { session }
+      { session },
     );
 
     // 8. Store reward info before deletion
@@ -1091,7 +1141,7 @@ const deleteReward = async (
       const s3Key = getS3KeyFromUrl(reward.image);
       if (s3Key) {
         deleteFromS3(s3Key).catch((err) =>
-          console.error('Failed to delete reward image from S3:', err)
+          console.error('Failed to delete reward image from S3:', err),
         );
       }
     }
@@ -1130,7 +1180,7 @@ const deleteRewardImage = async (rewardId: string, userId: string) => {
       if (!business || reward.business.toString() !== business._id.toString()) {
         throw new AppError(
           httpStatus.FORBIDDEN,
-          'You do not have permission to delete this reward image'
+          'You do not have permission to delete this reward image',
         );
       }
     }
@@ -1141,7 +1191,7 @@ const deleteRewardImage = async (rewardId: string, userId: string) => {
       const s3Key = getS3KeyFromUrl(reward.image);
       if (s3Key) {
         deleteFromS3(s3Key).catch((err) =>
-          console.error('Failed to delete reward image from S3:', err)
+          console.error('Failed to delete reward image from S3:', err),
         );
       }
     }
@@ -1160,7 +1210,7 @@ const deleteRewardImage = async (rewardId: string, userId: string) => {
  * Useful for frontend to show/hide delete button or show warning
  */
 const canDeleteReward = async (
-  rewardId: string
+  rewardId: string,
 ): Promise<{
   canDelete: boolean;
   reason?: string;
@@ -1205,7 +1255,7 @@ const canDeleteReward = async (
 const uploadCodesToReward = async (
   rewardId: string,
   codesFiles: Express.Multer.File[],
-  userId?: string
+  userId?: string,
 ) => {
   // 1. Fetch the Reward document
   const reward = await Reward.findById(rewardId);
@@ -1221,7 +1271,7 @@ const uploadCodesToReward = async (
       if (!business || reward.business.toString() !== business._id.toString()) {
         throw new AppError(
           httpStatus.FORBIDDEN,
-          'You do not have permission to upload codes to this reward'
+          'You do not have permission to upload codes to this reward',
         );
       }
     }
@@ -1231,14 +1281,13 @@ const uploadCodesToReward = async (
   if (reward.type !== 'online') {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      'Manual CSV upload is only for Online rewards. In-store codes are auto-generated by the system.'
+      'Manual CSV upload is only for Online rewards. In-store codes are auto-generated by the system.',
     );
   }
 
   // 3. Parse the uploaded files
-  const { codes: parsedCodes, filesProcessed } = await parseCodesFiles(
-    codesFiles
-  );
+  const { codes: parsedCodes, filesProcessed } =
+    await parseCodesFiles(codesFiles);
   const rawCodeStrings = parsedCodes.map((c) => c.code);
 
   // 4. Global Uniqueness Validation
@@ -1252,7 +1301,7 @@ const uploadCodesToReward = async (
   if (duplicateInDb) {
     throw new AppError(
       httpStatus.CONFLICT,
-      `Upload blocked. The code "${duplicateInDb.code}" already exists in the system (potentially used in another reward).`
+      `Upload blocked. The code "${duplicateInDb.code}" already exists in the system (potentially used in another reward).`,
     );
   }
 
@@ -1284,7 +1333,7 @@ const uploadCodesToReward = async (
     if (reward.status === REWARD_STATUS.EXPIRED) {
       throw new AppError(
         httpStatus.BAD_REQUEST,
-        REWARD_MESSAGES.CANNOT_EXTEND_EXPIRED
+        REWARD_MESSAGES.CANNOT_EXTEND_EXPIRED,
       );
     }
 
@@ -1329,7 +1378,7 @@ const uploadCodesToReward = async (
  */
 const checkAvailability = async (
   rewardId: string,
-  userId?: string
+  userId?: string,
 ): Promise<IRewardAvailability> => {
   const reward = await Reward.findById(rewardId);
 
@@ -1373,7 +1422,11 @@ const checkAvailability = async (
   // 4. User-Specific Checks
   if (userId && isAvailable) {
     const client = await Client.findOne({ auth: userId });
-    const clientObjectId = client ? client._id : (Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : null);
+    const clientObjectId = client
+      ? client._id
+      : Types.ObjectId.isValid(userId)
+        ? new Types.ObjectId(userId)
+        : null;
     if (clientObjectId) {
       // Check for previous claims
       const existingClaim = await RewardRedemption.findOne({
@@ -1391,7 +1444,9 @@ const checkAvailability = async (
 
       // Check Points Balance
       try {
-        const balance = await pointsServices.getUserBalance(clientObjectId.toString());
+        const balance = await pointsServices.getUserBalance(
+          clientObjectId.toString(),
+        );
         userBalance = balance.currentBalance;
         userCanAfford = balance.canAfford(STATIC_POINTS_COST);
 
@@ -1427,7 +1482,7 @@ const updateExpiredRewards = async () => {
       status: { $ne: REWARD_STATUS.EXPIRED },
       isActive: true,
     },
-    { $set: { status: REWARD_STATUS.EXPIRED } }
+    { $set: { status: REWARD_STATUS.EXPIRED } },
   );
   return result.modifiedCount;
 };
@@ -1444,14 +1499,14 @@ const updateUpcomingRewards = async () => {
       isActive: true,
       remainingCount: { $gt: 0 },
     },
-    { $set: { status: REWARD_STATUS.ACTIVE } }
+    { $set: { status: REWARD_STATUS.ACTIVE } },
   );
   return result.modifiedCount;
 };
 
 const getBusinessRewards = async (
   userId: string,
-  query: Record<string, unknown>
+  query: Record<string, unknown>,
 ) => {
   const business = await Business.findOne({ auth: userId });
   if (!business)
@@ -1464,6 +1519,7 @@ const getBusinessRewards = async (
   if (status === 'active') {
     filter.isActive = true;
     filter.status = 'active';
+    filter.$or = [{ expiryDate: { $gt: new Date() } }, { expiryDate: null }];
   } else if (status === 'disabled') {
     filter.isActive = false;
   } else if (status === 'expires_soon') {
@@ -1472,6 +1528,11 @@ const getBusinessRewards = async (
     next7Days.setDate(next7Days.getDate() + 7);
     filter.expiryDate = { $gte: new Date(), $lte: next7Days };
     filter.isActive = true;
+  } else if (status === 'expired') {
+    filter.$or = [
+      { status: 'expired' },
+      { expiryDate: { $ne: null, $lte: new Date() } },
+    ];
   }
 
   // Search Logic
@@ -1492,7 +1553,7 @@ const getBusinessRewards = async (
 // Get Rewards for Users to Explore
 const getUserExploreRewards = async (
   userId: string,
-  query: Record<string, unknown>
+  query: Record<string, unknown>,
 ) => {
   const client = await Client.findOne({ auth: userId });
   if (!client) throw new AppError(httpStatus.NOT_FOUND, 'Client not found');
@@ -1517,7 +1578,7 @@ const getUserExploreRewards = async (
     Reward.find(filter)
       .populate('business', 'name coverImage  logoImage')
       .select('-codes -limitUpdateHistory -priority -redemptions -featured'),
-    { page, limit }
+    { page, limit },
   )
     .sort()
     .paginate();
@@ -1536,7 +1597,7 @@ const getUserExploreRewards = async (
 
   const claimMap = new Map();
   userClaims.forEach((claim) =>
-    claimMap.set(claim.reward.toString(), claim.status)
+    claimMap.set(claim.reward.toString(), claim.status),
   );
 
   // 3. Transform Result
@@ -1577,7 +1638,7 @@ const getAdminRewards = async (query: Record<string, unknown>) => {
 
   const rewardQuery = new QueryBuilder(
     Reward.find({}).populate('business', 'name email').select('-codes'),
-    apiQuery
+    apiQuery,
   )
     .search(serachableFields)
     .sort()
@@ -1729,7 +1790,7 @@ const getAdminRewardAnalytics = async () => {
     percentageChange: rewardPercentageChange,
   } = calculatePercentageChange(
     currentMonthActiveRewards,
-    previousMonthActiveRewards
+    previousMonthActiveRewards,
   );
 
   // Redeemtion :
@@ -1744,7 +1805,7 @@ const getAdminRewardAnalytics = async () => {
     percentageChange: redeemedRewardPercentageChange,
   } = calculatePercentageChange(
     currentMonthRedeemedRewards,
-    previousMonthRedeemedRewards
+    previousMonthRedeemedRewards,
   );
 
   // top rewards:
@@ -1771,7 +1832,7 @@ const getAdminRewardAnalytics = async () => {
 // Get Single Reward Details with Redeemtion and claimed:
 const getRewardDetailsForAdmin = async (rewardId: string) => {
   const reward = await Reward.findById(rewardId).select(
-    'title description inStoreRedemptionMethods onlineRedemptionMethods image isActive status'
+    'title description inStoreRedemptionMethods onlineRedemptionMethods image isActive status',
   );
 
   if (!reward) {
@@ -1790,7 +1851,7 @@ const getRewardDetailsForAdmin = async (rewardId: string) => {
         select: 'email status',
       },
     }),
-    {}
+    {},
   )
     .sort()
     .paginate();

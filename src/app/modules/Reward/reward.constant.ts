@@ -109,6 +109,8 @@ export const REWARD_MESSAGES = {
   CANNOT_DELETE_WITH_ACTIVE_CLAIMS:
     'Cannot delete reward with active claims. Wait for all claims to be redeemed, expired, or cancelled.',
   REWARD_NOT_DELETABLE: 'This reward cannot be deleted at this time',
+  CANNOT_ACTIVATE_EXPIRED:
+    'Cannot activate an expired reward without updating the expiry date',
 } as const;
 
 // URL validation regex
